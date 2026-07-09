@@ -1009,18 +1009,11 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <button class="ib-x" id="installX" title="Dismiss">✕</button>
 </div>
 
-<div id="iosHelp" class="modal">
-  <div class="modal-card" style="width:min(94vw,360px)">
-    <div class="modal-head"><h3>Add to Home Screen</h3><button class="modal-x" id="iosHelpX">✕</button></div>
-    <div class="modal-body" style="padding:16px 18px; font-size:13px; color:var(--muted); line-height:1.6">
-      To install Snappy Frame on your iPhone or iPad:
-      <ol style="margin:10px 0 0; padding-left:20px">
-        <li>Tap the <b>Share</b> button <span style="opacity:.7">(the square with an ↑)</span> in Safari's toolbar.</li>
-        <li>Scroll down and choose <b>Add to Home Screen</b>.</li>
-        <li>Tap <b>Add</b> — Snappy Frame appears on your home screen like a native app.</li>
-      </ol>
-    </div>
-    <div class="modal-foot"><button class="btn sm primary" id="iosHelpClose">Got it</button></div>
+<div id="installHelp" class="modal">
+  <div class="modal-card" style="width:min(94vw,380px)">
+    <div class="modal-head"><h3 id="installHelpTitle">Install Snappy Frame</h3><button class="modal-x" id="installHelpX">✕</button></div>
+    <div class="modal-body" id="installHelpBody" style="padding:16px 18px; font-size:13px; color:var(--muted); line-height:1.6"></div>
+    <div class="modal-foot"><button class="btn sm primary" id="installHelpClose">Got it</button></div>
   </div>
 </div>
 
@@ -1165,7 +1158,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6';
+const APP_VERSION='1.6.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2137,6 +2130,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.1', items:[
+    'Fixed install: Android now gets the native prompt (or Chrome-menu steps), and each platform sees the right instructions — no more Apple-only help',
+  ]},
   {v:'1.6', items:[
     '📲 Install Snappy Frame as an app — works offline (PWA), with an install prompt',
     '🎬 Animated backgrounds — drifting / pulsing motion behind the card',
@@ -2263,28 +2259,42 @@ $('cropApply').onclick=()=>{
   applyTheme(t==='light'); })();
 
 // ---------- PWA: service worker + install prompt ----------
-if('serviceWorker' in navigator && location.protocol==='https:'){
+if('serviceWorker' in navigator && window.isSecureContext){
   window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
+const _UA=navigator.userAgent||'';
+const IS_IOS = /iPad|iPhone|iPod/.test(_UA) || (/Macintosh/.test(_UA) && navigator.maxTouchPoints>1);
+const IS_ANDROID = /Android/.test(_UA);
 function isStandalone(){ return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true; }
-function isIOS(){ return /iP(hone|ad|od)/.test(navigator.platform||'') || (/Mac/.test(navigator.platform||'') && navigator.maxTouchPoints>1); }
 const INSTALL_DISMISS='snappy_install_dismissed';
 let deferredInstall=null;
-function showInstallBar(){ if(isStandalone()) return;
-  try{ if(localStorage.getItem(INSTALL_DISMISS)) return; }catch(e){}
-  $('installBar').hidden=false; }
-window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; showInstallBar(); });
+function installDismissed(){ try{ return !!localStorage.getItem(INSTALL_DISMISS); }catch(e){ return false; } }
+function refreshInstallBar(){
+  if(isStandalone() || installDismissed() || !window.isSecureContext){ $('installBar').hidden=true; return; }
+  // Show when the browser has a native install prompt queued, or on any phone
+  // (where we fall back to per-platform manual steps). Desktop only shows on the event.
+  $('installBar').hidden = !(deferredInstall || IS_IOS || IS_ANDROID);
+}
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; refreshInstallBar(); });
 window.addEventListener('appinstalled',()=>{ deferredInstall=null; $('installBar').hidden=true;
   try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} toast('Installed — find Snappy Frame on your home screen'); });
-// iOS never fires beforeinstallprompt, so offer the manual route (HTTPS only).
-if(isIOS() && !isStandalone() && location.protocol==='https:'){ setTimeout(showInstallBar,1200); }
+window.addEventListener('load',()=>setTimeout(refreshInstallBar,1200));
+function installHelp(){
+  if(IS_IOS) return ['Add to Home Screen',
+    'On your iPhone/iPad in <b>Safari</b>:<ol style="margin:10px 0 0;padding-left:20px"><li>Tap the <b>Share</b> button <span style="opacity:.7">(square with an&nbsp;↑)</span>.</li><li>Choose <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li></ol><p style="margin-top:10px;opacity:.7">Add to Home Screen only appears in Safari — not Chrome — on iOS.</p>'];
+  if(IS_ANDROID) return ['Install the app',
+    'In <b>Chrome</b> on Android:<ol style="margin:10px 0 0;padding-left:20px"><li>Tap the <b>⋮</b> menu (top-right).</li><li>Tap <b>Install app</b> <span style="opacity:.7">(or “Add to Home screen”)</span>.</li><li>Confirm <b>Install</b>.</li></ol><p style="margin-top:10px;opacity:.7">Don’t see it? Reload once, wait a few seconds, then re-open the menu.</p>'];
+  return ['Install the app',
+    'In <b>Chrome</b> or <b>Edge</b> on desktop:<ol style="margin:10px 0 0;padding-left:20px"><li>Click the <b>install icon</b> in the address bar <span style="opacity:.7">(a monitor with a&nbsp;↓)</span>, or open the <b>⋮</b> menu.</li><li>Choose <b>Install Snappy Frame…</b></li></ol>'];
+}
+function openInstallHelp(){ const [t,body]=installHelp(); $('installHelpTitle').textContent=t; $('installHelpBody').innerHTML=body; $('installHelp').classList.add('open'); }
 $('installGo').onclick=async()=>{
-  if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; $('installBar').hidden=true; }
-  else { $('iosHelp').classList.add('open'); }
+  if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; $('installBar').hidden=true; return; }
+  openInstallHelp();   // no native prompt available → per-platform manual steps
 };
 $('installX').onclick=()=>{ $('installBar').hidden=true; try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} };
-$('iosHelpX').onclick=$('iosHelpClose').onclick=()=>$('iosHelp').classList.remove('open');
-$('iosHelp').addEventListener('click',e=>{ if(e.target===$('iosHelp')) $('iosHelp').classList.remove('open'); });
+$('installHelpX').onclick=$('installHelpClose').onclick=()=>$('installHelp').classList.remove('open');
+$('installHelp').addEventListener('click',e=>{ if(e.target===$('installHelp')) $('installHelp').classList.remove('open'); });
 
 // drag & drop
 ;['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault(); wrap.classList.add('dragover');}));

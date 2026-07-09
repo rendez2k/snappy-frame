@@ -4,3 +4,17 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# PWA: make sure the manifest and service worker are served correctly, or
+# Chrome silently refuses to offer "Install app".
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Content-Type = "application/javascript"
+    Cache-Control = "no-cache"
+    Service-Worker-Allowed = "/"
