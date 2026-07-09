@@ -14,8 +14,18 @@
   --line-2:#333848; --text:#e7e9ef; --muted:#9aa0b0; --muted-2:#6b7180;
   --accent:#6d5efc; --accent-2:#8a7dff; --radius:12px;
   --shadow:0 10px 30px rgba(0,0,0,.35);
+  --check-a:#12131a; --check-b:#0b0c11; --pop:#1d2029; --emptybox:rgba(20,22,30,.72);
   font-synthesis:none;
 }
+body.light{
+  --bg:#f5f6fa; --panel:#ffffff; --panel-2:#eef0f5; --line:#e5e7ee;
+  --line-2:#d6d9e2; --text:#1b1e28; --muted:#5b6170; --muted-2:#9096a6;
+  --accent:#6d5efc; --accent-2:#5a4bd4;
+  --shadow:0 10px 30px rgba(40,30,90,.14);
+  --check-a:#e7e9ef; --check-b:#f5f6fa; --pop:#ffffff; --emptybox:rgba(255,255,255,.8);
+}
+body.light input[type=range]::-webkit-slider-thumb{border:1px solid rgba(0,0,0,.18)}
+body.light input[type=range]::-moz-range-thumb{border:1px solid rgba(0,0,0,.18)}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
@@ -32,7 +42,7 @@ input,select{font-family:inherit}
   display:flex; align-items:center; gap:14px; padding:10px 16px;
   border-bottom:1px solid var(--line); background:var(--panel); z-index:10;
 }
-.brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:-.01em}
+.brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:-.01em; line-height:1}
 .brand .logo{width:26px; height:26px; border-radius:7px;
   background:linear-gradient(135deg,var(--accent),#c05bff); display:grid; place-items:center}
 .brand .logo svg{width:16px; height:16px}
@@ -63,8 +73,8 @@ input,select{font-family:inherit}
 /* ---------- Stage / preview ---------- */
 .stage-wrap{position:relative; min-height:0; overflow:hidden;
   background:
-    linear-gradient(45deg,#12131a 25%,transparent 25%,transparent 75%,#12131a 75%),
-    linear-gradient(45deg,#12131a 25%,#0b0c11 25%,#0b0c11 75%,#12131a 75%);
+    linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%),
+    linear-gradient(45deg,var(--check-a) 25%,var(--check-b) 25%,var(--check-b) 75%,var(--check-a) 75%);
   background-size:24px 24px; background-position:0 0,12px 12px;
   display:grid; place-items:center; padding:28px;
 }
@@ -109,7 +119,7 @@ input,select{font-family:inherit}
 /* Empty state */
 .empty{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none}
 .empty .box{pointer-events:auto; text-align:center; padding:34px 40px; border-radius:16px;
-  border:1.5px dashed var(--line-2); background:rgba(20,22,30,.72); backdrop-filter:blur(4px);
+  border:1.5px dashed var(--line-2); background:var(--emptybox); backdrop-filter:blur(4px);
   max-width:380px}
 .empty h2{margin:0 0 6px; font-size:17px}
 .empty p{margin:0 0 16px; color:var(--muted); line-height:1.5}
@@ -179,7 +189,7 @@ input[type=range]::-moz-range-thumb{width:16px; height:16px; border-radius:50%; 
   font-family:ui-monospace,monospace; outline:none; width:100%; text-transform:uppercase}
 
 /* custom colour picker popover */
-#cpop{position:fixed; z-index:200; width:206px; background:#1d2029; border:1px solid var(--line-2);
+#cpop{position:fixed; z-index:200; width:206px; background:var(--pop); border:1px solid var(--line-2);
   border-radius:10px; padding:10px; box-shadow:var(--shadow); display:none}
 #cpop.open{display:block}
 #cpop .sv{position:relative; height:120px; border-radius:6px; cursor:crosshair; margin-bottom:9px;
@@ -224,7 +234,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
 /* toast */
 #toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px);
-  background:#1d2029; border:1px solid var(--line-2); color:var(--text); padding:10px 16px;
+  background:var(--pop); border:1px solid var(--line-2); color:var(--text); padding:10px 16px;
   border-radius:10px; font-size:13px; box-shadow:var(--shadow); opacity:0; pointer-events:none;
   transition:.2s; z-index:100}
 #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
@@ -283,6 +293,10 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
     </div>
     <div class="spacer"></div>
     <div class="tb-group">
+      <button class="btn sm icon" id="btnTheme" title="Toggle light / dark theme">
+        <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
       <button class="btn sm lblbtn" id="btnScreen" title="Capture your screen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
         <span class="lbl">Capture</span>
@@ -1011,6 +1025,19 @@ $('bgInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileRea
 $('btnScreen').onclick=captureScreen;
 $('btnDownload').onclick=$('btnDownload2').onclick=download;
 $('btnCopy').onclick=copyImg;
+
+// theme (UI chrome only — the exported image keeps its own background)
+function applyTheme(light){
+  document.body.classList.toggle('light',light);
+  $('iconMoon').style.display=light?'none':'';
+  $('iconSun').style.display=light?'':'none';
+  const m=document.querySelector('meta[name=theme-color]'); if(m) m.setAttribute('content',light?'#f5f6fa':'#0e0f14');
+  try{ localStorage.setItem('snappy_theme',light?'light':'dark'); }catch(e){}
+}
+$('btnTheme').onclick=()=>applyTheme(!document.body.classList.contains('light'));
+(function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
+  if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
+  applyTheme(t==='light'); })();
 
 // drag & drop
 ;['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault(); wrap.classList.add('dragover');}));
