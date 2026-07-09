@@ -1,0 +1,9 @@
+node_modules/
+package-lock.json
+# local render/test artifacts
+preview-ui.png
+export-sample.png
+sc-*.png
+dbg.mjs
+capture.mjs
+scenarios.mjs
