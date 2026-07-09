@@ -4,6 +4,11 @@ package-lock.json
 *.png
 !extension/icons/*.png
 !extension/store/*.png
+# PWA app icons (shipped)
+!icon-192.png
+!icon-512.png
+!icon-512-maskable.png
+!apple-touch-icon.png
 dbg.mjs
 capture.mjs
 scenarios.mjs

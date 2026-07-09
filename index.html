@@ -7,6 +7,12 @@
 <meta name="description" content="Snappy Frame turns plain screenshots into share-ready images: gorgeous backgrounds, patterns, padding, rounded corners, shadows, 3D tilt, window frames, social-media sizes and high-resolution export — all in your browser." />
 <meta name="theme-color" content="#0e0f14" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%236d5efc'/><rect x='24' y='30' width='52' height='40' rx='8' fill='none' stroke='white' stroke-width='7'/><circle cx='50' cy='50' r='9' fill='white'/></svg>" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Snappy Frame" />
 <script src="vendor/html-to-image.js"></script>
 <style>
 :root{
@@ -483,6 +489,18 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .sizechecks label{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); cursor:pointer}
 .progbar{height:6px; border-radius:6px; background:var(--panel-2); overflow:hidden; margin-top:10px}
 .progbar > i{display:block; height:100%; width:0; background:var(--accent); transition:width .2s}
+
+/* Install (PWA) snackbar */
+#installBar{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:250;
+  display:flex; align-items:center; gap:10px; max-width:calc(100vw - 24px);
+  padding:10px 12px 10px 14px; border-radius:12px; background:var(--pop);
+  border:1px solid var(--line-2); box-shadow:0 12px 34px rgba(0,0,0,.4); font-size:13px}
+#installBar .ib-ico{font-size:16px}
+#installBar #installMsg{color:var(--text)}
+#installBar .ib-x{background:none; border:0; color:var(--muted); font-size:13px; cursor:pointer; padding:4px; line-height:1}
+#installBar .ib-x:hover{color:var(--text)}
+@media (max-width:600px){ #installBar{bottom:calc(46vh + 12px); font-size:12px}
+  body.sheet-collapsed #installBar{bottom:56px} #installBar #installMsg{display:none} }
 </style>
 </head>
 <body>
@@ -920,15 +938,34 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
       <section class="sec collapsed" data-sec="anim">
         <button class="head"><span class="ico">🎬</span> Animated export <span class="chev">▾</span></button>
         <div class="body">
-          <p class="hint" style="margin-top:6px">A short looping clip for social — motion stops the scroll.</p>
-          <div class="optgrid" id="animGrid" style="margin-top:10px">
-            <button data-v="float" class="on">Float</button>
-            <button data-v="zoom">Zoom</button>
-            <button data-v="sway">Sway</button>
-            <button data-v="reveal">Reveal</button>
+          <p class="hint" style="margin-top:6px">A seamless loop for social — motion stops the scroll.</p>
+          <div class="field" style="margin-top:10px"><label>Card motion</label>
+            <div class="optgrid" id="animGrid">
+              <button data-v="float" class="on">Float</button>
+              <button data-v="zoom">Zoom</button>
+              <button data-v="sway">Sway</button>
+              <button data-v="reveal">Reveal</button>
+            </div>
           </div>
-          <button class="btn primary" id="btnAnim" style="width:100%;justify-content:center;margin-top:12px" disabled>Export video (WebM)</button>
-          <p class="hint" style="margin-top:8px">≈3-second loop. Uses your browser's video encoder (WebM, or MP4 on Safari).</p>
+          <div class="field"><label>Moving background</label>
+            <div class="seg" id="animBgSeg">
+              <button data-v="none">Still</button>
+              <button data-v="drift" class="on">Drift</button>
+              <button data-v="pulse">Pulse</button>
+            </div>
+          </div>
+          <div class="field"><label>Particles</label>
+            <div class="optgrid" id="animPartGrid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+              <button data-v="none">None</button>
+              <button data-v="bokeh" class="on">Bokeh</button>
+              <button data-v="stars">Stars</button>
+              <button data-v="confetti">Confetti</button>
+            </div>
+          </div>
+          <div class="field"><label>Length <span class="val" id="animDurVal">4s</span></label>
+            <input type="range" id="animDur" min="2" max="6" step="1" value="4"></div>
+          <button class="btn primary" id="btnAnim" style="width:100%;justify-content:center;margin-top:6px" disabled>Export video (WebM)</button>
+          <p class="hint" style="margin-top:8px">Perfectly looped. Uses your browser's video encoder (WebM, or MP4 on Safari). “Reveal” plays once.</p>
         </div>
       </section>
 
@@ -962,6 +999,28 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
         </div>
       </section>
     </aside>
+  </div>
+</div>
+
+<div id="installBar" hidden>
+  <span class="ib-ico">📲</span>
+  <span id="installMsg">Install Snappy Frame for a full-screen app that works offline.</span>
+  <button class="btn sm primary" id="installGo">Install</button>
+  <button class="ib-x" id="installX" title="Dismiss">✕</button>
+</div>
+
+<div id="iosHelp" class="modal">
+  <div class="modal-card" style="width:min(94vw,360px)">
+    <div class="modal-head"><h3>Add to Home Screen</h3><button class="modal-x" id="iosHelpX">✕</button></div>
+    <div class="modal-body" style="padding:16px 18px; font-size:13px; color:var(--muted); line-height:1.6">
+      To install Snappy Frame on your iPhone or iPad:
+      <ol style="margin:10px 0 0; padding-left:20px">
+        <li>Tap the <b>Share</b> button <span style="opacity:.7">(the square with an ↑)</span> in Safari's toolbar.</li>
+        <li>Scroll down and choose <b>Add to Home Screen</b>.</li>
+        <li>Tap <b>Add</b> — Snappy Frame appears on your home screen like a native app.</li>
+      </ol>
+    </div>
+    <div class="modal-foot"><button class="btn sm primary" id="iosHelpClose">Got it</button></div>
   </div>
 </div>
 
@@ -1075,7 +1134,7 @@ const state = {
   mode:'image', device:'none',
   codeText:'', codeLang:'auto', codeTheme:'dark', codeTitle:'', codeSize:14, codeLines:true,
   annotations:[], redactions:[], origSrc:null,
-  anim:'float',
+  anim:'float', animBg:'drift', animParticles:'bokeh', animDur:4,
 };
 
 const GRADIENTS = [
@@ -1106,7 +1165,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.5';
+const APP_VERSION='1.6';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1788,6 +1847,49 @@ async function exportBatch(){
 
 // ---- Animated export (WebM/MP4 loop) ----
 const ANIMS=[{k:'float',n:'Float'},{k:'zoom',n:'Zoom'},{k:'sway',n:'Sway'},{k:'reveal',n:'Reveal'}];
+// Rasterise the stage as a layer: 'full' | 'bg' (background+pattern only) | 'front' (card+overlays, transparent).
+async function rasterStage(mode,pr){
+  const pl=$('patternLayer'), tl=$('textLayer'), lg=$('logoLayer'), nl=$('noiseLayer');
+  const saved={bg:stage.style.background, persp:persp.style.display, pl:pl.style.display,
+    tl:tl.style.display, lg:lg.style.display, nl:nl.style.display, blur:bgBlurEl?bgBlurEl.style.display:null};
+  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; }
+  else if(mode==='front'){ stage.style.background='transparent'; if(bgBlurEl) bgBlurEl.style.display='none'; pl.style.display='none'; }
+  let url;
+  try{ url=await htmlToImage.toPng(stage,{pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:true}); }
+  finally{ stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
+    tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
+  const im=new Image(); await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=url;}); return im;
+}
+// Deterministic particle field. Vertical drift speed is an INTEGER so every particle
+// returns to its start at p=1 — the whole field loops seamlessly.
+function makeParticles(kind,W,H){
+  let s=0x9e37+ (kind.length*7); const rnd=()=>{ s|=0; s=(s+0x6D2B79F5)|0; let t=Math.imul(s^(s>>>15),1|s);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; };
+  const cnt = kind==='stars'?90 : kind==='confetti'?46 : 26;
+  const cols = kind==='confetti'?['#ff6a88','#6d5efc','#ffd166','#22d3ee','#43e97b','#ff9a3d']:['#ffffff'];
+  const arr=[];
+  for(let i=0;i<cnt;i++){ arr.push({ x:rnd(), y:rnd(),
+    r: kind==='bokeh'?(0.03+rnd()*0.08): kind==='confetti'?(0.008+rnd()*0.013): (0.0016+rnd()*0.0022),
+    spd: 1+Math.floor(rnd()*2), sway:0.006+rnd()*0.03, ph:rnd(), col:cols[(rnd()*cols.length)|0], tw:1+Math.floor(rnd()*3) }); }
+  return arr;
+}
+function drawParticles(g,W,H,p,kind,parts){
+  const mn=Math.min(W,H); g.save();
+  if(kind==='bokeh') g.globalCompositeOperation='lighter';
+  for(const pt of parts){
+    const y=((pt.y - p*pt.spd)%1+1)%1;
+    const x=((pt.x + Math.sin((p+pt.ph)*6.283185)*pt.sway)%1+1)%1;
+    const px=x*W, py=y*H, r=pt.r*mn;
+    if(kind==='bokeh'){ const gr=g.createRadialGradient(px,py,0,px,py,r);
+      gr.addColorStop(0,'rgba(255,255,255,0.14)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+      g.fillStyle=gr; g.beginPath(); g.arc(px,py,r,0,6.2832); g.fill(); }
+    else if(kind==='stars'){ const tw=0.35+0.65*(0.5+0.5*Math.sin((p*pt.tw+pt.ph)*6.283185));
+      g.fillStyle=`rgba(255,255,255,${tw.toFixed(3)})`; g.beginPath(); g.arc(px,py,Math.max(0.8,r),0,6.2832); g.fill(); }
+    else if(kind==='confetti'){ g.save(); g.translate(px,py); g.rotate((pt.ph+p*pt.spd)*6.283185);
+      g.globalAlpha=0.85; g.fillStyle=pt.col; g.fillRect(-r,-r*0.42,r*2,r*0.84); g.restore(); }
+  }
+  g.restore();
+}
 async function exportAnim(){
   if(!state.hasImage) return;
   if(!window.MediaRecorder){ toast('Video export not supported in this browser',true); return; }
@@ -1795,28 +1897,40 @@ async function exportAnim(){
   if(!mime){ toast('No supported video format in this browser',true); return; }
   const btn=$('btnAnim'); btn.disabled=true; toast('Rendering animation…');
   try{
-    const dataUrl=await htmlToImage.toPng(stage,{pixelRatio:Math.min(2,state.scale),width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:true});
-    const img=new Image(); await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=dataUrl;});
-    const W=img.width, H=img.height;
+    const pr=Math.min(2,state.scale);
+    const bgImg=await rasterStage('bg',pr);
+    const frontImg=await rasterStage('front',pr);
+    const W=bgImg.width, H=bgImg.height;
+    // backdrop colour for transparent backgrounds / reveal
+    const sc=document.createElement('canvas'); sc.width=1; sc.height=1; const scg=sc.getContext('2d');
+    scg.drawImage(bgImg,0,0,1,1); const cd=scg.getImageData(0,0,1,1).data;
+    const backfill = cd[3]<8 ? '#0e0f14' : `rgb(${cd[0]},${cd[1]},${cd[2]})`;
+    const parts = state.animParticles!=='none' ? makeParticles(state.animParticles,W,H) : null;
     const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
-    g.drawImage(img,0,0); const cor=g.getImageData(1,1,1,1).data, bg=`rgb(${cor[0]},${cor[1]},${cor[2]})`;
     const stream=c.captureStream(30);
     const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:12000000});
     const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
     const stopped=new Promise(r=>rec.onstop=r);
-    const kind=state.anim, FPS=30, total=90;   // 3s
+    const kind=state.anim, bgm=state.animBg, FPS=30, total=Math.max(60,Math.round((state.animDur||4)*FPS));
     rec.start();
     for(let f=0; f<total; f++){
-      const p=f/total, tau=p*Math.PI*2, loop=0.5-0.5*Math.cos(tau);
-      g.save(); g.clearRect(0,0,W,H);
-      if(kind==='reveal') { g.fillStyle=bg; g.fillRect(0,0,W,H); }
-      g.translate(W/2,H/2);
+      const p=f/total, tau=p*6.283185, loop=0.5-0.5*Math.cos(tau);
+      g.clearRect(0,0,W,H); g.fillStyle=backfill; g.fillRect(0,0,W,H);
+      // --- background layer (moves independently of the card) ---
+      g.save(); g.translate(W/2,H/2);
+      if(bgm==='drift'){ g.scale(1.07,1.07); g.translate(Math.sin(tau)*W*0.012, Math.cos(tau)*H*0.012); }
+      else if(bgm==='pulse'){ const s=1.0+loop*0.05; g.scale(s,s); }
+      g.drawImage(bgImg,-W/2,-H/2,W,H); g.restore();
+      // --- particles between background and card ---
+      if(parts) drawParticles(g,W,H,p,state.animParticles,parts);
+      // --- foreground card ---
+      g.save(); g.translate(W/2,H/2);
       if(kind==='float'){ g.translate(0,Math.sin(tau)*H*0.018); g.scale(1+loop*0.008,1+loop*0.008); }
       else if(kind==='zoom'){ const s=1+loop*0.09; g.scale(s,s); g.translate(Math.sin(tau)*W*0.01,0); }
       else if(kind==='sway'){ g.rotate(Math.sin(tau)*0.022); g.scale(1+loop*0.01,1+loop*0.01); }
-      else if(kind==='reveal'){ const rp=Math.min(1,p*1.5), e=1-Math.pow(1-rp,3), o=p>0.85?(1-(p-0.85)/0.15):1;
+      else if(kind==='reveal'){ const rp=Math.min(1,p*1.5), e=1-Math.pow(1-rp,3), o=p>0.86?(1-(p-0.86)/0.14):1;
         g.globalAlpha=Math.max(0,Math.min(1,e))*o; const s=1.07-0.07*e; g.translate(0,(1-e)*H*0.05); g.scale(s,s); }
-      g.drawImage(img,-W/2,-H/2,W,H); g.restore();
+      g.drawImage(frontImg,-W/2,-H/2,W,H); g.restore();
       await new Promise(r=>setTimeout(r,1000/FPS));
     }
     rec.stop(); await stopped;
@@ -2023,6 +2137,12 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6', items:[
+    '📲 Install Snappy Frame as an app — works offline (PWA), with an install prompt',
+    '🎬 Animated backgrounds — drifting / pulsing motion behind the card',
+    '✨ Particles — floating bokeh, twinkling stars or confetti in your video',
+    '♾️ Perfect looping — seamless loops built for social feeds; pick 2–6s length',
+  ]},
   {v:'1.5', items:[
     '🎬 Animated export — Float / Zoom / Sway / Reveal loops as WebM (MP4 on Safari)',
     '🎨 Match to screenshot — auto-generate a background from your image’s colours',
@@ -2141,6 +2261,30 @@ $('cropApply').onclick=()=>{
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
+
+// ---------- PWA: service worker + install prompt ----------
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+function isStandalone(){ return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true; }
+function isIOS(){ return /iP(hone|ad|od)/.test(navigator.platform||'') || (/Mac/.test(navigator.platform||'') && navigator.maxTouchPoints>1); }
+const INSTALL_DISMISS='snappy_install_dismissed';
+let deferredInstall=null;
+function showInstallBar(){ if(isStandalone()) return;
+  try{ if(localStorage.getItem(INSTALL_DISMISS)) return; }catch(e){}
+  $('installBar').hidden=false; }
+window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; showInstallBar(); });
+window.addEventListener('appinstalled',()=>{ deferredInstall=null; $('installBar').hidden=true;
+  try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} toast('Installed — find Snappy Frame on your home screen'); });
+// iOS never fires beforeinstallprompt, so offer the manual route (HTTPS only).
+if(isIOS() && !isStandalone() && location.protocol==='https:'){ setTimeout(showInstallBar,1200); }
+$('installGo').onclick=async()=>{
+  if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; $('installBar').hidden=true; }
+  else { $('iosHelp').classList.add('open'); }
+};
+$('installX').onclick=()=>{ $('installBar').hidden=true; try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} };
+$('iosHelpX').onclick=$('iosHelpClose').onclick=()=>$('iosHelp').classList.remove('open');
+$('iosHelp').addEventListener('click',e=>{ if(e.target===$('iosHelp')) $('iosHelp').classList.remove('open'); });
 
 // drag & drop
 ;['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault(); wrap.classList.add('dragover');}));
@@ -2395,6 +2539,11 @@ $('btnMatch').onclick=autoMatchBg;
 // animated / magic / batch
 $('animGrid').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.anim=b.dataset.v; $('animGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
+$('animBgSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.animBg=b.dataset.v; $('animBgSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
+$('animPartGrid').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.animParticles=b.dataset.v; $('animPartGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
+$('animDur').addEventListener('input',e=>{ state.animDur=+e.target.value; $('animDurVal').textContent=e.target.value+'s'; });
 $('btnAnim').onclick=exportAnim;
 $('btnMagic').onclick=magicResize;
 $('btnBatchAdd').onclick=()=>$('batchInput').click();
@@ -2508,6 +2657,9 @@ function syncUI(){
   $('codeSize').value=state.codeSize||14; $('codeSizeVal').textContent=(state.codeSize||14)+'px';
   $('codeTheme').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.codeTheme||'dark')));
   $('animGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.anim||'float')));
+  $('animBgSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.animBg||'drift')));
+  $('animPartGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.animParticles||'bokeh')));
+  $('animDur').value=state.animDur||4; $('animDurVal').textContent=(state.animDur||4)+'s';
 }
 function tiltKey(){ for(const k in TILT){ const t=TILT[k];
   if(t[0]===state.rx&&t[1]===state.ry&&t[2]===state.rz) return k; } return null; }
