@@ -76,6 +76,9 @@ input,select{font-family:inherit}
 #bar .title{position:absolute; left:0; right:0; text-align:center; font-size:12px;
   pointer-events:none; opacity:.85}
 #shot{display:block; object-fit:contain}
+/* fill (crop) mode: image covers the whole card area below any frame bar */
+#card.fill{display:flex}
+#shot.fill{flex:1 1 auto; min-height:0; width:100%; height:auto; object-fit:cover}
 
 /* Empty state */
 .empty{position:absolute; inset:0; display:grid; place-items:center; pointer-events:none}
@@ -331,6 +334,19 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
               <option value="1.91:1">OG image · 1.91:1</option>
             </select>
           </div>
+          <div class="field"><label>Image fit</label>
+            <div class="seg" id="fitMode">
+              <button data-v="fit" class="on">Fit</button>
+              <button data-v="fill">Fill (crop)</button>
+            </div>
+          </div>
+          <div id="fillCtl" hidden>
+            <div class="field"><label>Focal X <span class="val" id="posXVal">50%</span></label>
+              <input type="range" id="posX" min="0" max="100" value="50"></div>
+            <div class="field"><label>Focal Y <span class="val" id="posYVal">50%</span></label>
+              <input type="range" id="posY" min="0" max="100" value="50"></div>
+            <p class="hint" id="fillHint" style="margin-top:-2px">Crops the image to cover a fixed aspect ratio.</p>
+          </div>
           <div class="field"><label>Size <span class="val" id="sizeVal">100%</span></label>
             <input type="range" id="size" min="40" max="100" value="100"></div>
           <div class="field"><label>Padding <span class="val" id="padVal">64px</span></label>
@@ -434,7 +450,7 @@ const state = {
   bgType:'gradient', gradAngle:120, gradC1:'#6d5efc', gradC2:'#c05bff',
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   frame:'none', frameTitle:'',
-  aspect:'auto', size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   bw:0, bc:'#ffffff',
@@ -524,12 +540,29 @@ function layout(){
   if(!state.hasImage){ persp.style.transform='translate(-50%,-50%)';
     stage.style.width='420px'; stage.style.height='300px'; return; }
 
-  // Normalise the screenshot's longest side so output stays a sane resolution.
-  const base=Math.min(1000, Math.max(state.imgW,state.imgH));
-  const k=base/Math.max(state.imgW,state.imgH);
-  shot.style.width=(state.imgW*k)+'px'; shot.style.height='auto';
+  const pad=state.pad;
+  const fixed=state.aspect!=='auto';
+  const fill=state.fill && fixed;                 // fill only crops on a fixed canvas
+  const [FW,FH]=fixed ? (FIXED_SIZES[state.aspect]||[1280,720]) : [0,0];
 
-  const rot=rotCss(), pad=state.pad;
+  if(fill){
+    // Card becomes the fixed padded rectangle; the image *covers* it (cropped),
+    // aimed by the focal point. Any frame bar sits on top; the image fills below.
+    const cw=Math.max(60,FW-2*pad), ch=Math.max(60,FH-2*pad);
+    card.classList.add('fill'); shot.classList.add('fill');
+    card.style.width=cw+'px'; card.style.height=ch+'px';
+    shot.style.width='100%'; shot.style.height='auto';
+    shot.style.objectPosition=`${state.posX}% ${state.posY}%`;
+  } else {
+    // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
+    card.classList.remove('fill'); shot.classList.remove('fill');
+    card.style.width=''; card.style.height=''; shot.style.objectPosition='';
+    const base=Math.min(1000, Math.max(state.imgW,state.imgH));
+    const k=base/Math.max(state.imgW,state.imgH);
+    shot.style.width=(state.imgW*k)+'px'; shot.style.height='auto';
+  }
+
+  const rot=rotCss();
   // Measure in true (unscaled) px. #fit has a transform transition, so kill it
   // first — otherwise setting transform:none animates and we'd measure mid-zoom.
   const savedTrans=fit.style.transition, savedFit=fit.style.transform;
@@ -543,13 +576,12 @@ function layout(){
   const sizeF=state.size/100;
   let vw=vis.width, vh=vis.height, scale=sizeF;
 
-  if(state.aspect==='auto'){
+  if(!fixed){
     stage.style.width=Math.ceil(vw*scale+2*pad)+'px';
     stage.style.height=Math.ceil(vh*scale+2*pad)+'px';
   } else {
-    const [W,H]=FIXED_SIZES[state.aspect]||[1280,720];
-    stage.style.width=W+'px'; stage.style.height=H+'px';
-    scale=Math.min(sizeF, (W-2*pad)/vw, (H-2*pad)/vh);   // shrink card to fit canvas
+    stage.style.width=FW+'px'; stage.style.height=FH+'px';
+    scale=Math.min(sizeF, (FW-2*pad)/vw, (FH-2*pad)/vh);   // shrink card to fit canvas
   }
   dx*=scale; dy*=scale;
 
@@ -791,9 +823,22 @@ $('frameType').onchange=e=>{ state.frame=e.target.value;
 $('frameTitle').oninput=e=>{ state.frameTitle=e.target.value; render(); };
 
 // aspect
-$('aspect').onchange=e=>{ state.aspect=e.target.value; render(); };
+$('aspect').onchange=e=>{ state.aspect=e.target.value; updateFillUI(); render(); };
 // noise
 $('noise').onchange=e=>{ state.noise=e.target.checked; render(); };
+// fit / fill
+$('fitMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.fill=b.dataset.v==='fill';
+  $('fitMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  updateFillUI(); render(); });
+bindRange('posX','posX',v=>v+'%');
+bindRange('posY','posY',v=>v+'%');
+function updateFillUI(){
+  $('fillCtl').hidden=!state.fill;
+  $('fillHint').textContent = state.aspect==='auto'
+    ? 'Pick a fixed aspect ratio above — Fill has no effect on Auto.'
+    : 'Crops the image to cover the canvas; drag the focal point to aim it.';
+}
 
 // shadow presets
 const SH={ none:[0,0,0], sm:[24,8,18], md:[40,24,35], lg:[70,40,45], glow:[50,0,45] };
@@ -836,7 +881,7 @@ $('scale').addEventListener('click',e=>{ const b=e.target.closest('button'); if(
 // reset
 $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
-    meshPreset:0,solid:'#1e2233',bgBlur:0,frame:'none',frameTitle:'',aspect:'auto',size:100,pad:64,rad:14,noise:false,
+    meshPreset:0,solid:'#1e2233',bgBlur:0,frame:'none',frameTitle:'',aspect:'auto',fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff'});
   syncUI(); render(); toast('Styles reset');
 };
@@ -855,6 +900,10 @@ function syncUI(){
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
   $('frameType').value=state.frame; $('frameTitleField').hidden=true; $('frameTitle').value='';
   $('aspect').value=state.aspect;
+  $('posX').value=state.posX; $('posXVal').textContent=state.posX+'%';
+  $('posY').value=state.posY; $('posYVal').textContent=state.posY+'%';
+  $('fitMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',(x.dataset.v==='fill')===state.fill));
+  updateFillUI();
   $('bgType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.bgType));
   document.querySelectorAll('.bg-panel').forEach(p=>p.hidden=p.dataset.for!==state.bgType);
   gs.querySelectorAll('button').forEach((x,j)=>x.classList.toggle('on',j===state.gradPreset));
