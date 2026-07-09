@@ -27,7 +27,9 @@ exports.handler = async (event) => {
   });
 
   try {
-    const key = process.env.SCREENSHOT_API_KEY;
+    // A user's own key (sent from their browser) wins over the site's env key.
+    const hdr = event.headers || {};
+    const key = hdr["x-shot-key"] || hdr["X-Shot-Key"] || process.env.SCREENSHOT_API_KEY;
     if (key) {
       const api =
         "https://api.screenshotone.com/take?access_key=" + encodeURIComponent(key) +
@@ -36,12 +38,11 @@ exports.handler = async (event) => {
         "&format=jpg&image_quality=82&full_page=false" +
         "&block_ads=true&block_cookie_banners=true&block_trackers=true&cache=true";
       const r = await fetch(api);
-      if (!r.ok) {
-        const detail = (await r.text()).slice(0, 200);
-        return json({ error: "provider " + r.status, detail }, 502);
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        return json({ dataUrl: "data:image/jpeg;base64," + buf.toString("base64"), generating: false });
       }
-      const buf = Buffer.from(await r.arrayBuffer());
-      return json({ dataUrl: "data:image/jpeg;base64," + buf.toString("base64"), generating: false });
+      // Key failed (bad key / quota) — fall through to the free renderer below.
     }
 
     // Free fallback: mShots serves a small placeholder while rendering.

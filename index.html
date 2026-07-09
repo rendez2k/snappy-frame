@@ -359,6 +359,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
             <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
             <button class="btn sm" id="btnGrab">Grab</button>
           </div>
+          <button class="feedback" id="btnKey" style="background:none;border:0;cursor:pointer;margin-top:6px"></button>
           <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
@@ -1131,27 +1132,53 @@ document.querySelectorAll('.sec > .head').forEach(h=>{
 $('btnUpload').onclick=$('btnUpload2').onclick=()=>$('fileInput').click();
 $('fileInput').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; };
 
-// Grab a screenshot of a public webpage by URL (via the Netlify function).
+// Grab a screenshot of a public webpage by URL.
+const SHOT_KEY='snappy_shot_key';
+function getShotKey(){ try{ return (localStorage.getItem(SHOT_KEY)||'').trim(); }catch(e){ return ''; } }
+function updateKeyUI(){ $('btnKey').textContent = getShotKey()
+  ? '✓ Using your screenshot API key · change'
+  : '⚙ Add a screenshot API key for reliable grabs'; }
+$('btnKey').onclick=()=>{
+  const v=prompt('Paste your ScreenshotOne access key for crisp, reliable page grabs.\nStored only in this browser; leave blank to remove.', getShotKey());
+  if(v===null) return; const k=v.trim();
+  try{ if(k) localStorage.setItem(SHOT_KEY,k); else localStorage.removeItem(SHOT_KEY); }catch(e){}
+  updateKeyUI(); toast(k?'API key saved':'API key removed');
+};
+const blobToDataURL=blob=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(blob); });
 async function grabUrl(){
   let url=$('urlInput').value.trim(); if(!url) return;
   if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  const key=getShotKey();
   const btn=$('btnGrab'), label=btn.textContent; btn.disabled=true; btn.textContent='…';
+  const done=()=>{ btn.disabled=false; btn.textContent=label; };
   toast('Grabbing the page — this can take a few seconds…');
+  // 1) With the user's own key, call ScreenshotOne directly (works even with no function).
+  if(key){
+    try{
+      const api='https://api.screenshotone.com/take?access_key='+encodeURIComponent(key)+
+        '&url='+encodeURIComponent(url)+'&viewport_width=1280&format=jpg&image_quality=82'+
+        '&block_ads=true&block_cookie_banners=true&cache=true';
+      const r=await fetch(api);
+      if(r.ok){ loadImage(await blobToDataURL(await r.blob())); done(); return; }
+    }catch(e){ /* CORS/network — fall through to the function */ }
+  }
+  // 2) Fall back to the Netlify function (its own key or free mShots); forward the user key too.
   try{
-    const res=await fetch('/.netlify/functions/screenshot?w=1280&url='+encodeURIComponent(url));
+    const res=await fetch('/.netlify/functions/screenshot?w=1280&url='+encodeURIComponent(url), key?{headers:{'x-shot-key':key}}:{});
     if(res.status===404) throw new Error('nofunc');
     const j=await res.json().catch(()=>({}));
     if(!res.ok || !j.dataUrl) throw new Error(j.error||('http '+res.status));
     loadImage(j.dataUrl);
     if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
   }catch(e){ console.error(e);
-    if(e.message==='nofunc') toast('Page-grab needs the Netlify function — deploy from the git repo',true);
-    else if(e.message==='Failed to fetch') toast('Page-grab only works on the deployed site',true);
-    else toast('Couldn’t render that page — try again in a moment',true); }
-  btn.disabled=false; btn.textContent=label;
+    if(e.message==='nofunc') toast(key?'Your key didn’t work and no function is deployed':'Page-grab needs the Netlify function — or add your own API key',true);
+    else if(e.message==='Failed to fetch') toast('Page-grab only works on the deployed site (or add your own API key)',true);
+    else toast('Couldn’t render that page — check your key or try again',true); }
+  done();
 }
 $('btnGrab').onclick=grabUrl;
 $('urlInput').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl(); });
+updateKeyUI();
 $('btnBg').onclick=()=>$('bgInput').click();
 $('bgInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();
   r.onload=ev=>{ state.bgImage=ev.target.result; render(); }; r.readAsDataURL(f);} e.target.value=''; };
