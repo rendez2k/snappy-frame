@@ -357,6 +357,8 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
             <button data-v="waves">Waves</button>
             <button data-v="rings">Rings</button>
             <button data-v="cross">Cross</button>
+            <button data-v="diag">Diagonal</button>
+            <button data-v="checks">Checks</button>
           </div>
           <div class="field"><label>Intensity <span class="val" id="patOpacityVal">18%</span></label>
             <input type="range" id="patOpacity" min="0" max="60" value="18"></div>
@@ -550,6 +552,12 @@ const GRADIENTS = [
   ['#f6d365','#fda085'],['#4facfe','#00f2fe'],['#fa709a','#fee140'],
   ['#30cfd0','#330867'],['#a8edea','#fed6e3'],['#5ee7df','#b490ca'],
   ['#f093fb','#f5576c'],['#243949','#517fa4'],['#ee9ca7','#ffdde1'],
+  ['#8e2de2','#4a00e0'],['#00c6ff','#0072ff'],['#f83600','#f9d423'],
+  ['#11998e','#38ef7d'],['#ee0979','#ff6a00'],['#c33764','#1d2671'],
+  ['#2193b0','#6dd5ed'],['#cc2b5e','#753a88'],['#dd5e89','#f7bb97'],
+  ['#1f4037','#99f2c8'],['#141e30','#243b55'],['#ff512f','#dd2476'],
+  ['#16bffd','#cb3066'],['#3a7bd5','#00d2ff'],['#dce35b','#45b649'],
+  ['#e65c00','#f9d423'],['#0f0c29','#302b63'],['#ffe259','#ffa751'],
 ];
 const MESHES = [
   'radial-gradient(at 20% 20%,#7b5cff 0,transparent 55%),radial-gradient(at 80% 15%,#ff6ec4 0,transparent 50%),radial-gradient(at 60% 80%,#22d3ee 0,transparent 55%),linear-gradient(120deg,#3a1c71,#2b1055)',
@@ -560,6 +568,12 @@ const MESHES = [
   'radial-gradient(at 22% 20%,#43e97b 0,transparent 50%),radial-gradient(at 80% 30%,#38f9d7 0,transparent 50%),radial-gradient(at 55% 85%,#0f9b8e 0,transparent 55%),linear-gradient(120deg,#06251f,#031714)',
   'radial-gradient(at 20% 20%,#c471f5 0,transparent 50%),radial-gradient(at 80% 20%,#fa71cd 0,transparent 50%),radial-gradient(at 50% 85%,#5b6cff 0,transparent 55%),linear-gradient(120deg,#221033,#120826)',
   'radial-gradient(at 25% 25%,#e0e0e0 0,transparent 50%),radial-gradient(at 78% 20%,#b8c6db 0,transparent 50%),radial-gradient(at 55% 85%,#9face6 0,transparent 55%),linear-gradient(120deg,#2a2f3a,#171a22)',
+  'radial-gradient(at 18% 18%,#ff8a00 0,transparent 50%),radial-gradient(at 82% 24%,#e52e71 0,transparent 50%),radial-gradient(at 50% 88%,#7b2ff7 0,transparent 55%),linear-gradient(120deg,#2a0a2e,#150618)',
+  'radial-gradient(at 20% 22%,#13f1fc 0,transparent 50%),radial-gradient(at 80% 18%,#0470dc 0,transparent 50%),radial-gradient(at 55% 85%,#5c33cc 0,transparent 55%),linear-gradient(120deg,#04122e,#02091d)',
+  'radial-gradient(at 22% 20%,#f9f047 0,transparent 50%),radial-gradient(at 78% 26%,#0fd850 0,transparent 50%),radial-gradient(at 55% 86%,#00b09b 0,transparent 55%),linear-gradient(120deg,#062617,#03170f)',
+  'radial-gradient(at 20% 20%,#ff5f6d 0,transparent 50%),radial-gradient(at 80% 22%,#ffc371 0,transparent 50%),radial-gradient(at 52% 85%,#ff5f6d 0,transparent 55%),linear-gradient(120deg,#3a1418,#1c0a0d)',
+  'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
+  'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
 
 // ---------- Helpers ----------
@@ -712,7 +726,13 @@ function applyPattern(){
       size='auto'; break;
     case 'waves': img=`url("${PAT_WAVE}")`; size=(s*2)+'px '+s+'px'; break;
     case 'cross': img=`url("${PAT_CROSS}")`; break;
+    case 'diag':
+      img=`repeating-linear-gradient(45deg, #fff 0 1.4px, transparent 1.4px ${s}px)`; size='auto'; break;
+    case 'checks': { const h=s/2;
+      img='linear-gradient(45deg,#fff 25%,transparent 25% 75%,#fff 75%),linear-gradient(45deg,#fff 25%,transparent 25% 75%,#fff 75%)';
+      pl.style.backgroundPosition=`0 0, ${h}px ${h}px`; size=s+'px '+s+'px'; break; }
   }
+  if(state.pattern!=='checks') pl.style.backgroundPosition='center';
   pl.style.backgroundImage=img;
   pl.style.backgroundSize=size;
   pl.style.opacity=(state.patOpacity/100).toFixed(2);
@@ -1098,6 +1118,24 @@ const BUILTIN_PRESETS=[
   {n:'Emerald',   s:{bgType:'gradient',gradPreset:2,  pattern:'rings', patOpacity:15, frame:'stack-light', shadow:'md', tilt:'right', rad:14,pad:72}},
   {n:'Candy',     s:{bgType:'gradient',gradPreset:9,  pattern:'none', frame:'none',          shadow:'glow', tilt:'up',  rad:18,pad:80}},
   {n:'Slate',     s:{bgType:'mesh',    meshPreset:7,  pattern:'dots', patOpacity:14, frame:'windows-light', shadow:'md', tilt:'flat', rad:8,pad:72}},
+  {n:'Ember',     s:{bgType:'gradient',gradPreset:14, pattern:'none', frame:'macos-dark',    shadow:'lg',  tilt:'iso',  rad:12,pad:72}},
+  {n:'Aqua',      s:{bgType:'gradient',gradPreset:13, pattern:'diag', patOpacity:14, frame:'browser-light', shadow:'md', tilt:'flat', rad:12,pad:80}},
+  {n:'Indigo',    s:{bgType:'gradient',gradPreset:27, pattern:'none', frame:'arc',           shadow:'md',  tilt:'left', rad:16,pad:80}},
+  {n:'Lagoon',    s:{bgType:'gradient',gradPreset:24, pattern:'dots', patOpacity:16, frame:'macos-subtle', shadow:'lg', tilt:'flat', rad:12,pad:72}},
+  {n:'Rose gold', s:{bgType:'gradient',gradPreset:20, pattern:'none', frame:'stack-light',   shadow:'md',  tilt:'right',rad:14,pad:80}},
+  {n:'Forest',    s:{bgType:'gradient',gradPreset:21, pattern:'checks', patOpacity:10, frame:'browser-dark', shadow:'lg', tilt:'flat', rad:10,pad:72}},
+  {n:'Crimson',   s:{bgType:'gradient',gradPreset:23, pattern:'none', frame:'macos-dark',    shadow:'glow',tilt:'up',   rad:16,pad:80}},
+  {n:'Mint',      s:{bgType:'gradient',gradPreset:25, pattern:'diag', patOpacity:12, frame:'none',    shadow:'md',  tilt:'flat', rad:16,pad:72}},
+  {n:'Amber',     s:{bgType:'gradient',gradPreset:29, pattern:'none', frame:'windows-light', shadow:'md', tilt:'flat', rad:8,pad:72}},
+  {n:'Nebula',    s:{bgType:'mesh',    meshPreset:8,  pattern:'none', frame:'macos-dark',    shadow:'lg',  tilt:'iso',  rad:12,pad:72}},
+  {n:'Cyber',     s:{bgType:'mesh',    meshPreset:9,  pattern:'grid', patOpacity:14, frame:'browser-dark', shadow:'lg', tilt:'flat', rad:10,pad:64}},
+  {n:'Aurora',    s:{bgType:'mesh',    meshPreset:10, pattern:'none', frame:'arc',           shadow:'md',  tilt:'left', rad:16,pad:80}},
+  {n:'Coral',     s:{bgType:'mesh',    meshPreset:11, pattern:'dots', patOpacity:18, frame:'none',   shadow:'md',  tilt:'flat', rad:16,pad:72}},
+  {n:'Lilac',     s:{bgType:'mesh',    meshPreset:12, pattern:'none', frame:'macos-subtle',  shadow:'lg',  tilt:'flat', rad:12,pad:76}},
+  {n:'Peachy',    s:{bgType:'mesh',    meshPreset:13, pattern:'none', frame:'stack-light',   shadow:'md',  tilt:'right',rad:14,pad:80}},
+  {n:'Blueprint', s:{bgType:'solid',   solid:'#0d1b3d', pattern:'grid', patOpacity:22, frame:'none', shadow:'lg', tilt:'flat', rad:10,pad:72}},
+  {n:'Paper',     s:{bgType:'solid',   solid:'#e9e6df', pattern:'cross', patOpacity:20, frame:'arc', shadow:'md', tilt:'flat', rad:12,pad:72}},
+  {n:'Noir',      s:{bgType:'solid',   solid:'#0b0c11', pattern:'diag', patOpacity:10, frame:'macos-dark', shadow:'lg', tilt:'flat', rad:12,pad:72}},
 ];
 function presetBg(s){
   if(s.bgType==='mesh')  return MESHES[s.meshPreset||0];
