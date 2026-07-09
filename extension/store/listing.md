@@ -43,14 +43,10 @@ Copy-paste these into the Web Store Developer Dashboard when you submit
 
 ## Support (Web Store "Support" tab)
 
-- **Support URL**: `https://github.com/rendez2k/snappy/issues/new/choose`
-  *(make the repo public first, or users will hit a 404 — see note below)*
+- **Support URL**: `https://github.com/rendez2k/snappy-frame/issues/new/choose`
 - **Support email**: your verified publisher contact email.
 
-> ⚠️ GitHub Issues on a **private** repo are only visible to collaborators, so a
-> public "report a bug" link needs the repo to be **public** (GitHub → repo →
-> Settings → General → Change visibility). Alternatively keep it private and use
-> a form service (e.g. Tally/Google Forms) as the Support URL.
+The repo is public, so anyone can file a bug report at that URL.
 
 ## Privacy
 

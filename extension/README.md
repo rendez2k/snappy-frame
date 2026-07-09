@@ -36,6 +36,6 @@ the Snappy Frame page you already have open.
 
 ## Report a bug
 
-Open an issue: <https://github.com/rendez2k/snappy/issues/new/choose>
+Open an issue: <https://github.com/rendez2k/snappy-frame/issues/new/choose>
 (the app also has a "Tell us on GitHub" link in the Export panel).
 
