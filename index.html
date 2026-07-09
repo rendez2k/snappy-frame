@@ -37,16 +37,19 @@ button{font-family:inherit; color:inherit; cursor:pointer}
 input,select{font-family:inherit}
 
 /* ---------- Layout ---------- */
-.app{display:grid; grid-template-rows:auto 1fr; height:100%}
+.app{display:grid; grid-template-rows:auto minmax(0,1fr); height:100%}
 .topbar{
   display:flex; align-items:center; gap:14px; padding:10px 16px;
   border-bottom:1px solid var(--line); background:var(--panel); z-index:10;
 }
-.brand{display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:-.01em; line-height:1}
-.brand .logo{width:26px; height:26px; border-radius:7px;
-  background:linear-gradient(135deg,var(--accent),#c05bff); display:grid; place-items:center}
-.brand .logo svg{width:16px; height:16px}
-.brand small{color:var(--muted-2); font-weight:500; margin-left:2px}
+.brand{display:flex; align-items:center; gap:9px; line-height:1}
+.brand .logo{width:26px; height:26px; border-radius:7px; flex:0 0 auto;
+  background:linear-gradient(135deg,var(--accent),#c05bff); display:flex; align-items:center; justify-content:center}
+.brand .logo svg{width:26px; height:26px; display:block}
+.brand .wordmark{font-weight:700; letter-spacing:-.01em; font-size:16px; line-height:1}
+.brand .ver{font-size:10px; font-weight:600; color:var(--muted); background:var(--panel-2);
+  border:1px solid var(--line-2); border-radius:20px; padding:2px 7px; line-height:1}
+.brand small{color:var(--muted-2); font-weight:500; line-height:1}
 .spacer{flex:1}
 .tb-group{display:flex; align-items:center; gap:8px}
 
@@ -61,9 +64,10 @@ input,select{font-family:inherit}
 /* Compact top bar so the Export button never clips on phones */
 @media (max-width:600px){
   .topbar{gap:8px; padding:9px 10px}
-  .brand small{display:none}
-  .brand{font-size:14px; gap:7px}
+  .brand small, .brand .ver{display:none}
+  .brand{gap:7px}
   .brand .logo{width:24px; height:24px}
+  .brand .logo svg{width:24px; height:24px}
   .tb-group{gap:6px}
   #btnScreen .lbl, #btnUpload .lbl{display:none}
   .btn.sm{padding:7px 9px}
@@ -76,9 +80,9 @@ input,select{font-family:inherit}
     linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%),
     linear-gradient(45deg,var(--check-a) 25%,var(--check-b) 25%,var(--check-b) 75%,var(--check-a) 75%);
   background-size:24px 24px; background-position:0 0,12px 12px;
-  display:grid; place-items:center; padding:28px;
+  display:grid; place-items:start center; padding:28px;
 }
-#fit{transition:transform .12s ease}
+#fit{transition:transform .12s ease; transform-origin:top center}
 #stage{
   position:relative; overflow:hidden; background:#222;
 }
@@ -112,6 +116,11 @@ input,select{font-family:inherit}
 #card.shortboard{border:12px solid #16171d}
 #card.arc #shot,#card.eclipse #shot,#card.emotion #shot,#card.ruler #shot{border-radius:7px}
 #shot{display:block; object-fit:contain}
+/* text & logo overlays (sit on the whole export canvas, above everything) */
+#logoLayer{position:absolute; z-index:6; display:none; pointer-events:none; height:auto}
+#textLayer{position:absolute; z-index:6; display:none; pointer-events:none; white-space:pre;
+  font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:-.01em;
+  text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
 /* fill (crop) mode: image covers the whole card area below any frame bar */
 #card.fill{display:flex}
 #shot.fill{flex:1 1 auto; min-height:0; width:100%; height:auto; object-fit:cover}
@@ -288,8 +297,10 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <!-- Top bar -->
   <div class="topbar">
     <div class="brand">
-      <span class="logo"><svg viewBox="0 0 100 100"><rect x="20" y="28" width="60" height="44" rx="9" fill="none" stroke="white" stroke-width="8"/><circle cx="50" cy="50" r="11" fill="white"/></svg></span>
-      Snappy Frame <small>screenshot beautifier</small>
+      <span class="logo"><svg viewBox="0 0 100 100"><rect x="26" y="33" width="48" height="34" rx="8" fill="none" stroke="#fff" stroke-width="8"/><circle cx="50" cy="50" r="9" fill="#fff"/></svg></span>
+      <span class="wordmark">Snappy Frame</span>
+      <span class="ver" id="appVer"></span>
+      <small>screenshot beautifier</small>
     </div>
     <div class="spacer"></div>
     <div class="tb-group">
@@ -315,6 +326,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
     </div>
     <input type="file" id="fileInput" class="file-hidden" accept="image/*" />
     <input type="file" id="bgInput" class="file-hidden" accept="image/*" />
+    <input type="file" id="logoInput" class="file-hidden" accept="image/*" />
   </div>
 
   <div class="main">
@@ -330,6 +342,8 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
             </div>
           </div>
           <div id="noiseLayer"></div>
+          <img id="logoLayer" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+          <div id="textLayer"></div>
         </div>
       </div>
       <div class="empty" id="empty">
@@ -350,7 +364,8 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
         <div class="body">
           <div class="presets" id="presetGrid"></div>
           <div class="divider"></div>
-          <button class="btn sm" id="btnSavePreset" style="width:100%;justify-content:center">＋ Save current style</button>
+          <button class="btn sm" id="btnSavePreset" style="width:100%;justify-content:center">＋ Save current setup</button>
+          <p class="hint" style="margin-top:6px">Saves every style plus your text &amp; logo, so you can reload it any time.</p>
           <div id="userPresets" style="display:grid;gap:6px;margin-top:8px"></div>
         </div>
       </section>
@@ -529,6 +544,52 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
         </div>
       </section>
 
+      <!-- Text & logo -->
+      <section class="sec collapsed" data-sec="overlay">
+        <button class="head"><span class="ico">🔤</span> Text &amp; logo <span class="chev">▾</span></button>
+        <div class="body">
+          <div class="field"><label>Text</label>
+            <input class="txt" id="textVal" placeholder="Caption, @handle, URL…" value=""></div>
+          <div class="field"><label>Font</label>
+            <select class="sel" id="textFont">
+              <option value="sans">Sans · Inter</option>
+              <option value="serif">Serif · Georgia</option>
+              <option value="mono">Monospace</option>
+              <option value="rounded">Rounded · Trebuchet</option>
+              <option value="condensed">Condensed</option>
+              <option value="display">Display · Impact</option>
+            </select>
+          </div>
+          <div class="row2">
+            <div class="color"><button class="cswatch" id="textColor" style="background:#ffffff"></button><input type="text" id="textColort" value="#FFFFFF"></div>
+            <label class="toggle" style="margin-top:0"><input type="checkbox" id="textBold" checked> <span>Bold</span></label>
+          </div>
+          <div class="field"><label>Text size <span class="val" id="textSizeVal">28px</span></label>
+            <input type="range" id="textSize" min="12" max="90" value="28"></div>
+          <div class="field"><label>Text position</label>
+            <div class="posgrid" id="textPosGrid">
+              <button data-p="tl"></button><button data-p="tc"></button><button data-p="tr"></button>
+              <button data-p="ml"></button><button data-p="mc"></button><button data-p="mr"></button>
+              <button data-p="bl"></button><button data-p="bc" class="on"></button><button data-p="br"></button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <button class="btn sm" id="btnLogo" style="width:100%;justify-content:center">Upload logo / PNG…</button>
+          <button class="btn sm" id="btnLogoRemove" style="width:100%;justify-content:center;margin-top:6px;display:none">Remove logo</button>
+          <div class="field" style="margin-top:12px"><label>Logo size <span class="val" id="logoSizeVal">16%</span></label>
+            <input type="range" id="logoSize" min="4" max="60" value="16"></div>
+          <div class="field"><label>Logo opacity <span class="val" id="logoOpacityVal">100%</span></label>
+            <input type="range" id="logoOpacity" min="10" max="100" value="100"></div>
+          <div class="field"><label>Logo position</label>
+            <div class="posgrid" id="logoPosGrid">
+              <button data-p="tl"></button><button data-p="tc"></button><button data-p="tr"></button>
+              <button data-p="ml"></button><button data-p="mc"></button><button data-p="mr"></button>
+              <button data-p="bl"></button><button data-p="bc"></button><button data-p="br" class="on"></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Shadow -->
       <section class="sec" data-sec="shadow">
         <button class="head"><span class="ico">🌑</span> Shadow <span class="chev">▾</span></button>
@@ -631,6 +692,8 @@ const state = {
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'',
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
+  textVal:'', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
+  logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   bw:0, bc:'#ffffff',
@@ -665,6 +728,16 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
+const APP_VERSION='1.2';
+const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const FONTS={
+  sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
+  serif:"Georgia,'Times New Roman',Times,serif",
+  mono:"ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace",
+  rounded:"'Trebuchet MS','Segoe UI',system-ui,sans-serif",
+  condensed:"'Arial Narrow','Helvetica Neue',Arial,sans-serif",
+  display:"Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif"
+};
 
 // ---------- Helpers ----------
 let toastT;
@@ -719,10 +792,39 @@ function render(){
   // background pattern overlay
   applyPattern();
 
+  // text & logo overlays
+  const tl=$('textLayer'), tv=(state.textVal||'').trim();
+  if(tv){ tl.style.display='block'; tl.textContent=state.textVal; tl.style.color=state.textColor;
+    tl.style.fontSize=state.textSize+'px'; tl.style.fontWeight=state.textBold?'700':'500';
+    tl.style.fontFamily=FONTS[state.textFont]||FONTS.sans; }
+  else tl.style.display='none';
+  const lg=$('logoLayer');
+  if(state.logoSrc){ lg.style.display='block'; lg.src=state.logoSrc;
+    lg.style.width=state.logoSize+'%'; lg.style.opacity=(state.logoOpacity/100).toFixed(2); }
+  else { lg.style.display='none'; lg.src=BLANK_PX; }  // blank src so export never fetches the page URL
+
   // layout (sizes stage, positions & tilts the card)
   layout();
+  placeOverlays();
   scheduleFit();
   updateDimHint();
+}
+
+// Anchor an overlay to one of 9 canvas positions with a proportional margin.
+function placeOverlay(el,pos,margin){
+  const v=pos[0], h=pos[1];
+  el.style.left=el.style.right=el.style.top=el.style.bottom='auto';
+  let tx='0', ty='0';
+  if(h==='l') el.style.left=margin+'px'; else if(h==='r') el.style.right=margin+'px'; else { el.style.left='50%'; tx='-50%'; }
+  if(v==='t') el.style.top=margin+'px'; else if(v==='b') el.style.bottom=margin+'px'; else { el.style.top='50%'; ty='-50%'; }
+  el.style.transform=(tx!=='0'||ty!=='0')?`translate(${tx},${ty})`:'none';
+  if(el.id==='textLayer' && h==='c') el.style.textAlign='center';
+  else if(el.id==='textLayer') el.style.textAlign=(h==='r')?'right':'left';
+}
+function placeOverlays(){
+  const m=Math.round(Math.min(stage.offsetWidth,stage.offsetHeight)*0.045)+6;
+  placeOverlay($('textLayer'),state.textPos,m);
+  placeOverlay($('logoLayer'),state.logoPos,m);
 }
 
 const FIXED_SIZES={ '1:1':[1200,1200], '4:3':[1280,960], '3:4':[960,1280],
@@ -1035,6 +1137,7 @@ function applyTheme(light){
   try{ localStorage.setItem('snappy_theme',light?'light':'dark'); }catch(e){}
 }
 $('btnTheme').onclick=()=>applyTheme(!document.body.classList.contains('light'));
+$('appVer').textContent='v'+APP_VERSION;
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
@@ -1197,9 +1300,26 @@ bindRange('patOpacity','patOpacity',v=>v+'%');
 bindRange('patScale','patScale',v=>v+'px');
 bindRange('patRotate','patRotate',v=>v+'°');
 // position picker
-$('posGrid').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
-  state.position=b.dataset.p;
-  $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+function bindPosGrid(id,key){ $(id).addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state[key]=b.dataset.p;
+  $(id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); }); }
+bindPosGrid('posGrid','position');
+
+// text & logo overlays
+$('textVal').oninput=e=>{ state.textVal=e.target.value; render(); };
+$('textFont').onchange=e=>{ state.textFont=e.target.value; render(); };
+$('textBold').onchange=e=>{ state.textBold=e.target.checked; render(); };
+bindRange('textSize','textSize',v=>v+'px');
+bindColor('textColor','textColor');
+bindPosGrid('textPosGrid','textPos');
+$('btnLogo').onclick=()=>$('logoInput').click();
+$('logoInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();
+  r.onload=ev=>{ state.logoSrc=ev.target.result; $('btnLogoRemove').style.display=''; render(); };
+  r.readAsDataURL(f); } e.target.value=''; };
+$('btnLogoRemove').onclick=()=>{ state.logoSrc=null; $('btnLogoRemove').style.display='none'; render(); };
+bindRange('logoSize','logoSize',v=>v+'%');
+bindRange('logoOpacity','logoOpacity',v=>v+'%');
+bindPosGrid('logoPosGrid','logoPos');
 // fit / fill
 $('fitMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.fill=b.dataset.v==='fill';
@@ -1257,6 +1377,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
+    textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff'});
   syncUI(); render(); toast('Styles reset');
 };
@@ -1279,6 +1400,14 @@ function syncUI(){
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
   $('aspect').value=state.aspect;
   $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.position));
+  $('textVal').value=state.textVal||''; setColor('textColor',state.textColor);
+  $('textFont').value=state.textFont||'sans';
+  $('textBold').checked=state.textBold; $('textSize').value=state.textSize; $('textSizeVal').textContent=state.textSize+'px';
+  $('textPosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.textPos));
+  $('logoSize').value=state.logoSize; $('logoSizeVal').textContent=state.logoSize+'%';
+  $('logoOpacity').value=state.logoOpacity; $('logoOpacityVal').textContent=state.logoOpacity+'%';
+  $('logoPosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.logoPos));
+  $('btnLogoRemove').style.display=state.logoSrc?'':'none';
   $('customSizeField').hidden=state.aspect!=='custom';
   $('customW').value=state.customW; $('customH').value=state.customH;
   $('patType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.pattern));
@@ -1366,9 +1495,11 @@ function applyPreset(s){
 })();
 
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
-const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgBlur',
+const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','size','pad','rad','noise','shadowPreset','shBlur','shY','shOp','rx','ry','rz','bw','bc'];
+  'position','fill','posX','posY','size','pad','rad','noise',
+  'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
+  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','bw','bc'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
 function saveUser(a){ try{ localStorage.setItem(PKEY,JSON.stringify(a)); }catch(e){ toast('Could not save (storage full)',true); } }
@@ -1382,7 +1513,7 @@ function renderUser(){ const box=$('userPresets'); box.innerHTML='';
       syncUI(); render(); toast(p.name+' applied'); };
     box.appendChild(row); });
 }
-$('btnSavePreset').onclick=()=>{ const name=(prompt('Preset name:')||'').trim(); if(!name) return;
+$('btnSavePreset').onclick=()=>{ const name=(prompt('Name this setup:')||'').trim(); if(!name) return;
   const style={}; STYLE_KEYS.forEach(k=>style[k]=state[k]);
   const a=loadUser(); a.push({name,style}); saveUser(a); renderUser(); toast('Preset saved'); };
 renderUser();
