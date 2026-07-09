@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Snappy Frame — Screenshot Beautifier</title>
 <meta name="description" content="Snappy Frame turns plain screenshots into share-ready images: gorgeous backgrounds, patterns, padding, rounded corners, shadows, 3D tilt, window frames, social-media sizes and high-resolution export — all in your browser." />
 <meta name="theme-color" content="#0e0f14" />
@@ -105,7 +105,17 @@ input,select{font-family:inherit}
 }
 /* the canvas is absolutely centred & scaled to fit; absolute positioning
    sidesteps the grid/flex "overflowing item pins to start" problem */
-#fit{position:absolute; left:50%; top:28px; transition:transform .12s ease; transform-origin:top center}
+#fit{position:absolute; left:0; top:28px; transition:transform .12s ease, left .12s ease, top .12s ease; transform-origin:top left; touch-action:none}
+/* while pinch/pan is happening we drop the transition so the canvas tracks the fingers */
+#fit.dragging{transition:none}
+.stage-wrap{touch-action:none}
+/* reset-zoom pill, only shown when the view is zoomed in */
+#zoomReset{position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:6;
+  display:none; align-items:center; gap:6px; padding:7px 12px; border-radius:999px;
+  background:rgba(20,20,26,.82); color:#fff; border:1px solid rgba(255,255,255,.18);
+  font-size:12px; font-weight:600; cursor:pointer; backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px)}
+#zoomReset.show{display:inline-flex}
+@media (max-width:600px){ #zoomReset{bottom:calc(46vh + 12px)} body.sheet-collapsed #zoomReset{bottom:56px} }
 #stage{
   position:relative; overflow:hidden; background:#222;
 }
@@ -447,6 +457,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
+      <button id="zoomReset" title="Reset zoom">⤢ Reset zoom</button>
     </div>
 
     <!-- Controls -->
@@ -871,7 +882,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.3';
+const APP_VERSION='1.4';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1168,22 +1179,112 @@ function buildFrame(){
 // Fit stage into the preview pane (visual only; export uses true size)
 let fitRAF;
 function scheduleFit(){ cancelAnimationFrame(fitRAF); fitRAF=requestAnimationFrame(doFit); }
+// --- View transform (pinch-zoom + pan). Purely a way to inspect the canvas on
+// screen; it never touches `stage`'s natural size, so exports are unaffected. ---
+let baseK=1;                     // the fit-to-view scale (view.z===1)
+const view={z:1,x:0,y:0};        // z = user zoom on top of baseK; x,y = pan in screen px
+function fitMetrics(){
+  const cs=getComputedStyle(wrap);
+  const padL=parseFloat(cs.paddingLeft), padT=parseFloat(cs.paddingTop);
+  const availW=wrap.clientWidth - padL - parseFloat(cs.paddingRight);
+  const availH=wrap.clientHeight - padT - parseFloat(cs.paddingBottom);
+  return {padL,padT,availW,availH,sw:stage.offsetWidth||1,sh:stage.offsetHeight||1};
+}
+function applyView(){
+  const m=fitMetrics();
+  const eff=baseK*view.z, sw=m.sw*eff, sh=m.sh*eff;
+  // Horizontal: centre when the canvas fits, otherwise pan (clamped to the edges).
+  let left;
+  if(sw<=m.availW){ view.x=0; left=m.padL+(m.availW-sw)/2; }
+  else { const c=m.padL+(m.availW-sw)/2; left=c+view.x;
+    const lmax=m.padL, lmin=m.padL+m.availW-sw;
+    left=Math.min(lmax,Math.max(lmin,left)); view.x=left-c; }
+  let top;
+  if(sh<=m.availH){ view.y=0; top=m.padT+Math.max(0,(m.availH-sh)/2); }
+  else { const c=m.padT+(m.availH-sh)/2; top=c+view.y;
+    const tmax=m.padT, tmin=m.padT+m.availH-sh;
+    top=Math.min(tmax,Math.max(tmin,top)); view.y=top-c; }
+  fit.style.left=left+'px'; fit.style.top=top+'px';
+  fit.style.transform=`scale(${eff})`;
+  $('zoomReset').classList.toggle('show', view.z>1.01);
+}
+function resetView(){ view.z=1; view.x=0; view.y=0; applyView(); }
 function doFit(){
   // Fit into the *content box* (excludes padding — on mobile the padding-bottom
   // is the space reserved for the bottom-sheet, so this keeps the canvas in the
   // actually-visible strip rather than scaling it behind the sheet).
-  const cs=getComputedStyle(wrap);
-  const padT=parseFloat(cs.paddingTop);
-  const availW=wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const availH=wrap.clientHeight - padT - parseFloat(cs.paddingBottom);
-  const sw=stage.offsetWidth||1, sh=stage.offsetHeight||1;
-  const k=Math.max(0.02, Math.min(1, availW/sw, availH/sh));
-  // centre vertically when there's spare room, top-anchor when the canvas is tall
-  const top=padT + Math.max(0,(availH - sh*k)/2);
-  fit.style.left='50%'; fit.style.top=top+'px';
-  fit.style.transform=`translateX(-50%) scale(${k})`;
+  const m=fitMetrics();
+  baseK=Math.max(0.02, Math.min(1, m.availW/m.sw, m.availH/m.sh));
+  applyView();   // re-clamps any existing pan/zoom against the new fit
 }
 window.addEventListener('resize', scheduleFit);
+
+// ---------- Pinch-zoom & pan the preview (touch / trackpad) ----------
+const _ptrs=new Map(); let _pinch=null;
+const _dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const _mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+function _rel(e){ const r=wrap.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+function _cropOpen(){ return $('cropModal').classList.contains('open'); }
+let _tapStart=null, _wasPinch=false, _lastTap=0;
+wrap.addEventListener('pointerdown',e=>{
+  if(!state.hasImage || _cropOpen() || e.pointerType==='mouse') return;
+  const p=_rel(e); _ptrs.set(e.pointerId,p); try{ wrap.setPointerCapture(e.pointerId); }catch(_){}
+  fit.classList.add('dragging');
+  if(_ptrs.size===1){ _tapStart={t:performance.now(),x:p.x,y:p.y}; }
+  if(_ptrs.size===2){ const [a,b]=[..._ptrs.values()]; _pinch={d:_dist(a,b),z:view.z}; _wasPinch=true; _tapStart=null; }
+});
+wrap.addEventListener('pointermove',e=>{
+  const prev=_ptrs.get(e.pointerId); if(!prev) return;
+  const cur=_rel(e); _ptrs.set(e.pointerId,cur);
+  if(_ptrs.size>=2 && _pinch){
+    const [a,b]=[..._ptrs.values()];
+    const F=_mid(a,b);                                  // focal point stays put under the fingers
+    const left=parseFloat(fit.style.left)||0, top=parseFloat(fit.style.top)||0;
+    const effOld=baseK*view.z;
+    const px=(F.x-left)/effOld, py=(F.y-top)/effOld;    // stage-space point under the focal
+    view.z=Math.max(1,Math.min(6,_pinch.z*_dist(a,b)/(_pinch.d||1)));
+    const m=fitMetrics(), effNew=baseK*view.z;
+    view.x=(F.x-px*effNew)-(m.padL+(m.availW-m.sw*effNew)/2);
+    view.y=(F.y-py*effNew)-(m.padT+(m.availH-m.sh*effNew)/2);
+    applyView();
+  } else if(_ptrs.size===1 && view.z>1.001){
+    view.x+=cur.x-prev.x; view.y+=cur.y-prev.y; applyView();
+  }
+});
+function _ptrEnd(e){
+  if(!_ptrs.has(e.pointerId)) return;
+  const rel=_rel(e), sizeBefore=_ptrs.size;
+  _ptrs.delete(e.pointerId);
+  if(_ptrs.size<2) _pinch=null;
+  if(_ptrs.size>0) return;                     // still fingers down — nothing to settle yet
+  fit.classList.remove('dragging');
+  if(_wasPinch){                               // a pinch just ended: snap back to fit if it collapsed
+    _wasPinch=false; if(view.z<1.01) resetView();
+  } else if(_tapStart && sizeBefore===1 && e.type==='pointerup'){
+    const now=performance.now();
+    const moved=Math.hypot(rel.x-_tapStart.x,rel.y-_tapStart.y);
+    if(now-_tapStart.t<300 && moved<10){       // a clean single tap → double-tap resets zoom
+      if(now-_lastTap<300 && view.z>1.01){ resetView(); _lastTap=0; } else _lastTap=now;
+    }
+  }
+  _tapStart=null;
+}
+wrap.addEventListener('pointerup',_ptrEnd);
+wrap.addEventListener('pointercancel',_ptrEnd);
+// trackpad / ctrl-wheel zoom on desktop, centred on the cursor
+wrap.addEventListener('wheel',e=>{
+  if(!state.hasImage || _cropOpen() || !(e.ctrlKey||e.metaKey)) return;
+  e.preventDefault();
+  const F=_rel(e);
+  const left=parseFloat(fit.style.left)||0, top=parseFloat(fit.style.top)||0, effOld=baseK*view.z;
+  const px=(F.x-left)/effOld, py=(F.y-top)/effOld;
+  view.z=Math.max(1,Math.min(6,view.z*(1-e.deltaY*0.002)));
+  const m=fitMetrics(), effNew=baseK*view.z;
+  view.x=(F.x-px*effNew)-(m.padL+(m.availW-m.sw*effNew)/2);
+  view.y=(F.y-py*effNew)-(m.padT+(m.availH-m.sh*effNew)/2);
+  applyView();
+},{passive:false});
+$('zoomReset').addEventListener('click',resetView);
 
 function outSize(){
   const w=Math.round(stage.offsetWidth*state.scale), h=Math.round(stage.offsetHeight*state.scale);
@@ -1202,6 +1303,7 @@ function loadImage(src,quiet){
     state.imgW=im.naturalWidth; state.imgH=im.naturalHeight; state.hasImage=true;
     shot.src=src;
     $('btnCopy').disabled=false; $('btnCrop').disabled=false; $('btnDownload').disabled=false; $('btnDownload2').disabled=false;
+    view.z=1; view.x=0; view.y=0;   // start each new image at fit
     render(); if(!quiet) toast('Image loaded');
   };
   im.onerror=()=>{ if(!quiet) toast('Could not load that image',true); };
@@ -1376,6 +1478,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.4', items:[
+    'Pinch to zoom and drag to pan the preview — double-tap or “Reset zoom” to fit again',
+    'The whole page no longer zooms by accident on mobile',
+  ]},
   {v:'1.3', items:[
     'Autosave — your image and every setting survive a page refresh',
     'Taller preview on mobile so portrait canvases are easier to see',
