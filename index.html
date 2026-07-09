@@ -1139,12 +1139,15 @@ async function grabUrl(){
   toast('Grabbing the page — this can take a few seconds…');
   try{
     const res=await fetch('/.netlify/functions/screenshot?w=1280&url='+encodeURIComponent(url));
-    if(!res.ok) throw new Error('http '+res.status);
-    const j=await res.json();
-    if(!j.dataUrl) throw new Error(j.error||'no image');
+    if(res.status===404) throw new Error('nofunc');
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok || !j.dataUrl) throw new Error(j.error||('http '+res.status));
     loadImage(j.dataUrl);
     if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
-  }catch(e){ console.error(e); toast('Couldn’t grab that page (only works on the deployed site)',true); }
+  }catch(e){ console.error(e);
+    if(e.message==='nofunc') toast('Page-grab needs the Netlify function — deploy from the git repo',true);
+    else if(e.message==='Failed to fetch') toast('Page-grab only works on the deployed site',true);
+    else toast('Couldn’t render that page — try again in a moment',true); }
   btn.disabled=false; btn.textContent=label;
 }
 $('btnGrab').onclick=grabUrl;
