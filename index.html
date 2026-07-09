@@ -76,7 +76,7 @@ input,select{font-family:inherit}
 }
 
 /* ---------- Stage / preview ---------- */
-.stage-wrap{position:relative; min-height:0; overflow:hidden;
+.stage-wrap{position:relative; min-height:0; min-width:0; overflow:hidden;
   background:
     linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%),
     linear-gradient(45deg,var(--check-a) 25%,var(--check-b) 25%,var(--check-b) 75%,var(--check-a) 75%);
@@ -136,10 +136,13 @@ input,select{font-family:inherit}
 .empty kbd{background:var(--panel-2); border:1px solid var(--line-2); border-bottom-width:2px;
   border-radius:5px; padding:1px 6px; font-size:12px; font-family:ui-monospace,monospace}
 .dragover .empty .box{border-color:var(--accent); background:rgba(109,94,252,.14)}
+.urlgrab{display:flex; gap:8px; margin-top:12px}
+.urlgrab .txt{flex:1}
+.urlgrab .btn{flex:0 0 auto}
 
 /* ---------- Control panel ---------- */
-.panel{background:var(--panel); border-left:1px solid var(--line); overflow-y:auto;
-  scrollbar-width:thin; scrollbar-color:var(--line-2) transparent}
+.panel{background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; overflow-x:hidden;
+  min-width:0; scrollbar-width:thin; scrollbar-color:var(--line-2) transparent}
 .panel::-webkit-scrollbar{width:9px}
 .panel::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:9px;
   border:2px solid var(--panel)}
@@ -352,7 +355,11 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <h2>Drop a screenshot to begin</h2>
           <p>Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
-          <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:16px">Get the Chrome extension to capture any tab →</a>
+          <div class="urlgrab">
+            <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
+            <button class="btn sm" id="btnGrab">Grab</button>
+          </div>
+          <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
     </div>
@@ -761,6 +768,7 @@ function hexClean(v){ v=v.trim(); if(v[0]!=='#')v='#'+v; return /^#[0-9a-fA-F]{6
 // ---------- Render ----------
 function render(){
   empty.style.display = state.hasImage ? 'none' : '';
+  fit.style.display = state.hasImage ? '' : 'none';   // hide the placeholder canvas until an image loads
   // background
   const useBlur = state.bgType==='image' && state.bgBlur>0;
   stage.style.background = state.bgType==='none' ? 'transparent' : bgCss();
@@ -1122,6 +1130,25 @@ document.querySelectorAll('.sec > .head').forEach(h=>{
 // import
 $('btnUpload').onclick=$('btnUpload2').onclick=()=>$('fileInput').click();
 $('fileInput').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; };
+
+// Grab a screenshot of a public webpage by URL (via the Netlify function).
+async function grabUrl(){
+  let url=$('urlInput').value.trim(); if(!url) return;
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  const btn=$('btnGrab'), label=btn.textContent; btn.disabled=true; btn.textContent='…';
+  toast('Grabbing the page — this can take a few seconds…');
+  try{
+    const res=await fetch('/.netlify/functions/screenshot?w=1280&url='+encodeURIComponent(url));
+    if(!res.ok) throw new Error('http '+res.status);
+    const j=await res.json();
+    if(!j.dataUrl) throw new Error(j.error||'no image');
+    loadImage(j.dataUrl);
+    if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
+  }catch(e){ console.error(e); toast('Couldn’t grab that page (only works on the deployed site)',true); }
+  btn.disabled=false; btn.textContent=label;
+}
+$('btnGrab').onclick=grabUrl;
+$('urlInput').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl(); });
 $('btnBg').onclick=()=>$('bgInput').click();
 $('bgInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();
   r.onload=ev=>{ state.bgImage=ev.target.result; render(); }; r.readAsDataURL(f);} e.target.value=''; };
