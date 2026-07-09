@@ -346,6 +346,12 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   display:block}
 .preset .pn{font-size:10px; color:var(--muted); text-align:center; white-space:nowrap;
   overflow:hidden; text-overflow:ellipsis}
+@media (max-width:600px){
+  .presets{grid-template-columns:repeat(4,1fr); gap:6px}
+  .preset{padding:4px; gap:3px; border-radius:8px}
+  .preset .pv i{width:66%; height:54%}
+  .preset .pn{font-size:8.5px}
+}
 .upreset{display:flex; align-items:center; gap:6px; border:1px solid var(--line-2); background:var(--panel-2);
   border-radius:8px; padding:6px 10px; font-size:12px; width:100%; text-align:left; cursor:pointer}
 .upreset:hover{border-color:var(--muted-2)}
