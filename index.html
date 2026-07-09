@@ -49,7 +49,8 @@ input,select{font-family:inherit}
 .brand .wordmark{font-weight:700; letter-spacing:-.01em; font-size:16px; line-height:1}
 .brand .ver{display:inline-flex; align-items:center; height:18px; padding:0 8px; font-size:10px;
   font-weight:600; color:var(--muted); background:var(--panel-2); border:1px solid var(--line-2);
-  border-radius:20px; line-height:1}
+  border-radius:20px; line-height:1; cursor:pointer}
+.brand .ver:hover{color:var(--text); border-color:var(--muted-2)}
 .brand small{color:var(--muted-2); font-weight:500; line-height:1}
 .spacer{flex:1}
 .tb-group{display:flex; align-items:center; gap:8px}
@@ -200,6 +201,25 @@ input[type=range]::-moz-range-thumb{width:16px; height:16px; border-radius:50%; 
 .cswatch:hover{border-color:var(--muted-2)}
 .color input[type=text]{flex:1; background:none; border:0; color:var(--text); font-size:12px;
   font-family:ui-monospace,monospace; outline:none; width:100%; text-transform:uppercase}
+
+/* what's-new modal */
+.modal{position:fixed; inset:0; z-index:300; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.55); padding:20px}
+.modal.open{display:flex}
+.modal-card{background:var(--panel); border:1px solid var(--line-2); border-radius:14px; width:min(94vw,470px);
+  max-height:82vh; display:flex; flex-direction:column; box-shadow:var(--shadow)}
+.modal-head{display:flex; align-items:center; justify-content:space-between; padding:15px 18px; border-bottom:1px solid var(--line)}
+.modal-head h3{margin:0; font-size:16px}
+.modal-x{background:none; border:0; color:var(--muted); font-size:15px; cursor:pointer; padding:4px; line-height:1}
+.modal-x:hover{color:var(--text)}
+.modal-body{padding:4px 18px 14px; overflow-y:auto}
+.modal-foot{display:flex; gap:8px; justify-content:flex-end; padding:13px 18px; border-top:1px solid var(--line)}
+.modal-foot .btn{text-decoration:none}
+.cl-v{margin:16px 0 6px; font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--accent-2)}
+.cl-list{margin:0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.65}
+.sp-links{display:flex; gap:14px; margin-top:12px; padding-top:11px; border-top:1px solid var(--line)}
+.lnk{background:none; border:0; padding:0; color:var(--accent-2); font-size:12px; cursor:pointer; text-decoration:none}
+.lnk:hover{text-decoration:underline}
 
 /* settings popover (URL grab + API key) */
 #setpop{position:fixed; z-index:200; width:308px; background:var(--pop); border:1px solid var(--line-2);
@@ -697,12 +717,27 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <div class="cprow"><input type="text" class="hx" id="cpHex" spellcheck="false"><button class="done" id="cpDone">Done</button></div>
 </div>
 
+<div id="modal" class="modal">
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="modalTitle">What’s new</h3><button class="modal-x" id="modalX" title="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot">
+      <a class="btn sm" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue →</a>
+      <button class="btn sm primary" id="modalClose">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="setpop">
   <div class="sp-h">Grab a webpage</div>
   <div class="sp-row"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
   <div class="sp-h" style="margin-top:14px">Screenshot API key <span style="font-weight:400;color:var(--muted-2)">· optional</span></div>
   <input class="txt" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
   <p class="hint" style="margin-top:7px">Stored only in this browser — gives crisp, reliable grabs. Leave blank to use the free renderer. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a key →</a></p>
+  <div class="sp-links">
+    <button class="lnk" id="spWhatsnew">What’s new</button>
+    <a class="lnk" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue</a>
+  </div>
 </div>
 
 <script>
@@ -1233,7 +1268,40 @@ function applyTheme(light){
   try{ localStorage.setItem('snappy_theme',light?'light':'dark'); }catch(e){}
 }
 $('btnTheme').onclick=()=>applyTheme(!document.body.classList.contains('light'));
-$('appVer').textContent='v'+APP_VERSION;
+
+// version pill + What's new modal
+const CHANGELOG=[
+  {v:'1.2', items:[
+    'Text &amp; logo overlays — 6 fonts, colour, size and 9-point positioning',
+    'Save full setups (styles + text + logo + wallpaper) and reload them',
+    'Light / dark theme toggle',
+    'Grab any webpage by URL, with bring-your-own ScreenshotOne API key',
+    'Social-media canvas sizes (Instagram, X, LinkedIn, YouTube, Pinterest…)',
+    'Custom colour picker, wider desktop panel, mobile polish',
+  ]},
+  {v:'1.1', items:[
+    '18 window frames — macOS, browser, Windows, Arc, Stack, backing plates',
+    '12 background patterns with light / dark ink',
+    '33 one-click presets; 30 gradients and 14 mesh backgrounds',
+    'Fit / Fill crop with focal point, 3×3 position picker, custom canvas',
+  ]},
+  {v:'1.0', items:[
+    'Beautify screenshots — backgrounds, padding, corners, shadow, 3D tilt',
+    'Import via upload, paste, drag-drop or live screen capture',
+    'Export PNG / JPEG up to 4× and copy to clipboard',
+    'Companion Chrome extension to capture any tab',
+  ]},
+];
+$('appVer').textContent='v'+APP_VERSION; $('appVer').title="What’s new";
+$('modalBody').innerHTML=CHANGELOG.map(c=>
+  `<div class="cl-v">VERSION ${c.v}</div><ul class="cl-list">${c.items.map(i=>`<li>${i}</li>`).join('')}</ul>`).join('');
+function openModal(){ $('modal').classList.add('open'); }
+function closeModal(){ $('modal').classList.remove('open'); }
+$('appVer').onclick=openModal;
+$('modalX').onclick=$('modalClose').onclick=closeModal;
+$('modal').addEventListener('click',e=>{ if(e.target===$('modal')) closeModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+$('spWhatsnew').onclick=()=>{ closeSettings(); openModal(); };
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
