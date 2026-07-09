@@ -221,6 +221,29 @@ input[type=range]::-moz-range-thumb{width:16px; height:16px; border-radius:50%; 
 .lnk{background:none; border:0; padding:0; color:var(--accent-2); font-size:12px; cursor:pointer; text-decoration:none}
 .lnk:hover{text-decoration:underline}
 
+/* crop tool */
+#cropStage{position:relative; overflow:hidden; touch-action:none; user-select:none;
+  background:#000; border-radius:6px; flex:0 0 auto}
+#cropImg{display:block; pointer-events:none}
+#cropBox{position:absolute; border:1px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,.5);
+  cursor:move; box-sizing:border-box}
+#cropBox::before,#cropBox::after{content:''; position:absolute; inset:0; pointer-events:none}
+#cropBox::before{border-left:1px solid rgba(255,255,255,.4); border-right:1px solid rgba(255,255,255,.4);
+  left:33.33%; right:33.33%}
+#cropBox::after{border-top:1px solid rgba(255,255,255,.4); border-bottom:1px solid rgba(255,255,255,.4);
+  top:33.33%; bottom:33.33%}
+#cropBox .ch{position:absolute; width:12px; height:12px; background:#fff; border:1px solid #888;
+  border-radius:2px; z-index:2}
+.ch[data-h=nw]{left:2px; top:2px; cursor:nwse-resize}
+.ch[data-h=ne]{right:2px; top:2px; cursor:nesw-resize}
+.ch[data-h=sw]{left:2px; bottom:2px; cursor:nesw-resize}
+.ch[data-h=se]{right:2px; bottom:2px; cursor:nwse-resize}
+.ch[data-h=n]{left:50%; top:2px; transform:translateX(-50%); cursor:ns-resize}
+.ch[data-h=s]{left:50%; bottom:2px; transform:translateX(-50%); cursor:ns-resize}
+.ch[data-h=w]{left:2px; top:50%; transform:translateY(-50%); cursor:ew-resize}
+.ch[data-h=e]{right:2px; top:50%; transform:translateY(-50%); cursor:ew-resize}
+.croprow{display:flex; align-items:center; gap:8px}
+
 /* settings popover (URL grab + API key) */
 #setpop{position:fixed; z-index:200; width:308px; background:var(--pop); border:1px solid var(--line-2);
   border-radius:10px; padding:14px; box-shadow:var(--shadow); display:none}
@@ -350,6 +373,9 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
       <button class="btn sm lblbtn" id="btnUpload" title="Upload an image">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
         <span class="lbl">Upload</span>
+      </button>
+      <button class="btn sm icon" id="btnCrop" title="Crop image" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
       </button>
       <button class="btn sm icon" id="btnCopy" title="Copy to clipboard" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -724,6 +750,31 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
     <div class="modal-foot">
       <a class="btn sm" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue →</a>
       <button class="btn sm primary" id="modalClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="cropModal" class="modal">
+  <div class="modal-card" style="width:auto; max-width:94vw">
+    <div class="modal-head"><h3>Crop image</h3><button class="modal-x" id="cropX" title="Close">✕</button></div>
+    <div class="modal-body" style="padding:16px; display:flex; flex-direction:column; align-items:center; gap:12px">
+      <div id="cropStage"><img id="cropImg" alt=""><div id="cropBox">
+        <span class="ch" data-h="nw"></span><span class="ch" data-h="n"></span><span class="ch" data-h="ne"></span>
+        <span class="ch" data-h="w"></span><span class="ch" data-h="e"></span>
+        <span class="ch" data-h="sw"></span><span class="ch" data-h="s"></span><span class="ch" data-h="se"></span>
+      </div></div>
+      <div class="croprow"><label style="font-size:12px;color:var(--muted)">Ratio</label>
+        <select class="sel" id="cropRatio" style="width:auto">
+          <option value="free">Free</option><option value="1">1 : 1</option>
+          <option value="1.7778">16 : 9</option><option value="0.5625">9 : 16</option>
+          <option value="1.3333">4 : 3</option><option value="0.75">3 : 4</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn sm" id="cropReset">Reset</button>
+      <button class="btn sm" id="cropCancel">Cancel</button>
+      <button class="btn sm primary" id="cropApply">Apply crop</button>
     </div>
   </div>
 </div>
@@ -1113,7 +1164,7 @@ function loadImage(src){
   im.onload=()=>{
     state.imgW=im.naturalWidth; state.imgH=im.naturalHeight; state.hasImage=true;
     shot.src=src;
-    $('btnCopy').disabled=false; $('btnDownload').disabled=false; $('btnDownload2').disabled=false;
+    $('btnCopy').disabled=false; $('btnCrop').disabled=false; $('btnDownload').disabled=false; $('btnDownload2').disabled=false;
     render(); toast('Image loaded');
   };
   im.onerror=()=>toast('Could not load that image',true);
@@ -1316,6 +1367,72 @@ $('modalX').onclick=$('modalClose').onclick=closeModal;
 $('modal').addEventListener('click',e=>{ if(e.target===$('modal')) closeModal(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 $('spWhatsnew').onclick=()=>{ closeSettings(); openModal(); };
+
+// ---------- Crop tool ----------
+let cropD={w:0,h:0,scale:1}, crop={x:0,y:0,w:0,h:0};
+const clampN=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function cropRatioVal(){ const v=$('cropRatio').value; return v==='free'?0:parseFloat(v); }
+function drawCrop(){ const b=$('cropBox');
+  b.style.left=crop.x+'px'; b.style.top=crop.y+'px'; b.style.width=crop.w+'px'; b.style.height=crop.h+'px'; }
+function initCropBox(){
+  const r=cropRatioVal();
+  if(!r){ crop={x:0,y:0,w:cropD.w,h:cropD.h}; }
+  else{ let w=cropD.w, h=w/r; if(h>cropD.h){ h=cropD.h; w=h*r; }
+    crop={x:(cropD.w-w)/2, y:(cropD.h-h)/2, w, h}; }
+  drawCrop();
+}
+function openCrop(){
+  if(!state.hasImage){ toast('Load an image first',true); return; }
+  const im=new Image();
+  im.onload=()=>{
+    const maxW=Math.min(760, innerWidth-90), maxH=Math.min(520, innerHeight-320);
+    const ds=Math.min(maxW/im.naturalWidth, maxH/im.naturalHeight, 1);
+    cropD={ w:Math.round(im.naturalWidth*ds), h:Math.round(im.naturalHeight*ds), scale:ds };
+    const st=$('cropStage'); st.style.width=cropD.w+'px'; st.style.height=cropD.h+'px';
+    const ci=$('cropImg'); ci.src=shot.src; ci.style.width=cropD.w+'px'; ci.style.height=cropD.h+'px';
+    initCropBox();
+    $('cropModal').classList.add('open');
+  };
+  im.src=shot.src;
+}
+function closeCrop(){ $('cropModal').classList.remove('open'); }
+$('btnCrop').onclick=openCrop;
+$('cropX').onclick=$('cropCancel').onclick=closeCrop;
+$('cropReset').onclick=initCropBox;
+$('cropRatio').onchange=initCropBox;
+$('cropModal').addEventListener('click',e=>{ if(e.target===$('cropModal')) closeCrop(); });
+$('cropStage').addEventListener('pointerdown',e=>{
+  const box=$('cropBox'); const h=(e.target.dataset&&e.target.dataset.h)||'';
+  if(!h && e.target!==box && !box.contains(e.target)) return;
+  e.preventDefault();
+  const sx=e.clientX, sy=e.clientY, s={...crop}, r=cropRatioVal();
+  const move=ev=>{
+    const dx=ev.clientX-sx, dy=ev.clientY-sy; let n={...s};
+    if(!h){ n.x=clampN(s.x+dx,0,cropD.w-s.w); n.y=clampN(s.y+dy,0,cropD.h-s.h); }
+    else{
+      if(h.includes('e')) n.w=clampN(s.w+dx,24,cropD.w-s.x);
+      if(h.includes('s')) n.h=clampN(s.h+dy,24,cropD.h-s.y);
+      if(h.includes('w')){ const nw=clampN(s.w-dx,24,s.x+s.w); n.x=s.x+s.w-nw; n.w=nw; }
+      if(h.includes('n')){ const nh=clampN(s.h-dy,24,s.y+s.h); n.y=s.y+s.h-nh; n.h=nh; }
+      if(r){ n.h=n.w/r;
+        if(n.y+n.h>cropD.h){ n.h=cropD.h-n.y; n.w=n.h*r; }
+        if(h.includes('n')) n.y=clampN(s.y+s.h-n.h,0,cropD.h);
+      }
+    }
+    crop=n; drawCrop();
+  };
+  const up=()=>{ window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up); };
+  window.addEventListener('pointermove',move); window.addEventListener('pointerup',up);
+});
+$('cropApply').onclick=()=>{
+  const sc=1/cropD.scale;
+  const sx=Math.round(crop.x*sc), sy=Math.round(crop.y*sc), sw=Math.max(1,Math.round(crop.w*sc)), sh=Math.max(1,Math.round(crop.h*sc));
+  const im=new Image();
+  im.onload=()=>{ const c=document.createElement('canvas'); c.width=sw; c.height=sh;
+    c.getContext('2d').drawImage(im, sx,sy,sw,sh, 0,0,sw,sh);
+    closeCrop(); loadImage(c.toDataURL('image/png')); toast('Cropped'); };
+  im.src=shot.src;
+};
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
