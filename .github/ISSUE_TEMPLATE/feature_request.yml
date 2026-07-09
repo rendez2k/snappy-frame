@@ -1,0 +1,12 @@
+name: Feature request
+description: Suggest an idea or improvement for Snappy Frame
+title: "[Idea]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature or change and why it would help.
+    validations:
+      required: true

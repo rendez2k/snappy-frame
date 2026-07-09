@@ -41,6 +41,17 @@ Copy-paste these into the Web Store Developer Dashboard when you submit
 > **Permissions:** the extension only asks for `activeTab` (used the moment you
 > click the icon) and `storage`, plus access limited to snappy-frame.netlify.app.
 
+## Support (Web Store "Support" tab)
+
+- **Support URL**: `https://github.com/rendez2k/snappy/issues/new/choose`
+  *(make the repo public first, or users will hit a 404 — see note below)*
+- **Support email**: your verified publisher contact email.
+
+> ⚠️ GitHub Issues on a **private** repo are only visible to collaborators, so a
+> public "report a bug" link needs the repo to be **public** (GitHub → repo →
+> Settings → General → Change visibility). Alternatively keep it private and use
+> a form service (e.g. Tally/Google Forms) as the Support URL.
+
 ## Privacy
 
 - **Single purpose**: Capture the current browser tab and open it in Snappy Frame

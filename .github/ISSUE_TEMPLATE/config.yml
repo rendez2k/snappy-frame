@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Snappy Frame (live app)
+    url: https://snappy-frame.netlify.app/
+    about: Try the app first — many things can be tweaked in the editor.

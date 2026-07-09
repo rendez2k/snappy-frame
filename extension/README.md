@@ -33,3 +33,9 @@ the Snappy Frame page you already have open.
   the icon) and `storage`, plus host access limited to `snappy-frame.netlify.app`.
 - To point at a different deployment, change `APP_URL` in `background.js` and the
   `host_permissions` / `content_scripts.matches` in `manifest.json`.
+
+## Report a bug
+
+Open an issue: <https://github.com/rendez2k/snappy/issues/new/choose>
+(the app also has a "Tell us on GitHub" link in the Export panel).
+

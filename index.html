@@ -217,6 +217,9 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .btn.sm{padding:6px 10px; font-size:12px}
 
 .hint{color:var(--muted-2); font-size:11px; line-height:1.5; margin-top:8px}
+.feedback{display:block; text-align:center; margin-top:14px; color:var(--muted-2);
+  font-size:12px; text-decoration:none}
+.feedback:hover{color:var(--accent-2); text-decoration:underline}
 .divider{height:1px; background:var(--line); margin:14px 0}
 
 /* toast */
@@ -320,6 +323,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <h2>Drop a screenshot to begin</h2>
           <p>Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
+          <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:16px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
     </div>
@@ -583,6 +587,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <div class="divider"></div>
           <button class="btn primary" id="btnDownload2" style="width:100%;justify-content:center" disabled>Download image</button>
           <button class="btn sm" id="btnReset" style="width:100%;justify-content:center;margin-top:8px">Reset all styles</button>
+          <a class="feedback" href="https://github.com/rendez2k/snappy/issues/new/choose" target="_blank" rel="noopener">Found a bug or have an idea? Tell us on GitHub →</a>
         </div>
       </section>
     </aside>
