@@ -56,12 +56,19 @@ input,select{font-family:inherit}
 .tb-group{display:flex; align-items:center; gap:8px}
 
 .main{display:grid; grid-template-columns:1fr 432px; min-height:0}
+.sheet-handle{display:none}
 @media (max-width:860px){
   .main{grid-template-columns:1fr}
   .panel{position:fixed; inset:auto 0 0 0; max-height:58vh; z-index:20;
     border-left:0; border-top:1px solid var(--line); border-radius:16px 16px 0 0;
-    box-shadow:0 -12px 30px rgba(0,0,0,.4)}
-  .stage-wrap{padding-bottom:58vh}
+    box-shadow:0 -12px 30px rgba(0,0,0,.4); transition:max-height .2s ease}
+  .main .stage-wrap{padding-bottom:58vh; transition:padding-bottom .2s ease}
+  .sheet-handle{display:block; position:sticky; top:0; z-index:3; width:100%; padding:9px 0 7px;
+    background:var(--panel); border:0; border-radius:16px 16px 0 0; cursor:pointer}
+  .sheet-handle::before{content:''; display:block; width:42px; height:4px; border-radius:4px;
+    background:var(--line-2); margin:0 auto}
+  body.sheet-collapsed .panel{max-height:38px}
+  body.sheet-collapsed .main .stage-wrap{padding-bottom:44px}
 }
 /* Compact top bar so nothing clips / overflows on phones */
 @media (max-width:600px){
@@ -75,7 +82,7 @@ input,select{font-family:inherit}
   .tb-group .btn svg{width:15px; height:15px}
   #btnScreen{display:none}                 /* screen capture isn't available on mobile */
   #btnScreen .lbl, #btnUpload .lbl, #btnDownload .lbl{display:none}
-  .stage-wrap{padding:12px; padding-bottom:56vh}
+  .main .stage-wrap{padding:12px; padding-bottom:56vh}
 }
 /* keep the empty-state card inside the shorter mobile preview area */
 @media (max-width:600px){
@@ -94,9 +101,11 @@ input,select{font-family:inherit}
     linear-gradient(45deg,var(--check-a) 25%,transparent 25%,transparent 75%,var(--check-a) 75%),
     linear-gradient(45deg,var(--check-a) 25%,var(--check-b) 25%,var(--check-b) 75%,var(--check-a) 75%);
   background-size:24px 24px; background-position:0 0,12px 12px;
-  display:grid; place-items:start center; padding:28px;
+  padding:28px;
 }
-#fit{transition:transform .12s ease; transform-origin:top center}
+/* the canvas is absolutely centred & scaled to fit; absolute positioning
+   sidesteps the grid/flex "overflowing item pins to start" problem */
+#fit{position:absolute; left:50%; top:28px; transition:transform .12s ease; transform-origin:top center}
 #stage{
   position:relative; overflow:hidden; background:#222;
 }
@@ -436,6 +445,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
     <!-- Controls -->
     <aside class="panel" id="panel">
+      <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse the panel"></button>
       <!-- Presets -->
       <section class="sec" data-sec="presets">
         <button class="head"><span class="ico">✨</span> Presets <span class="chev">▾</span></button>
@@ -1152,11 +1162,19 @@ function buildFrame(){
 let fitRAF;
 function scheduleFit(){ cancelAnimationFrame(fitRAF); fitRAF=requestAnimationFrame(doFit); }
 function doFit(){
-  const pad=48;
-  const availW=wrap.clientWidth-pad, availH=wrap.clientHeight-pad;
+  // Fit into the *content box* (excludes padding — on mobile the padding-bottom
+  // is the space reserved for the bottom-sheet, so this keeps the canvas in the
+  // actually-visible strip rather than scaling it behind the sheet).
+  const cs=getComputedStyle(wrap);
+  const padT=parseFloat(cs.paddingTop);
+  const availW=wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH=wrap.clientHeight - padT - parseFloat(cs.paddingBottom);
   const sw=stage.offsetWidth||1, sh=stage.offsetHeight||1;
-  const k=Math.min(1, availW/sw, availH/sh);
-  fit.style.transform=`scale(${k})`;
+  const k=Math.max(0.02, Math.min(1, availW/sw, availH/sh));
+  // centre vertically when there's spare room, top-anchor when the canvas is tall
+  const top=padT + Math.max(0,(availH - sh*k)/2);
+  fit.style.left='50%'; fit.style.top=top+'px';
+  fit.style.transform=`translateX(-50%) scale(${k})`;
 }
 window.addEventListener('resize', scheduleFit);
 
@@ -1345,6 +1363,9 @@ function applyTheme(light){
   try{ localStorage.setItem('snappy_theme',light?'light':'dark'); }catch(e){}
 }
 $('btnTheme').onclick=()=>applyTheme(!document.body.classList.contains('light'));
+// mobile: pull the bottom sheet down to see the canvas, tap the handle to bring it back
+$('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed');
+  scheduleFit(); setTimeout(scheduleFit,230); };
 
 // version pill + What's new modal
 const CHANGELOG=[
