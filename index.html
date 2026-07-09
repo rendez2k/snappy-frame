@@ -201,6 +201,14 @@ input[type=range]::-moz-range-thumb{width:16px; height:16px; border-radius:50%; 
 .color input[type=text]{flex:1; background:none; border:0; color:var(--text); font-size:12px;
   font-family:ui-monospace,monospace; outline:none; width:100%; text-transform:uppercase}
 
+/* settings popover (URL grab + API key) */
+#setpop{position:fixed; z-index:200; width:308px; background:var(--pop); border:1px solid var(--line-2);
+  border-radius:10px; padding:14px; box-shadow:var(--shadow); display:none}
+#setpop.open{display:block}
+#setpop .sp-h{font-size:12px; font-weight:600; margin-bottom:8px}
+#setpop .sp-row{display:flex; gap:8px}
+#setpop .sp-row .txt{flex:1}
+
 /* custom colour picker popover */
 #cpop{position:fixed; z-index:200; width:206px; background:var(--pop); border:1px solid var(--line-2);
   border-radius:10px; padding:10px; box-shadow:var(--shadow); display:none}
@@ -308,6 +316,9 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
     </div>
     <div class="spacer"></div>
     <div class="tb-group">
+      <button class="btn sm icon" id="btnSettings" title="Grab a webpage / API key">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button class="btn sm icon" id="btnTheme" title="Toggle light / dark theme">
         <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
@@ -684,6 +695,14 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <div class="sv" id="cpSV"><div class="thumb" id="cpThumb"></div></div>
   <input type="range" class="hue" id="cpHue" min="0" max="360" value="0">
   <div class="cprow"><input type="text" class="hx" id="cpHex" spellcheck="false"><button class="done" id="cpDone">Done</button></div>
+</div>
+
+<div id="setpop">
+  <div class="sp-h">Grab a webpage</div>
+  <div class="sp-row"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
+  <div class="sp-h" style="margin-top:14px">Screenshot API key <span style="font-weight:400;color:var(--muted-2)">· optional</span></div>
+  <input class="txt" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
+  <p class="hint" style="margin-top:7px">Stored only in this browser — gives crisp, reliable grabs. Leave blank to use the free renderer. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a key →</a></p>
 </div>
 
 <script>
@@ -1138,18 +1157,12 @@ function getShotKey(){ try{ return (localStorage.getItem(SHOT_KEY)||'').trim(); 
 function updateKeyUI(){ $('btnKey').textContent = getShotKey()
   ? '✓ Using your screenshot API key · change'
   : '⚙ Add a screenshot API key for reliable grabs'; }
-$('btnKey').onclick=()=>{
-  const v=prompt('Paste your ScreenshotOne access key for crisp, reliable page grabs.\nStored only in this browser; leave blank to remove.', getShotKey());
-  if(v===null) return; const k=v.trim();
-  try{ if(k) localStorage.setItem(SHOT_KEY,k); else localStorage.removeItem(SHOT_KEY); }catch(e){}
-  updateKeyUI(); toast(k?'API key saved':'API key removed');
-};
 const blobToDataURL=blob=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(blob); });
-async function grabUrl(){
-  let url=$('urlInput').value.trim(); if(!url) return;
+async function grabUrl(inputId,btnId){
+  let url=$(inputId).value.trim(); if(!url) return;
   if(!/^https?:\/\//i.test(url)) url='https://'+url;
   const key=getShotKey();
-  const btn=$('btnGrab'), label=btn.textContent; btn.disabled=true; btn.textContent='…';
+  const btn=$(btnId), label=btn.textContent; btn.disabled=true; btn.textContent='…';
   const done=()=>{ btn.disabled=false; btn.textContent=label; };
   toast('Grabbing the page — this can take a few seconds…');
   // 1) With the user's own key, call ScreenshotOne directly (works even with no function).
@@ -1159,7 +1172,7 @@ async function grabUrl(){
         '&url='+encodeURIComponent(url)+'&viewport_width=1280&format=jpg&image_quality=82'+
         '&block_ads=true&block_cookie_banners=true&cache=true';
       const r=await fetch(api);
-      if(r.ok){ loadImage(await blobToDataURL(await r.blob())); done(); return; }
+      if(r.ok){ loadImage(await blobToDataURL(await r.blob())); closeSettings(); done(); return; }
     }catch(e){ /* CORS/network — fall through to the function */ }
   }
   // 2) Fall back to the Netlify function (its own key or free mShots); forward the user key too.
@@ -1168,7 +1181,7 @@ async function grabUrl(){
     if(res.status===404) throw new Error('nofunc');
     const j=await res.json().catch(()=>({}));
     if(!res.ok || !j.dataUrl) throw new Error(j.error||('http '+res.status));
-    loadImage(j.dataUrl);
+    loadImage(j.dataUrl); closeSettings();
     if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
   }catch(e){ console.error(e);
     if(e.message==='nofunc') toast(key?'Your key didn’t work and no function is deployed':'Page-grab needs the Netlify function — or add your own API key',true);
@@ -1176,8 +1189,33 @@ async function grabUrl(){
     else toast('Couldn’t render that page — check your key or try again',true); }
   done();
 }
-$('btnGrab').onclick=grabUrl;
-$('urlInput').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl(); });
+$('btnGrab').onclick=()=>grabUrl('urlInput','btnGrab');
+$('urlInput').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl('urlInput','btnGrab'); });
+$('btnGrab2').onclick=()=>grabUrl('urlInput2','btnGrab2');
+$('urlInput2').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl('urlInput2','btnGrab2'); });
+
+// settings popover (toolbar gear + the empty-state key link both open it)
+function openSettings(anchor){
+  $('keyInput').value=getShotKey();
+  const pop=$('setpop'); pop.classList.add('open');
+  const r=anchor.getBoundingClientRect(), pw=308, ph=210;
+  let x=r.right-pw, y=r.bottom+8;
+  if(x<8) x=8; if(x+pw>innerWidth-8) x=innerWidth-8-pw;
+  if(y+ph>innerHeight-8) y=Math.max(8,r.top-8-ph);
+  pop.style.left=x+'px'; pop.style.top=y+'px';
+  setTimeout(()=>$('urlInput2').focus(),0);
+}
+function closeSettings(){ $('setpop').classList.remove('open'); }
+$('btnSettings').onclick=()=>{ $('setpop').classList.contains('open') ? closeSettings() : openSettings($('btnSettings')); };
+$('btnKey').onclick=()=>openSettings($('btnKey'));
+$('keyInput').addEventListener('input',e=>{ const k=e.target.value.trim();
+  try{ if(k) localStorage.setItem(SHOT_KEY,k); else localStorage.removeItem(SHOT_KEY); }catch(_){}
+  updateKeyUI(); });
+document.addEventListener('pointerdown',e=>{ const pop=$('setpop');
+  if(!pop.classList.contains('open')) return;
+  if(pop.contains(e.target) || $('btnSettings').contains(e.target) || e.target===$('btnKey')) return;
+  closeSettings(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSettings(); });
 updateKeyUI();
 $('btnBg').onclick=()=>$('bgInput').click();
 $('bgInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();

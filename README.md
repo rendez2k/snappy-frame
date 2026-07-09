@@ -46,6 +46,24 @@ client-side; no upload, no account, no server.
 opens it in Snappy Frame with the image preloaded. See `extension/README.md` to
 install it unpacked.
 
+## Grabbing a webpage by URL
+
+Paste a URL into the empty-state field (or the toolbar **gear ⚙**) and hit
+**Grab** to screenshot a live page. Because browsers can't screenshot
+cross-origin pages directly (CSP + canvas tainting), this uses a renderer.
+There are three tiers, in order of reliability:
+
+| Setup | Result |
+|-------|--------|
+| **Nothing** | No grab (needs one of the below) |
+| **Netlify function deployed** (deploy from this repo, not a single-file drop) | Free [WordPress mShots](https://developer.wordpress.com/docs/api/1.1/) — slower; hit Grab again for a sharper shot |
+| **Own API key** (gear ⚙ → paste a [ScreenshotOne](https://screenshotone.com) key) | Best: crisp, fast, cookie-banner/ad blocking — called directly from the browser, so it works even without the function |
+
+The user's key is stored **only in their browser** (`localStorage`) and is sent
+only to ScreenshotOne. The site owner can also set a shared key server-side via
+the `SCREENSHOT_API_KEY` env var in Netlify (used by
+`netlify/functions/screenshot.js` when no per-user key is present).
+
 ## Running it
 
 It's a single static page — just open `index.html`, or serve the folder:
