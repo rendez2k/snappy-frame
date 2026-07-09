@@ -4,8 +4,13 @@ A free, browser-based **screenshot beautifier** — drop in a plain screenshot a
 wrap it in a gorgeous background, pattern, padding, rounded corners, a soft
 shadow, a 3D tilt and a window frame, then export a high-resolution PNG/JPEG.
 Inspired by tools like [pika.style](https://pika.style). Everything runs
-client-side; no upload, no account, no server. Live at
-<https://snappy-frame.netlify.app/>.
+client-side; no upload, no account, no server.
+
+### 🔗 Links
+
+- **Live app:** <https://snappy-frame.netlify.app/>
+- **Chrome extension** (capture any tab): <https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp>
+- **Report a bug / request a feature:** <https://github.com/rendez2k/snappy-frame/issues/new/choose>
 
 ## Features
 
