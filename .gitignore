@@ -3,6 +3,7 @@ package-lock.json
 # local render/test artifacts
 *.png
 !extension/icons/*.png
+!extension/store/*.png
 dbg.mjs
 capture.mjs
 scenarios.mjs
