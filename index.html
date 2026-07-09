@@ -80,6 +80,11 @@ input,select{font-family:inherit}
   overflow:hidden; white-space:nowrap}
 #bar .title{position:absolute; left:0; right:0; text-align:center; font-size:12px;
   pointer-events:none; opacity:.85}
+#bar .wbtns{margin-left:auto; display:none; gap:15px; font-size:11px; letter-spacing:1px;
+  align-items:center; padding-right:2px}
+/* Arc: a light matte border around the screenshot */
+#card.arc{background:#f2f2f4; padding:11px}
+#card.arc #shot{border-radius:7px}
 #shot{display:block; object-fit:contain}
 /* fill (crop) mode: image covers the whole card area below any frame bar */
 #card.fill{display:flex}
@@ -190,6 +195,31 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
 .file-hidden{position:absolute; width:1px; height:1px; opacity:0; pointer-events:none}
 
+/* 3x3 position picker */
+.posgrid{display:grid; grid-template-columns:repeat(3,20px); gap:5px}
+.posgrid button{width:20px; height:20px; border:1px solid var(--line-2); background:var(--panel-2);
+  border-radius:5px; cursor:pointer; padding:0; position:relative; transition:.1s}
+.posgrid button::after{content:''; position:absolute; inset:32%; border-radius:2px; background:var(--muted-2)}
+.posgrid button:hover{border-color:var(--muted-2)}
+.posgrid button.on{border-color:var(--accent); background:rgba(109,94,252,.18)}
+.posgrid button.on::after{background:var(--accent)}
+
+/* preset cards */
+.presets{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+.preset{border:1px solid var(--line-2); background:var(--panel-2); border-radius:9px; padding:5px;
+  cursor:pointer; display:grid; gap:5px; transition:.1s}
+.preset:hover{border-color:var(--accent)}
+.preset .pv{aspect-ratio:16/10; border-radius:6px; display:grid; place-items:center; overflow:hidden}
+.preset .pv i{width:60%; height:50%; background:#fff; border-radius:3px; box-shadow:0 3px 8px rgba(0,0,0,.35);
+  display:block}
+.preset .pn{font-size:10px; color:var(--muted); text-align:center; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.upreset{display:flex; align-items:center; gap:6px; border:1px solid var(--line-2); background:var(--panel-2);
+  border-radius:8px; padding:6px 10px; font-size:12px; width:100%; text-align:left; cursor:pointer}
+.upreset:hover{border-color:var(--muted-2)}
+.upreset .del{margin-left:auto; color:var(--muted-2); font-size:15px; line-height:1; padding:0 2px}
+.upreset .del:hover{color:#e0555f}
+
 /* noise overlay */
 #noiseLayer{position:absolute; inset:0; z-index:5; pointer-events:none; display:none;
   mix-blend-mode:overlay; opacity:.5;
@@ -244,7 +274,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <div id="patternLayer"></div>
           <div id="persp">
             <div id="card">
-              <div id="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url"></div><div class="title"></div></div>
+              <div id="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url"></div><div class="title"></div><div class="wbtns"><span>&#9472;</span><span>&#9723;</span><span>&#10005;</span></div></div>
               <img id="shot" alt="" />
             </div>
           </div>
@@ -262,6 +292,17 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
     <!-- Controls -->
     <aside class="panel" id="panel">
+      <!-- Presets -->
+      <section class="sec" data-sec="presets">
+        <button class="head"><span class="ico">✨</span> Presets <span class="chev">▾</span></button>
+        <div class="body">
+          <div class="presets" id="presetGrid"></div>
+          <div class="divider"></div>
+          <button class="btn sm" id="btnSavePreset" style="width:100%;justify-content:center">＋ Save current style</button>
+          <div id="userPresets" style="display:grid;gap:6px;margin-top:8px"></div>
+        </div>
+      </section>
+
       <!-- Background -->
       <section class="sec" data-sec="bg">
         <button class="head"><span class="ico">🎨</span> Background <span class="chev">▾</span></button>
@@ -333,10 +374,15 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
           <div class="field"><label>Style</label>
             <select class="sel" id="frameType">
               <option value="none">None</option>
-              <option value="macos-dark">macOS window · dark</option>
-              <option value="macos-light">macOS window · light</option>
+              <option value="arc">Arc (matte)</option>
+              <option value="macos-dark">macOS · dark</option>
+              <option value="macos-light">macOS · light</option>
+              <option value="macos-subtle">macOS · subtle</option>
               <option value="browser-dark">Browser · dark</option>
               <option value="browser-light">Browser · light</option>
+              <option value="windows-light">Windows · light</option>
+              <option value="stack-light">Stack · light</option>
+              <option value="stack-dark">Stack · dark</option>
             </select>
           </div>
           <div class="field" id="frameTitleField" hidden><label>Title / URL</label>
@@ -366,6 +412,13 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
             <div class="row2 tight">
               <input class="txt" id="customW" type="number" min="200" max="4000" value="1600">
               <input class="txt" id="customH" type="number" min="200" max="4000" value="1000">
+            </div>
+          </div>
+          <div class="field"><label>Position <span class="val" style="text-transform:none">fixed canvas only</span></label>
+            <div class="posgrid" id="posGrid">
+              <button data-p="tl"></button><button data-p="tc"></button><button data-p="tr"></button>
+              <button data-p="ml"></button><button data-p="mc" class="on"></button><button data-p="mr"></button>
+              <button data-p="bl"></button><button data-p="bc"></button><button data-p="br"></button>
             </div>
           </div>
           <div class="field"><label>Image fit</label>
@@ -485,7 +538,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'',
-  aspect:'auto', customW:1600, customH:1000, fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   bw:0, bc:'#ffffff',
@@ -543,7 +596,8 @@ function render(){
 
   // radius
   card.style.borderRadius = state.rad+'px';
-  shot.style.borderRadius = (state.frame==='none' ? state.rad : 0)+'px';
+  const _hasBar=/^(macos|browser|windows)/.test(state.frame);
+  shot.style.borderRadius = _hasBar ? '0' : (state.frame==='arc' ? '7px' : state.rad+'px');
 
   // frame bar
   buildFrame();
@@ -575,7 +629,8 @@ function rotCss(){ return `rotateX(${state.rx}deg) rotateY(${state.ry}deg) rotat
 // Size the stage and place the card. The card is centred by its *visual* (post-
 // perspective) bounding box so a 3D tilt never clips against overflow:hidden.
 function layout(){
-  if(!state.hasImage){ persp.style.transform='translate(-50%,-50%)';
+  if(!state.hasImage){ persp.style.left='50%'; persp.style.top='50%';
+    persp.style.transform='translate(-50%,-50%)';
     stage.style.width='420px'; stage.style.height='300px'; return; }
 
   const pad=state.pad;
@@ -616,17 +671,26 @@ function layout(){
   const sizeF=state.size/100;
   let vw=vis.width, vh=vis.height, scale=sizeF;
 
+  let stageW, stageH;
   if(!fixed){
-    stage.style.width=Math.ceil(vw*scale+2*pad)+'px';
-    stage.style.height=Math.ceil(vh*scale+2*pad)+'px';
+    stageW=Math.ceil(vw*scale+2*pad); stageH=Math.ceil(vh*scale+2*pad);
   } else {
-    stage.style.width=FW+'px'; stage.style.height=FH+'px';
+    stageW=FW; stageH=FH;
     scale=Math.min(sizeF, (FW-2*pad)/vw, (FH-2*pad)/vh);   // shrink card to fit canvas
   }
+  stage.style.width=stageW+'px'; stage.style.height=stageH+'px';
+  const visW=vw*scale, visH=vh*scale;
   dx*=scale; dy*=scale;
+
+  // Position: place the card's *visual* box against one of 9 anchors (only has an
+  // effect when the fixed canvas leaves spare room; in Auto every anchor = centre).
+  const P=state.position||'mc', pv=P[0], ph=P[1];
+  const cx = ph==='l'? pad+visW/2 : ph==='r'? stageW-pad-visW/2 : stageW/2;
+  const cy = pv==='t'? pad+visH/2 : pv==='b'? stageH-pad-visH/2 : stageH/2;
 
   // scale is applied *outside* the rotation so it scales the tilted result uniformly
   card.style.transform=(scale!==1?`scale(${scale}) `:'')+rot;
+  persp.style.left=cx+'px'; persp.style.top=cy+'px';
   persp.style.transform=`translate(-50%,-50%) translate(${(-dx).toFixed(2)}px,${(-dy).toFixed(2)}px)`;
   fit.style.transform=savedFit; void fit.offsetWidth; fit.style.transition=savedTrans;
 }
@@ -669,34 +733,53 @@ function applyBgBlur(on){
 }
 
 function shadowCss(){
-  if(state.shadowPreset==='none' && state.shBlur===0) return 'none';
-  const op=state.shOp/100;
-  if(state.shadowPreset==='glow'){
-    return `0 0 ${state.shBlur}px rgba(109,94,252,${op})`;
+  let base;
+  if(state.shadowPreset==='none' && state.shBlur===0) base='none';
+  else if(state.shadowPreset==='glow') base=`0 0 ${state.shBlur}px rgba(109,94,252,${state.shOp/100})`;
+  else base=`0 ${state.shY}px ${state.shBlur}px rgba(0,0,0,${state.shOp/100})`;
+  // Stack frames: two sheets peeking above the card (box-shadow follows its radius).
+  if(state.frame==='stack-light' || state.frame==='stack-dark'){
+    const dark=state.frame==='stack-dark';
+    const s1=dark?'#2a2d38':'#eeeef1', s2=dark?'#21232c':'#e0e0e5';
+    const drop = base==='none' ? `0 14px 34px rgba(0,0,0,${dark?.45:.28})` : base;
+    return `0 -12px 0 -3px ${s1}, 0 -24px 0 -8px ${s2}, ${drop}`;
   }
-  const y=state.shY;
-  return `0 ${y}px ${state.shBlur}px rgba(0,0,0,${op})`;
+  return base;
 }
 
 function buildFrame(){
   const f=state.frame;
-  if(f==='none'){ bar.style.display='none'; return; }
+  card.classList.toggle('arc', f==='arc');
+  const kind = f.split('-')[0];                      // macos | browser | windows | (none/arc/stack)
+  const hasBar = kind==='macos' || kind==='browser' || kind==='windows';
+  if(!hasBar){ bar.style.display='none'; return; }
   bar.style.display='flex';
-  const light = f.endsWith('light');
-  const isBrowser = f.startsWith('browser');
-  bar.style.background = light ? '#f4f5f7' : '#2a2d38';
-  bar.style.borderBottom = light ? '1px solid #e2e4ea' : '1px solid #1a1c24';
-  const dots=bar.querySelectorAll('.dots i');
-  const cols = ['#ff5f57','#febc2e','#28c840'];
+  const subtle = f==='macos-subtle';
+  const light = f.includes('light') || subtle;
+  bar.style.background = subtle ? '#f7f7f9' : light ? '#f4f5f7' : '#2a2d38';
+  bar.style.borderBottom = light ? '1px solid #e6e7ec' : '1px solid #1a1c24';
+  const dotsEl=bar.querySelector('.dots'), urlEl=bar.querySelector('.url'),
+        titleEl=bar.querySelector('.title'), wbtns=bar.querySelector('.wbtns');
+  const dots=dotsEl.querySelectorAll('i');
+  const cols = subtle ? ['#c9ccd4','#c9ccd4','#c9ccd4'] : ['#ff5f57','#febc2e','#28c840'];
   dots.forEach((d,i)=>d.style.background=cols[i]);
-  const urlEl=bar.querySelector('.url'), titleEl=bar.querySelector('.title');
-  if(isBrowser){
-    urlEl.style.display='flex'; titleEl.style.display='none';
+  // reset parts
+  dotsEl.style.display='none'; urlEl.style.display='none';
+  titleEl.style.display='none'; wbtns.style.display='none';
+  if(kind==='windows'){
+    titleEl.style.display='block'; titleEl.style.textAlign='left';
+    titleEl.style.paddingLeft='12px'; titleEl.style.color='#4a4f5c';
+    titleEl.textContent = state.frameTitle || '';
+    wbtns.style.display='flex'; wbtns.style.color='#5a5f6b';
+  } else if(kind==='browser'){
+    dotsEl.style.display='flex';
+    urlEl.style.display='flex';
     urlEl.style.background = light ? '#fff' : '#1c1f28';
     urlEl.style.color = light ? '#6b7180' : '#9aa0b0';
     urlEl.textContent = state.frameTitle || 'example.com';
-  } else {
-    urlEl.style.display='none'; titleEl.style.display='block';
+  } else { // macos
+    dotsEl.style.display='flex';
+    titleEl.style.display='block'; titleEl.style.textAlign='center'; titleEl.style.paddingLeft='0';
     titleEl.style.color = light ? '#4a4f5c' : '#c7cbd6';
     titleEl.textContent = state.frameTitle || '';
   }
@@ -881,8 +964,9 @@ bindRange('rz','rz',v=>v+'°');
 bindRange('bw','bw',v=>v+'px');
 
 // frame
+function frameHasTitle(f){ return /^(macos|browser|windows)/.test(f); }
 $('frameType').onchange=e=>{ state.frame=e.target.value;
-  $('frameTitleField').hidden = state.frame==='none';
+  $('frameTitleField').hidden = !frameHasTitle(state.frame);
   render(); };
 $('frameTitle').oninput=e=>{ state.frameTitle=e.target.value; render(); };
 
@@ -900,6 +984,10 @@ $('patType').addEventListener('click',e=>{ const b=e.target.closest('button'); i
 bindRange('patOpacity','patOpacity',v=>v+'%');
 bindRange('patScale','patScale',v=>v+'px');
 bindRange('patRotate','patRotate',v=>v+'°');
+// position picker
+$('posGrid').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.position=b.dataset.p;
+  $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
 // fit / fill
 $('fitMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.fill=b.dataset.v==='fill';
@@ -956,7 +1044,7 @@ $('scale').addEventListener('click',e=>{ const b=e.target.closest('button'); if(
 $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff'});
   syncUI(); render(); toast('Styles reset');
 };
@@ -971,10 +1059,14 @@ function syncUI(){
   $('shBlur').value=state.shBlur; $('shBlurVal').textContent=state.shBlur+'px';
   $('shY').value=state.shY; $('shYVal').textContent=state.shY+'px';
   $('shOp').value=state.shOp; $('shOpVal').textContent=state.shOp+'%';
-  $('rx').value=$('ry').value=$('rz').value=0; $('rxVal').textContent=$('ryVal').textContent=$('rzVal').textContent='0°';
+  $('rx').value=state.rx; $('rxVal').textContent=state.rx+'°';
+  $('ry').value=state.ry; $('ryVal').textContent=state.ry+'°';
+  $('rz').value=state.rz; $('rzVal').textContent=state.rz+'°';
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
-  $('frameType').value=state.frame; $('frameTitleField').hidden=true; $('frameTitle').value='';
+  $('frameType').value=state.frame;
+  $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
   $('aspect').value=state.aspect;
+  $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.position));
   $('customSizeField').hidden=state.aspect!=='custom';
   $('customW').value=state.customW; $('customH').value=state.customH;
   $('patType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.pattern));
@@ -989,8 +1081,74 @@ function syncUI(){
   document.querySelectorAll('.bg-panel').forEach(p=>p.hidden=p.dataset.for!==state.bgType);
   gs.querySelectorAll('button').forEach((x,j)=>x.classList.toggle('on',j===state.gradPreset));
   $('shadowPresets').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.shadowPreset));
-  $('tiltPresets').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v==='flat'));
+  const tk=tiltKey();
+  $('tiltPresets').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===tk));
 }
+function tiltKey(){ for(const k in TILT){ const t=TILT[k];
+  if(t[0]===state.rx&&t[1]===state.ry&&t[2]===state.rz) return k; } return null; }
+
+// ---------- Presets ----------
+const BUILTIN_PRESETS=[
+  {n:'Violet',    s:{bgType:'gradient',gradPreset:0,  pattern:'none', frame:'none',          shadow:'md',  tilt:'flat', rad:16,pad:64}},
+  {n:'Sunset',    s:{bgType:'gradient',gradPreset:5,  pattern:'none', frame:'browser-light', shadow:'lg',  tilt:'flat', rad:12,pad:80}},
+  {n:'Ocean',     s:{bgType:'mesh',    meshPreset:2,  pattern:'none', frame:'macos-dark',    shadow:'lg',  tilt:'iso',  rad:12,pad:72}},
+  {n:'Mono dots', s:{bgType:'solid',   solid:'#1e2233', pattern:'dots', patOpacity:26, frame:'macos-subtle', shadow:'lg', tilt:'flat', rad:12,pad:72}},
+  {n:'Peach',     s:{bgType:'gradient',gradPreset:11, pattern:'waves', patOpacity:22, frame:'arc',      shadow:'md',  tilt:'left', rad:16,pad:80}},
+  {n:'Grid dark', s:{bgType:'solid',   solid:'#0f1117', pattern:'grid', patOpacity:16, frame:'browser-dark', shadow:'lg', tilt:'flat', rad:10,pad:64}},
+  {n:'Emerald',   s:{bgType:'gradient',gradPreset:2,  pattern:'rings', patOpacity:15, frame:'stack-light', shadow:'md', tilt:'right', rad:14,pad:72}},
+  {n:'Candy',     s:{bgType:'gradient',gradPreset:9,  pattern:'none', frame:'none',          shadow:'glow', tilt:'up',  rad:18,pad:80}},
+  {n:'Slate',     s:{bgType:'mesh',    meshPreset:7,  pattern:'dots', patOpacity:14, frame:'windows-light', shadow:'md', tilt:'flat', rad:8,pad:72}},
+];
+function presetBg(s){
+  if(s.bgType==='mesh')  return MESHES[s.meshPreset||0];
+  if(s.bgType==='solid') return s.solid||'#1e2233';
+  const g=GRADIENTS[s.gradPreset||0]; return `linear-gradient(135deg,${g[0]},${g[1]})`;
+}
+function applyPreset(s){
+  state.bgType=s.bgType;
+  if(s.gradPreset!=null){ state.gradPreset=s.gradPreset; state.gradC1=GRADIENTS[s.gradPreset][0]; state.gradC2=GRADIENTS[s.gradPreset][1]; }
+  if(s.meshPreset!=null) state.meshPreset=s.meshPreset;
+  if(s.solid) state.solid=s.solid;
+  state.pattern=s.pattern||'none'; if(s.patOpacity!=null) state.patOpacity=s.patOpacity;
+  state.frame=s.frame||'none';
+  if(s.shadow){ state.shadowPreset=s.shadow; const v=SH[s.shadow]; state.shBlur=v[0]; state.shY=v[1]; state.shOp=v[2]; }
+  if(s.tilt){ const t=TILT[s.tilt]; state.rx=t[0]; state.ry=t[1]; state.rz=t[2]; }
+  if(s.rad!=null) state.rad=s.rad; if(s.pad!=null) state.pad=s.pad;
+  syncUI(); render();
+}
+(function(){ const grid=$('presetGrid');
+  BUILTIN_PRESETS.forEach(p=>{ const b=document.createElement('button'); b.className='preset'; b.title=p.n;
+    const pv=document.createElement('span'); pv.className='pv'; pv.style.background=presetBg(p.s);
+    const i=document.createElement('i');
+    if(p.s.tilt&&TILT[p.s.tilt]){ const t=TILT[p.s.tilt];
+      i.style.transform=`perspective(140px) rotateX(${t[0]/2}deg) rotateY(${t[1]/2}deg)`; }
+    pv.appendChild(i); b.appendChild(pv);
+    const n=document.createElement('span'); n.className='pn'; n.textContent=p.n; b.appendChild(n);
+    b.onclick=()=>{ applyPreset(p.s); toast(p.n+' applied'); };
+    grid.appendChild(b); });
+})();
+
+// Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
+const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgBlur',
+  'pattern','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
+  'position','fill','posX','posY','size','pad','rad','noise','shadowPreset','shBlur','shY','shOp','rx','ry','rz','bw','bc'];
+const PKEY='snappy_presets_v1';
+function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
+function saveUser(a){ try{ localStorage.setItem(PKEY,JSON.stringify(a)); }catch(e){ toast('Could not save (storage full)',true); } }
+function renderUser(){ const box=$('userPresets'); box.innerHTML='';
+  loadUser().forEach((p,idx)=>{ const row=document.createElement('button'); row.className='upreset';
+    const label=document.createElement('span'); label.textContent='✨ '+p.name;
+    const del=document.createElement('span'); del.className='del'; del.textContent='×'; del.title='Delete';
+    row.appendChild(label); row.appendChild(del);
+    row.onclick=e=>{ if(e.target===del){ const a=loadUser(); a.splice(idx,1); saveUser(a); renderUser(); return; }
+      STYLE_KEYS.forEach(k=>{ if(p.style[k]!==undefined) state[k]=p.style[k]; });
+      syncUI(); render(); toast(p.name+' applied'); };
+    box.appendChild(row); });
+}
+$('btnSavePreset').onclick=()=>{ const name=(prompt('Preset name:')||'').trim(); if(!name) return;
+  const style={}; STYLE_KEYS.forEach(k=>style[k]=state[k]);
+  const a=loadUser(); a.push({name,style}); saveUser(a); renderUser(); toast('Preset saved'); };
+renderUser();
 
 render();
 })();
