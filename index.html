@@ -60,8 +60,13 @@ input,select{font-family:inherit}
 #stage{
   position:relative; overflow:hidden; background:#222;
 }
+/* background pattern overlay: sits above the bg, below the card. Oversized so
+   rotation never reveals corner gaps (stage clips it via overflow:hidden). */
+#patternLayer{position:absolute; inset:-60%; z-index:1; display:none; pointer-events:none;
+  background-repeat:repeat; background-position:center; transform-origin:center;
+  mix-blend-mode:overlay; will-change:transform}
 /* card is absolutely centred; JS sizes the stage + nudges for perspective */
-#persp{position:absolute; left:50%; top:50%; perspective:1600px; will-change:transform}
+#persp{position:absolute; left:50%; top:50%; z-index:2; perspective:1600px; will-change:transform}
 #card{
   position:relative; display:inline-flex; flex-direction:column; overflow:hidden;
   transform-style:preserve-3d; will-change:transform; background:#0b0c11;
@@ -236,6 +241,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
     <div class="stage-wrap" id="stageWrap">
       <div id="fit">
         <div id="stage">
+          <div id="patternLayer"></div>
           <div id="persp">
             <div id="card">
               <div id="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url"></div><div class="title"></div></div>
@@ -299,6 +305,27 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
         </div>
       </section>
 
+      <!-- Pattern -->
+      <section class="sec collapsed" data-sec="pattern">
+        <button class="head"><span class="ico">🌀</span> Pattern <span class="chev">▾</span></button>
+        <div class="body">
+          <div class="chips" id="patType" style="margin-bottom:12px">
+            <button data-v="none" class="on">None</button>
+            <button data-v="dots">Dots</button>
+            <button data-v="grid">Grid</button>
+            <button data-v="waves">Waves</button>
+            <button data-v="rings">Rings</button>
+            <button data-v="cross">Cross</button>
+          </div>
+          <div class="field"><label>Intensity <span class="val" id="patOpacityVal">18%</span></label>
+            <input type="range" id="patOpacity" min="0" max="60" value="18"></div>
+          <div class="field"><label>Scale <span class="val" id="patScaleVal">28px</span></label>
+            <input type="range" id="patScale" min="10" max="90" value="28"></div>
+          <div class="field"><label>Rotation <span class="val" id="patRotateVal">0°</span></label>
+            <input type="range" id="patRotate" min="0" max="180" value="0"></div>
+        </div>
+      </section>
+
       <!-- Frame -->
       <section class="sec" data-sec="frame">
         <button class="head"><span class="ico">🖼️</span> Frame <span class="chev">▾</span></button>
@@ -332,7 +359,14 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
               <option value="16:10">Desktop · 16:10</option>
               <option value="2:1">Twitter · 2:1</option>
               <option value="1.91:1">OG image · 1.91:1</option>
+              <option value="custom">Custom size…</option>
             </select>
+          </div>
+          <div class="field" id="customSizeField" hidden><label>Canvas size (px)</label>
+            <div class="row2 tight">
+              <input class="txt" id="customW" type="number" min="200" max="4000" value="1600">
+              <input class="txt" id="customH" type="number" min="200" max="4000" value="1000">
+            </div>
           </div>
           <div class="field"><label>Image fit</label>
             <div class="seg" id="fitMode">
@@ -449,8 +483,9 @@ const state = {
   hasImage:false, imgW:0, imgH:0,
   bgType:'gradient', gradAngle:120, gradC1:'#6d5efc', gradC2:'#c05bff',
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
+  pattern:'none', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'',
-  aspect:'auto', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   bw:0, bc:'#ffffff',
@@ -522,6 +557,9 @@ function render(){
   // noise overlay
   $('noiseLayer').style.display = state.noise ? 'block' : 'none';
 
+  // background pattern overlay
+  applyPattern();
+
   // layout (sizes stage, positions & tilts the card)
   layout();
   scheduleFit();
@@ -543,7 +581,9 @@ function layout(){
   const pad=state.pad;
   const fixed=state.aspect!=='auto';
   const fill=state.fill && fixed;                 // fill only crops on a fixed canvas
-  const [FW,FH]=fixed ? (FIXED_SIZES[state.aspect]||[1280,720]) : [0,0];
+  const [FW,FH]= !fixed ? [0,0]
+    : state.aspect==='custom' ? [state.customW, state.customH]
+    : (FIXED_SIZES[state.aspect]||[1280,720]);
 
   if(fill){
     // Card becomes the fixed padded rectangle; the image *covers* it (cropped),
@@ -589,6 +629,30 @@ function layout(){
   card.style.transform=(scale!==1?`scale(${scale}) `:'')+rot;
   persp.style.transform=`translate(-50%,-50%) translate(${(-dx).toFixed(2)}px,${(-dy).toFixed(2)}px)`;
   fit.style.transform=savedFit; void fit.offsetWidth; fit.style.transition=savedTrans;
+}
+
+const PAT_WAVE="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20'%3E%3Cpath d='M0 14 Q10 4 20 14 T40 14' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E";
+const PAT_CROSS="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M10 5V15 M5 10H15' stroke='white' stroke-width='1.4'/%3E%3C/svg%3E";
+function applyPattern(){
+  const pl=$('patternLayer'), s=state.patScale;
+  if(state.pattern==='none' || state.patOpacity===0){ pl.style.display='none'; return; }
+  pl.style.display='block';
+  let img='', size=s+'px '+s+'px';
+  switch(state.pattern){
+    case 'dots':  { const r=Math.max(1,s*0.055);
+      img=`radial-gradient(#fff ${r.toFixed(1)}px, transparent ${(r+0.7).toFixed(1)}px)`; break; }
+    case 'grid':
+      img='linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)'; break;
+    case 'rings':
+      img=`repeating-radial-gradient(circle at 50% 50%, transparent 0 ${s-1.4}px, #fff ${s-1.4}px ${s}px)`;
+      size='auto'; break;
+    case 'waves': img=`url("${PAT_WAVE}")`; size=(s*2)+'px '+s+'px'; break;
+    case 'cross': img=`url("${PAT_CROSS}")`; break;
+  }
+  pl.style.backgroundImage=img;
+  pl.style.backgroundSize=size;
+  pl.style.opacity=(state.patOpacity/100).toFixed(2);
+  pl.style.transform=`rotate(${state.patRotate}deg)`;
 }
 
 let bgBlurEl=null;
@@ -823,9 +887,19 @@ $('frameType').onchange=e=>{ state.frame=e.target.value;
 $('frameTitle').oninput=e=>{ state.frameTitle=e.target.value; render(); };
 
 // aspect
-$('aspect').onchange=e=>{ state.aspect=e.target.value; updateFillUI(); render(); };
+$('aspect').onchange=e=>{ state.aspect=e.target.value;
+  $('customSizeField').hidden = state.aspect!=='custom'; updateFillUI(); render(); };
+$('customW').oninput=e=>{ state.customW=Math.min(4000,Math.max(200,+e.target.value||200)); render(); };
+$('customH').oninput=e=>{ state.customH=Math.min(4000,Math.max(200,+e.target.value||200)); render(); };
 // noise
 $('noise').onchange=e=>{ state.noise=e.target.checked; render(); };
+// pattern
+$('patType').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.pattern=b.dataset.v;
+  $('patType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+bindRange('patOpacity','patOpacity',v=>v+'%');
+bindRange('patScale','patScale',v=>v+'px');
+bindRange('patRotate','patRotate',v=>v+'°');
 // fit / fill
 $('fitMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.fill=b.dataset.v==='fill';
@@ -881,7 +955,8 @@ $('scale').addEventListener('click',e=>{ const b=e.target.closest('button'); if(
 // reset
 $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
-    meshPreset:0,solid:'#1e2233',bgBlur:0,frame:'none',frameTitle:'',aspect:'auto',fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
+    meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patOpacity:18,patScale:28,patRotate:0,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff'});
   syncUI(); render(); toast('Styles reset');
 };
@@ -900,6 +975,12 @@ function syncUI(){
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
   $('frameType').value=state.frame; $('frameTitleField').hidden=true; $('frameTitle').value='';
   $('aspect').value=state.aspect;
+  $('customSizeField').hidden=state.aspect!=='custom';
+  $('customW').value=state.customW; $('customH').value=state.customH;
+  $('patType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.pattern));
+  $('patOpacity').value=state.patOpacity; $('patOpacityVal').textContent=state.patOpacity+'%';
+  $('patScale').value=state.patScale; $('patScaleVal').textContent=state.patScale+'px';
+  $('patRotate').value=state.patRotate; $('patRotateVal').textContent=state.patRotate+'°';
   $('posX').value=state.posX; $('posXVal').textContent=state.posX+'%';
   $('posY').value=state.posY; $('posYVal').textContent=state.posY+'%';
   $('fitMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',(x.dataset.v==='fill')===state.fill));
