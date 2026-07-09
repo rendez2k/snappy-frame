@@ -1,9 +1,20 @@
 node_modules/
 package-lock.json
 # local render/test artifacts
-preview-ui.png
-export-sample.png
-sc-*.png
+*.png
+!extension/icons/*.png
 dbg.mjs
 capture.mjs
 scenarios.mjs
+fitfill.mjs
+pat.mjs
+gallery.mjs
+frames.mjs
+big.mjs
+mob.mjs
+msgtest.mjs
+sstest.mjs
+mkicons.mjs
+scenarios*.mjs
+snappy-standalone.html
+snappy-frame.html
