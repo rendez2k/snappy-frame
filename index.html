@@ -731,9 +731,10 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 <div id="setpop">
   <div class="sp-h">Grab a webpage</div>
   <div class="sp-row"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
-  <div class="sp-h" style="margin-top:14px">Screenshot API key <span style="font-weight:400;color:var(--muted-2)">· optional</span></div>
+  <label class="toggle" style="margin-top:10px"><input type="checkbox" id="fullPage" checked> <span>Capture the full page (not just the visible area)</span></label>
+  <div class="sp-h" style="margin-top:14px">Screenshot API key</div>
   <input class="txt" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
-  <p class="hint" style="margin-top:7px">Stored only in this browser — gives crisp, reliable grabs. Leave blank to use the free renderer. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a key →</a></p>
+  <p class="hint" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
   <div class="sp-links">
     <button class="lnk" id="spWhatsnew">What’s new</button>
     <a class="lnk" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue</a>
@@ -1191,37 +1192,50 @@ const SHOT_KEY='snappy_shot_key';
 function getShotKey(){ try{ return (localStorage.getItem(SHOT_KEY)||'').trim(); }catch(e){ return ''; } }
 function updateKeyUI(){ $('btnKey').textContent = getShotKey()
   ? '✓ Using your screenshot API key · change'
-  : '⚙ Add a screenshot API key for reliable grabs'; }
-const blobToDataURL=blob=>new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=rej; fr.readAsDataURL(blob); });
+  : '⚙ Add a ScreenshotOne key to grab webpages'; }
+// Load a cross-origin image and bake it to a data URL (export-safe). Only works
+// if the provider sends CORS headers on the image; otherwise it rejects.
+function loadCorsImage(src){
+  return new Promise((res,rej)=>{
+    const im=new Image(); im.crossOrigin='anonymous';
+    im.onload=()=>{ try{ const c=document.createElement('canvas'); c.width=im.naturalWidth; c.height=im.naturalHeight;
+      c.getContext('2d').drawImage(im,0,0); res(c.toDataURL('image/jpeg',0.92)); }catch(e){ rej(e); } };
+    im.onerror=()=>rej(new Error('img'));
+    im.src=src;
+  });
+}
 async function grabUrl(inputId,btnId){
   let url=$(inputId).value.trim(); if(!url) return;
   if(!/^https?:\/\//i.test(url)) url='https://'+url;
   const key=getShotKey();
+  const full=$('fullPage').checked;
   const btn=$(btnId), label=btn.textContent; btn.disabled=true; btn.textContent='…';
   const done=()=>{ btn.disabled=false; btn.textContent=label; };
   toast('Grabbing the page — this can take a few seconds…');
-  // 1) With the user's own key, call ScreenshotOne directly (works even with no function).
+  // 1) With the user's own key, try ScreenshotOne directly (only succeeds if it
+  //    allows browser/CORS access — otherwise we fall back to the function).
   if(key){
     try{
       const api='https://api.screenshotone.com/take?access_key='+encodeURIComponent(key)+
         '&url='+encodeURIComponent(url)+'&viewport_width=1280&format=jpg&image_quality=82'+
-        '&block_ads=true&block_cookie_banners=true&cache=true';
-      const r=await fetch(api);
-      if(r.ok){ loadImage(await blobToDataURL(await r.blob())); closeSettings(); done(); return; }
-    }catch(e){ /* CORS/network — fall through to the function */ }
+        '&full_page='+full+'&block_ads=true&block_cookie_banners=true&cache=true';
+      const dataUrl=await loadCorsImage(api);
+      loadImage(dataUrl); closeSettings(); done(); return;
+    }catch(e){ /* provider blocks direct browser access — use the function */ }
   }
-  // 2) Fall back to the Netlify function (its own key or free mShots); forward the user key too.
+  // 2) Netlify function (its own key or free mShots); forward the user key too.
   try{
-    const res=await fetch('/.netlify/functions/screenshot?w=1280&url='+encodeURIComponent(url), key?{headers:{'x-shot-key':key}}:{});
+    const res=await fetch('/.netlify/functions/screenshot?w=1280&full='+(full?1:0)+'&url='+encodeURIComponent(url), key?{headers:{'x-shot-key':key}}:{});
     if(res.status===404) throw new Error('nofunc');
     const j=await res.json().catch(()=>({}));
     if(!res.ok || !j.dataUrl) throw new Error(j.error||('http '+res.status));
     loadImage(j.dataUrl); closeSettings();
     if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
   }catch(e){ console.error(e);
-    if(e.message==='nofunc') toast(key?'Your key didn’t work and no function is deployed':'Page-grab needs the Netlify function — or add your own API key',true);
-    else if(e.message==='Failed to fetch') toast('Page-grab only works on the deployed site (or add your own API key)',true);
-    else toast('Couldn’t render that page — check your key or try again',true); }
+    if(e.message==='nofunc' || e.message==='Failed to fetch')
+      toast(key ? 'Couldn’t reach the renderer — check your API key or try again'
+                : 'Add a ScreenshotOne key (gear ⚙, top-right) to grab webpages',true);
+    else toast('Couldn’t render that page — try again in a moment',true); }
   done();
 }
 $('btnGrab').onclick=()=>grabUrl('urlInput','btnGrab');

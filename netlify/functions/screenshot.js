@@ -20,6 +20,7 @@ exports.handler = async (event) => {
   if (!url) return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "missing url" }) };
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const w = Math.min(2000, Math.max(600, parseInt(q.w, 10) || 1280));
+  const full = q.full === "1" || q.full === "true";
   const json = (body, status = 200) => ({
     statusCode: status,
     headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
@@ -35,7 +36,7 @@ exports.handler = async (event) => {
         "https://api.screenshotone.com/take?access_key=" + encodeURIComponent(key) +
         "&url=" + encodeURIComponent(url) +
         "&viewport_width=" + w +
-        "&format=jpg&image_quality=82&full_page=false" +
+        "&format=jpg&image_quality=82&full_page=" + (full ? "true" : "false") +
         "&block_ads=true&block_cookie_banners=true&block_trackers=true&cache=true";
       const r = await fetch(api);
       if (r.ok) {

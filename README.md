@@ -53,16 +53,23 @@ Paste a URL into the empty-state field (or the toolbar **gear ⚙**) and hit
 cross-origin pages directly (CSP + canvas tainting), this uses a renderer.
 There are three tiers, in order of reliability:
 
+**It needs the serverless function** (`netlify/functions/screenshot.js`), because
+browsers can't read the pixels of a cross-origin screenshot for export unless
+the provider sends CORS headers — which most don't. So deploy Snappy Frame **from
+this git repo** (connect it in Netlify), not by drag-dropping a single HTML file.
+
+Once the function is live:
+
 | Setup | Result |
 |-------|--------|
-| **Nothing** | No grab (needs one of the below) |
-| **Netlify function deployed** (deploy from this repo, not a single-file drop) | Free [WordPress mShots](https://developer.wordpress.com/docs/api/1.1/) — slower; hit Grab again for a sharper shot |
-| **Own API key** (gear ⚙ → paste a [ScreenshotOne](https://screenshotone.com) key) | Best: crisp, fast, cookie-banner/ad blocking — called directly from the browser, so it works even without the function |
+| **Function only** | Free [WordPress mShots](https://developer.wordpress.com/) — slower; hit Grab again for a sharper shot |
+| **+ shared key** (`SCREENSHOT_API_KEY` env var in Netlify) | Every grab uses [ScreenshotOne](https://screenshotone.com) — crisp, fast, blocks cookie banners/ads |
+| **+ per-user key** (gear ⚙ → paste a key) | That user's grabs use their own ScreenshotOne key (stored only in their browser, forwarded to the function) |
 
-The user's key is stored **only in their browser** (`localStorage`) and is sent
-only to ScreenshotOne. The site owner can also set a shared key server-side via
-the `SCREENSHOT_API_KEY` env var in Netlify (used by
-`netlify/functions/screenshot.js` when no per-user key is present).
+With a **ScreenshotOne** key the app calls it **directly from the browser**
+(ScreenshotOne allows CORS), so a per-user key skips the function entirely — the
+grab works even on a single-file deploy. A **Full page** toggle (gear ⚙) captures
+the whole scrollable page rather than just the visible viewport.
 
 ## Running it
 
