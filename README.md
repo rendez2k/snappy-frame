@@ -15,8 +15,20 @@ client-side; no upload, no account, no server.
 ## Features
 
 - **Import** — upload, drag &amp; drop, paste from clipboard (⌘/Ctrl+V), capture
-  your screen live (`getDisplayMedia`), or one-click from the companion Chrome
-  extension (see `extension/`).
+  your screen live (`getDisplayMedia`), grab a webpage by URL, or one-click from
+  the companion Chrome extension (see `extension/`).
+- **Code snippets** — paste code instead of an image and get a syntax-highlighted,
+  window-framed card that flows through every style below.
+- **Device mockups** — wrap the screenshot in a laptop, phone or tablet shell;
+  pair with the 3D tilt for the classic angled hero.
+- **Markup &amp; redact** — arrows, boxes, numbered steps, text and a spotlight, plus
+  **blur / pixelate** regions that bake into the pixels (nothing leaves your browser).
+- **Auto-match background** — one click samples your screenshot and builds a
+  harmonising gradient.
+- **Animated export** — Float / Zoom / Sway / Reveal loops exported as WebM (MP4 on
+  Safari) for social.
+- **Magic resize** — style once, export every social size at 2× in a single zip.
+- **Batch** — apply the current look to many screenshots and export them as a zip.
 - **Presets** — 30+ curated one-click looks, plus save/load your own to
   `localStorage`.
 - **Backgrounds** — 30 gradients, 14 mesh gradients, solid colour, your own
