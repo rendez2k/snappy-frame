@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Snappy Frame" />
 <script src="vendor/html-to-image.js"></script>
 <style>
@@ -45,7 +45,9 @@ input,select{font-family:inherit}
 /* ---------- Layout ---------- */
 .app{display:grid; grid-template-rows:auto minmax(0,1fr); height:100%}
 .topbar{
-  display:flex; align-items:center; gap:14px; padding:10px 16px;
+  display:flex; align-items:center; gap:14px;
+  /* clear the iOS status bar / notch when installed or in cover mode */
+  padding:max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
   border-bottom:1px solid var(--line); background:var(--panel); z-index:10;
 }
 .brand{display:flex; align-items:center; gap:9px; line-height:1}
@@ -67,7 +69,8 @@ input,select{font-family:inherit}
   .main{grid-template-columns:1fr}
   .panel{position:fixed; inset:auto 0 0 0; max-height:46vh; z-index:20;
     border-left:0; border-top:1px solid var(--line); border-radius:16px 16px 0 0;
-    box-shadow:0 -12px 30px rgba(0,0,0,.4); transition:max-height .2s ease}
+    box-shadow:0 -12px 30px rgba(0,0,0,.4); transition:max-height .2s ease;
+    padding-bottom:env(safe-area-inset-bottom)}   /* clear the home indicator */
   .main .stage-wrap{padding-bottom:46vh; transition:padding-bottom .2s ease}
   .sheet-handle{display:block; position:sticky; top:0; z-index:3; width:100%; padding:9px 0 7px;
     background:var(--panel); border:0; border-radius:16px 16px 0 0; cursor:pointer}
@@ -78,7 +81,8 @@ input,select{font-family:inherit}
 }
 /* Compact top bar so nothing clips / overflows on phones */
 @media (max-width:600px){
-  .topbar{gap:6px; padding:8px 8px; flex-wrap:nowrap}
+  .topbar{gap:6px; flex-wrap:nowrap;
+    padding:max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left))}
   .brand small, .brand .ver, .brand .wordmark{display:none}   /* logo only on phones */
   .brand{gap:6px; flex:0 0 auto}
   .brand .logo{width:26px; height:26px}
@@ -1158,7 +1162,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.1';
+const APP_VERSION='1.6.2';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2130,6 +2134,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.2', items:[
+    'Fixed iOS display — the toolbar no longer sits under the status bar / notch (safe-area insets)',
+  ]},
   {v:'1.6.1', items:[
     'Fixed install: Android now gets the native prompt (or Chrome-menu steps), and each platform sees the right instructions — no more Apple-only help',
   ]},
