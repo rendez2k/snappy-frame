@@ -16,30 +16,34 @@ Copy-paste these into the Web Store Developer Dashboard when you submit
 
 ## Detailed description
 
-> **Snappy Frame turns plain screenshots into share-ready images — right in your
-> browser.**
+> ⚠️ **Rewritten after a "Keyword spam" rejection** (2026-07). The previous copy
+> listed many social-platform brand names in a row ("Instagram, X/Twitter,
+> Facebook, LinkedIn, YouTube, Pinterest, App Store…"), which reviewers read as
+> keyword stuffing. This version describes the same features in plain prose with
+> no stacked brand-name or comma-separated keyword lists. Paste it verbatim.
+
+> **Snappy Frame turns plain screenshots into polished, share-ready images —
+> right in your browser.**
 >
 > Click the toolbar icon to capture the current tab, and it opens instantly in
-> Snappy Frame with your screenshot loaded and ready to beautify.
+> Snappy Frame with your screenshot loaded and ready to edit.
 >
 > **What you can do:**
-> • Drop your screenshot on a gorgeous background — 30 gradients, 14 mesh
->   gradients, solid colours, your own wallpaper, or transparent.
-> • Add a window frame — macOS, browser, Windows, Arc, Stack and more (18 styles).
-> • Layer on a pattern — dots, grid, waves, diamonds, confetti and others.
-> • Give it depth with soft shadows and real 3D perspective tilt.
-> • Size it perfectly for social — Instagram, X/Twitter, Facebook, LinkedIn,
->   YouTube, Pinterest and App Store presets, or any custom canvas.
-> • Fine-tune padding, rounded corners, borders and film grain.
-> • Save your favourite looks as one-click presets.
-> • Export a crisp PNG or JPEG at up to 4× resolution, or copy straight to your
->   clipboard.
+> • Place your screenshot on a beautiful background — a gradient, a mesh gradient,
+>   a solid colour, your own wallpaper, or transparent.
+> • Wrap it in a realistic window frame, or a laptop, phone or tablet mockup.
+> • Give it depth with a soft shadow and a real 3D perspective tilt.
+> • Add subtle background patterns, padding, rounded corners, a border, or film grain.
+> • Choose a canvas size that fits wherever you plan to post it, or set your own.
+> • Mark it up with arrows, numbered steps and captions, or blur out anything private.
+> • Save a look you like and reuse it in one click.
+> • Export a crisp PNG or JPEG in high resolution, or copy it straight to your clipboard.
 >
-> Everything runs client-side. No account, no uploads, no watermark — your
+> Everything runs in your browser. No account, no uploads, no watermark — your
 > screenshot only ever moves between your browser and the Snappy Frame page.
 >
-> **Permissions:** the extension only asks for `activeTab` (used the moment you
-> click the icon) and `storage`, plus access limited to snappy-frame.netlify.app.
+> **Permissions:** Snappy Frame asks only for activeTab (used the moment you click
+> the icon) and storage, plus access limited to its own companion page.
 
 ## Support (Web Store "Support" tab)
 
