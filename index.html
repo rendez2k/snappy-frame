@@ -501,8 +501,13 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   border:1px solid var(--line-2); box-shadow:0 12px 34px rgba(0,0,0,.4); font-size:13px}
 #installBar .ib-ico{font-size:16px}
 #installBar #installMsg{color:var(--text)}
-#installBar .ib-x{background:none; border:0; color:var(--muted); font-size:13px; cursor:pointer; padding:4px; line-height:1}
+/* big finger-friendly close target (Apple wants >=44px) */
+#installBar .ib-x{background:none; border:0; color:var(--muted); font-size:19px; cursor:pointer;
+  width:40px; height:40px; margin:-8px -6px -8px 0; display:flex; align-items:center; justify-content:center;
+  line-height:1; border-radius:9px; -webkit-tap-highlight-color:transparent; flex:0 0 auto}
 #installBar .ib-x:hover{color:var(--text)}
+#installBar .ib-x:active{background:var(--panel-2); color:var(--text)}
+#installBar .btn.sm{padding:8px 14px}
 @media (max-width:600px){ #installBar{bottom:calc(46vh + 12px); font-size:12px}
   body.sheet-collapsed #installBar{bottom:56px} #installBar #installMsg{display:none} }
 </style>
@@ -1162,7 +1167,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.2';
+const APP_VERSION='1.6.3';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2134,6 +2139,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.3', items:[
+    'Install prompt is now easy to dismiss — bigger close button, and it auto-hides on its own',
+  ]},
   {v:'1.6.2', items:[
     'Fixed iOS display — the toolbar no longer sits under the status bar / notch (safe-area insets)',
   ]},
@@ -2276,11 +2284,16 @@ function isStandalone(){ return (window.matchMedia && matchMedia('(display-mode:
 const INSTALL_DISMISS='snappy_install_dismissed';
 let deferredInstall=null;
 function installDismissed(){ try{ return !!localStorage.getItem(INSTALL_DISMISS); }catch(e){ return false; } }
+let _installHideT=null;
 function refreshInstallBar(){
   if(isStandalone() || installDismissed() || !window.isSecureContext){ $('installBar').hidden=true; return; }
   // Show when the browser has a native install prompt queued, or on any phone
   // (where we fall back to per-platform manual steps). Desktop only shows on the event.
-  $('installBar').hidden = !(deferredInstall || IS_IOS || IS_ANDROID);
+  const show = !!(deferredInstall || IS_IOS || IS_ANDROID);
+  $('installBar').hidden = !show;
+  // Auto-tuck it away after a while so it never blocks the UI if the ✕ is missed.
+  clearTimeout(_installHideT);
+  if(show) _installHideT=setTimeout(()=>{ $('installBar').hidden=true; }, 12000);
 }
 window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; refreshInstallBar(); });
 window.addEventListener('appinstalled',()=>{ deferredInstall=null; $('installBar').hidden=true;
