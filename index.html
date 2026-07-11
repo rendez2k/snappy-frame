@@ -1167,7 +1167,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.3';
+const APP_VERSION='1.6.4';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1643,16 +1643,29 @@ async function captureScreen(){
 }
 
 // ---------- Export ----------
+function _isSafari(){ const ua=navigator.userAgent||'';
+  return (typeof IS_IOS!=='undefined' && IS_IOS) || (/Safari/.test(ua) && !/Chrome|CriOS|FxiOS|Android/.test(ua)); }
 async function renderBlob(){
-  const [w,h]=outSize();
-  const opts={ pixelRatio:state.scale, width:stage.offsetWidth, height:stage.offsetHeight,
-    style:{transform:'none'}, cacheBust:true };
-  if(state.fmt==='jpeg'){
-    opts.backgroundColor = state.bgType==='none' ? '#ffffff' : undefined;
-    opts.quality=0.95;
-    return await htmlToImage.toBlob(stage, {...opts, type:'image/jpeg'});
+  // Safari/iOS bakes <img>s black unless they're decoded first, and cache-busting
+  // query strings corrupt data: URLs there — so decode, and turn cacheBust off on Safari.
+  const safari=_isSafari();
+  try{ if(state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
+  try{ const lg=$('logoLayer'); if(state.logoSrc && lg.decode) await lg.decode(); }catch(e){}
+  let pr=state.scale;
+  // iOS caps a canvas at ~16.7M px; beyond that the WHOLE export comes back blank.
+  if(typeof IS_IOS!=='undefined' && IS_IOS){
+    const area=(stage.offsetWidth||1)*(stage.offsetHeight||1);
+    pr=Math.max(1, Math.min(pr, Math.floor(Math.sqrt(16000000/area)*100)/100));
   }
-  return await htmlToImage.toBlob(stage, opts);
+  const opts={ pixelRatio:pr, width:stage.offsetWidth, height:stage.offsetHeight,
+    style:{transform:'none'}, cacheBust:!safari };
+  const final=()=> state.fmt==='jpeg'
+    ? htmlToImage.toBlob(stage,{...opts, type:'image/jpeg', quality:0.95, backgroundColor: state.bgType==='none'?'#ffffff':undefined})
+    : htmlToImage.toBlob(stage, opts);
+  // Safari paints embedded images blank on the first pass — prime it with cheap warm-ups.
+  if(safari){ try{ await htmlToImage.toPng(stage,{...opts, pixelRatio:1}); }catch(e){}
+    try{ await htmlToImage.toPng(stage,{...opts, pixelRatio:1}); }catch(e){} }
+  return await final();
 }
 async function download(){
   if(!state.hasImage) return;
@@ -1856,8 +1869,11 @@ async function rasterStage(mode,pr){
     tl:tl.style.display, lg:lg.style.display, nl:nl.style.display, blur:bgBlurEl?bgBlurEl.style.display:null};
   if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; }
   else if(mode==='front'){ stage.style.background='transparent'; if(bgBlurEl) bgBlurEl.style.display='none'; pl.style.display='none'; }
-  let url;
-  try{ url=await htmlToImage.toPng(stage,{pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:true}); }
+  try{ if(mode!=='bg' && state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
+  const safari=_isSafari();
+  let url; const o={pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:!safari};
+  try{ if(safari){ try{ await htmlToImage.toPng(stage,{...o,pixelRatio:1}); }catch(e){} }
+    url=await htmlToImage.toPng(stage,o); }
   finally{ stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
     tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
   const im=new Image(); await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=url;}); return im;
@@ -2139,6 +2155,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.4', items:[
+    'Fixed iOS/Safari export — screenshots no longer come out black (image decode + Safari render fix + canvas-size cap)',
+  ]},
   {v:'1.6.3', items:[
     'Install prompt is now easy to dismiss — bigger close button, and it auto-hides on its own',
   ]},
