@@ -258,7 +258,7 @@ input[type=range]::-moz-range-thumb{width:16px; height:16px; border-radius:50%; 
 .modal-foot .btn{text-decoration:none}
 .cl-v{margin:16px 0 6px; font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--accent-2)}
 .cl-list{margin:0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.65}
-.sp-links{display:flex; gap:14px; margin-top:12px; padding-top:11px; border-top:1px solid var(--line)}
+.sp-links{display:flex; flex-wrap:wrap; gap:10px 14px; margin-top:12px; padding-top:11px; border-top:1px solid var(--line)}
 .lnk{background:none; border:0; padding:0; color:var(--accent-2); font-size:12px; cursor:pointer; text-decoration:none}
 .lnk:hover{text-decoration:underline}
 
@@ -1106,6 +1106,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <p class="hint" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
   <div class="sp-links">
     <button class="lnk" id="spInstall" hidden>Install app</button>
+    <a class="lnk" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener">Chrome extension</a>
     <button class="lnk" id="spWhatsnew">What’s new</button>
     <a class="lnk" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue</a>
   </div>
@@ -1168,7 +1169,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.8';
+const APP_VERSION='1.6.9';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2156,6 +2157,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.9', items:[
+    'The Chrome extension is live — find it anytime under the ⚙ menu',
+  ]},
   {v:'1.6.8', items:[
     'Install prompt is now reliably dismissable — “Not now”, or tap anywhere on it, and it stays gone',
   ]},
