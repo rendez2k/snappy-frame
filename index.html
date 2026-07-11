@@ -1168,7 +1168,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.7';
+const APP_VERSION='1.6.8';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2156,6 +2156,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.8', items:[
+    'Install prompt is now reliably dismissable — “Not now”, or tap anywhere on it, and it stays gone',
+  ]},
   {v:'1.6.7', items:[
     'Install prompt now has a clear “Not now” button that’s easy to dismiss in the browser',
   ]},
@@ -2313,19 +2316,22 @@ function isStandalone(){ return (window.matchMedia && matchMedia('(display-mode:
 const INSTALL_DISMISS='snappy_install_dismissed';
 let deferredInstall=null;
 function installDismissed(){ try{ return !!localStorage.getItem(INSTALL_DISMISS); }catch(e){ return false; } }
-let _installHideT=null;
+let _installHideT=null, _installClosed=false;
 function refreshInstallBar(){
+  const bar=$('installBar'); if(!bar) return;
   // "Install app" always available in the ⚙ menu (unless already installed).
   const menu=$('spInstall'); if(menu) menu.hidden = isStandalone() || !window.isSecureContext;
-  if(isStandalone() || installDismissed() || !window.isSecureContext){ $('installBar').hidden=true; return; }
+  if(_installClosed || isStandalone() || installDismissed() || !window.isSecureContext){ bar.hidden=true; return; }
   // Only auto-pop the bar when the browser has a real one-tap install ready
   // (Android / desktop Chrome). iOS has no such prompt, so we DON'T pop a box
   // there — install lives in the ⚙ menu instead of blocking the screen.
   const show = !!deferredInstall;
-  $('installBar').hidden = !show;
+  bar.hidden = !show;
   clearTimeout(_installHideT);
-  if(show) _installHideT=setTimeout(()=>{ $('installBar').hidden=true; }, 12000);
+  if(show) _installHideT=setTimeout(()=>{ bar.hidden=true; }, 12000);
 }
+function dismissInstall(){ _installClosed=true; clearTimeout(_installHideT); deferredInstall=null;
+  const bar=$('installBar'); if(bar) bar.hidden=true; try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} }
 window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredInstall=e; refreshInstallBar(); });
 window.addEventListener('appinstalled',()=>{ deferredInstall=null; $('installBar').hidden=true;
   try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} toast('Installed — find Snappy Frame on your home screen'); });
@@ -2343,7 +2349,9 @@ $('installGo').onclick=async()=>{
   if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; $('installBar').hidden=true; return; }
   openInstallHelp();   // no native prompt available → per-platform manual steps
 };
-$('installX').onclick=()=>{ $('installBar').hidden=true; try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} };
+$('installX').addEventListener('click', e=>{ e.stopPropagation(); dismissInstall(); });
+// Tapping anywhere on the bar except "Install" also dismisses it (impossible to miss).
+$('installBar').addEventListener('click', e=>{ if(!e.target.closest('#installGo')) dismissInstall(); });
 $('spInstall').onclick=async()=>{ closeSettings();
   if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; }
   else openInstallHelp(); };
