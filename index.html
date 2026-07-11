@@ -1172,7 +1172,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.12';
+const APP_VERSION='1.6.13';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1678,9 +1678,21 @@ async function download(){
   const btns=[$('btnDownload'),$('btnDownload2')]; btns.forEach(b=>b.disabled=true);
   try{
     const blob=await renderBlob();
-    const a=document.createElement('a');
+    const ext=state.fmt==='jpeg'?'jpg':'png', type=state.fmt==='jpeg'?'image/jpeg':'image/png';
     const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-    a.href=URL.createObjectURL(blob); a.download=`snappy-${ts}.${state.fmt==='jpeg'?'jpg':'png'}`;
+    const fname=`snappy-${ts}.${ext}`;
+    const iOS=typeof IS_IOS!=='undefined' && IS_IOS;
+    // On iPhone a plain download always lands in Files. The share sheet has a
+    // "Save Image" option that goes to Photos, so route through it there.
+    if(iOS && navigator.canShare){
+      const file=new File([blob],fname,{type});
+      if(navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file]}); btns.forEach(b=>b.disabled=false); return; }
+        catch(e){ if(e && e.name==='AbortError'){ btns.forEach(b=>b.disabled=false); return; } /* else fall back to download */ }
+      }
+    }
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=fname;
     a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     toast('Downloaded');
   }catch(e){ console.error(e); toast('Export failed',true); }
@@ -2161,6 +2173,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.13', items:[
+    'On iPhone, Export now opens the share sheet so you can “Save Image” straight to Photos (not just Files)',
+  ]},
   {v:'1.6.12', items:[
     'Fixed occasional black exports on iPhone/Safari — the first export of a new image no longer comes out blank',
   ]},
