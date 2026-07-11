@@ -1172,7 +1172,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.11';
+const APP_VERSION='1.6.12';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1667,9 +1667,10 @@ async function renderBlob(){
   const final=()=> state.fmt==='jpeg'
     ? htmlToImage.toBlob(stage,{...opts, type:'image/jpeg', quality:0.95, backgroundColor: state.bgType==='none'?'#ffffff':undefined})
     : htmlToImage.toBlob(stage, opts);
-  // Safari paints embedded images blank on the first pass — prime it with cheap warm-ups.
-  if(safari){ try{ await htmlToImage.toPng(stage,{...opts, pixelRatio:1}); }catch(e){}
-    try{ await htmlToImage.toPng(stage,{...opts, pixelRatio:1}); }catch(e){} }
+  // Safari paints embedded images blank on the FIRST full render, then caches them —
+  // so prime with a full discarded render (a low-res warm-up wasn't enough), let it
+  // settle a beat, then return the second render which is correct.
+  if(safari){ try{ await final(); }catch(e){} await new Promise(r=>setTimeout(r,60)); }
   return await final();
 }
 async function download(){
@@ -1877,7 +1878,7 @@ async function rasterStage(mode,pr){
   try{ if(mode!=='bg' && state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   const safari=_isSafari();
   let url; const o={pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:!safari};
-  try{ if(safari){ try{ await htmlToImage.toPng(stage,{...o,pixelRatio:1}); }catch(e){} }
+  try{ if(safari){ try{ await htmlToImage.toPng(stage,o); }catch(e){} await new Promise(r=>setTimeout(r,40)); }
     url=await htmlToImage.toPng(stage,o); }
   finally{ stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
     tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
@@ -2160,6 +2161,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.12', items:[
+    'Fixed occasional black exports on iPhone/Safari — the first export of a new image no longer comes out blank',
+  ]},
   {v:'1.6.11', items:[
     'Fixed the install box that wouldn’t go away — a CSS rule was overriding “hide”, so it could never actually close. It’s gone now.',
   ]},
