@@ -1015,7 +1015,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <span class="ib-ico">📲</span>
   <span id="installMsg">Install Snappy Frame for a full-screen app that works offline.</span>
   <button class="btn sm primary" id="installGo">Install</button>
-  <button class="ib-x" id="installX" title="Dismiss">✕</button>
+  <button class="btn sm" id="installX">Not now</button>
 </div>
 
 <div id="installHelp" class="modal">
@@ -1168,7 +1168,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.6';
+const APP_VERSION='1.6.7';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2156,6 +2156,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.7', items:[
+    'Install prompt now has a clear “Not now” button that’s easy to dismiss in the browser',
+  ]},
   {v:'1.6.6', items:[
     'The install prompt no longer pops up on iOS — “Install app” now lives quietly in the ⚙ menu',
   ]},
