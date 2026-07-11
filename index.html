@@ -499,6 +499,8 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   display:flex; align-items:center; gap:10px; max-width:calc(100vw - 24px);
   padding:10px 12px 10px 14px; border-radius:12px; background:var(--pop);
   border:1px solid var(--line-2); box-shadow:0 12px 34px rgba(0,0,0,.4); font-size:13px}
+/* the [hidden] attribute must win over the id rule above, or the bar can never hide */
+#installBar[hidden]{display:none}
 #installBar .ib-ico{font-size:16px}
 #installBar #installMsg{color:var(--text)}
 /* big finger-friendly close target (Apple wants >=44px) */
@@ -1170,7 +1172,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.10';
+const APP_VERSION='1.6.11';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2158,6 +2160,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.11', items:[
+    'Fixed the install box that wouldn’t go away — a CSS rule was overriding “hide”, so it could never actually close. It’s gone now.',
+  ]},
   {v:'1.6.10', items:[
     'Removed the pop-up install banner for good — install now lives only in the ⚙ menu, so nothing blocks the screen',
     'Added the version number to the ⚙ menu so you can always check which build you’re on (even on mobile)',
