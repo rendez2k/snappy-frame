@@ -1105,6 +1105,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <input class="txt" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
   <p class="hint" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
   <div class="sp-links">
+    <button class="lnk" id="spInstall" hidden>Install app</button>
     <button class="lnk" id="spWhatsnew">What’s new</button>
     <a class="lnk" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue</a>
   </div>
@@ -1167,7 +1168,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.5';
+const APP_VERSION='1.6.6';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2155,6 +2156,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.6.6', items:[
+    'The install prompt no longer pops up on iOS — “Install app” now lives quietly in the ⚙ menu',
+  ]},
   {v:'1.6.5', items:[
     'Installed app now updates itself — new versions apply automatically when you’re online (no more stuck on an old version)',
   ]},
@@ -2308,12 +2312,14 @@ let deferredInstall=null;
 function installDismissed(){ try{ return !!localStorage.getItem(INSTALL_DISMISS); }catch(e){ return false; } }
 let _installHideT=null;
 function refreshInstallBar(){
+  // "Install app" always available in the ⚙ menu (unless already installed).
+  const menu=$('spInstall'); if(menu) menu.hidden = isStandalone() || !window.isSecureContext;
   if(isStandalone() || installDismissed() || !window.isSecureContext){ $('installBar').hidden=true; return; }
-  // Show when the browser has a native install prompt queued, or on any phone
-  // (where we fall back to per-platform manual steps). Desktop only shows on the event.
-  const show = !!(deferredInstall || IS_IOS || IS_ANDROID);
+  // Only auto-pop the bar when the browser has a real one-tap install ready
+  // (Android / desktop Chrome). iOS has no such prompt, so we DON'T pop a box
+  // there — install lives in the ⚙ menu instead of blocking the screen.
+  const show = !!deferredInstall;
   $('installBar').hidden = !show;
-  // Auto-tuck it away after a while so it never blocks the UI if the ✕ is missed.
   clearTimeout(_installHideT);
   if(show) _installHideT=setTimeout(()=>{ $('installBar').hidden=true; }, 12000);
 }
@@ -2335,6 +2341,9 @@ $('installGo').onclick=async()=>{
   openInstallHelp();   // no native prompt available → per-platform manual steps
 };
 $('installX').onclick=()=>{ $('installBar').hidden=true; try{ localStorage.setItem(INSTALL_DISMISS,'1'); }catch(e){} };
+$('spInstall').onclick=async()=>{ closeSettings();
+  if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall=null; }
+  else openInstallHelp(); };
 $('installHelpX').onclick=$('installHelpClose').onclick=()=>$('installHelp').classList.remove('open');
 $('installHelp').addEventListener('click',e=>{ if(e.target===$('installHelp')) $('installHelp').classList.remove('open'); });
 
