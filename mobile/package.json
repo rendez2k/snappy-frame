@@ -8,11 +8,13 @@
     "sync": "npm run copy-web && npx cap sync",
     "build:iap": "esbuild iap/revenuecat.js --bundle --format=iife --outfile=www/revenuecat.bundle.js",
     "sync:iap": "npm run copy-web && npm run build:iap && npx cap sync",
+    "assets": "capacitor-assets generate",
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.0.0"
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/assets": "^3.0.5"
   },
   "dependencies": {
     "@capacitor/core": "^6.0.0",

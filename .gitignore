@@ -16,6 +16,8 @@ mobile/www/
 mobile/ios/
 mobile/android/
 mobile/node_modules/
+# but DO ship the source app-icon / splash assets
+!mobile/assets/*.png
 dbg.mjs
 capture.mjs
 scenarios.mjs

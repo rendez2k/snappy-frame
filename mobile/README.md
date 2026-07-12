@@ -24,6 +24,21 @@ pick your Team → press **▶ Run**. Then **Product → Archive → Distribute 
 
 Whenever you change the web app, run `npm run sync` again and re-archive.
 
+## App icon & splash screen
+
+Capacitor ships a placeholder icon/splash. Replace them with Snappy Frame's
+branding using Capacitor's asset generator (already a devDependency). Source
+images live in `assets/`: `icon.png` (1024×1024), `splash.png` (light),
+`splash-dark.png` (dark).
+
+```bash
+npm run assets                 # generates every icon/splash size into the native projects
+# or target one platform:  npx capacitor-assets generate --android   /   --ios
+npx cap sync
+```
+Then re-run in Android Studio / Xcode — the new icon and splash appear. Edit the
+files in `assets/` and re-run `npm run assets` to change them.
+
 > `www/`, `ios/`, `android/`, and `node_modules/` are generated — they're
 > git-ignored. Only the config, `package.json`, and this README are tracked.
 
