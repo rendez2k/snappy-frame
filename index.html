@@ -494,6 +494,10 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .progbar{height:6px; border-radius:6px; background:var(--panel-2); overflow:hidden; margin-top:10px}
 .progbar > i{display:block; height:100%; width:0; background:var(--accent); transition:width .2s}
 
+/* Inside the native app (Capacitor), hide things that only make sense in a
+   desktop browser — the Chrome-extension links and the "Install app" entry. */
+body.is-native .ext-only, body.is-native #spInstall{ display:none !important; }
+
 /* Pro-gating (DORMANT — only applies to [data-pro] elements once monetisation is enabled) */
 .pro-locked{position:relative; opacity:.5; pointer-events:none; filter:saturate(.4)}
 .pro-locked::after{content:'PRO'; position:absolute; top:6px; right:6px; z-index:3; pointer-events:none;
@@ -600,7 +604,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
             <button class="btn sm" id="btnGrab">Grab</button>
           </div>
           <button class="feedback" id="btnKey" style="background:none;border:0;cursor:pointer;margin-top:6px"></button>
-          <a class="feedback" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
+          <a class="feedback ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
       <button id="zoomReset" title="Reset zoom">⤢ Reset zoom</button>
@@ -1114,7 +1118,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
   <p class="hint" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
   <div class="sp-links">
     <button class="lnk" id="spInstall" hidden>Install app</button>
-    <a class="lnk" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener">Chrome extension</a>
+    <a class="lnk ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener">Chrome extension</a>
     <button class="lnk" id="spWhatsnew">What’s new</button>
     <a class="lnk" href="https://github.com/rendez2k/snappy-frame/issues/new/choose" target="_blank" rel="noopener">Report an issue</a>
   </div>
@@ -2344,6 +2348,11 @@ $('cropApply').onclick=()=>{
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
+
+// Running inside the native app (Capacitor)? Flag it so we can hide desktop-only
+// bits (Chrome-extension links, "Install app") that make no sense in an app.
+(function(){ const cap=window.Capacitor;
+  if(cap && cap.isNativePlatform && cap.isNativePlatform()) document.body.classList.add('is-native'); })();
 
 // ---------- PWA: service worker + install prompt ----------
 if('serviceWorker' in navigator && window.isSecureContext){
