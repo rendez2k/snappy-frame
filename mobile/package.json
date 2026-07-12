@@ -4,7 +4,7 @@
   "private": true,
   "description": "Capacitor wrapper for Snappy Frame (iOS/Android). The web app is copied into www/ and bundled into the native app.",
   "scripts": {
-    "copy-web": "rm -rf www && mkdir -p www && cp -r ../index.html ../vendor ../manifest.webmanifest ../sw.js ../icon-192.png ../icon-512.png ../icon-512-maskable.png ../apple-touch-icon.png www/",
+    "copy-web": "node copy-web.mjs",
     "sync": "npm run copy-web && npx cap sync",
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android"
