@@ -496,7 +496,7 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
 /* Inside the native app (Capacitor), hide things that only make sense in a
    desktop browser — the Chrome-extension links and the "Install app" entry. */
-body.is-native .ext-only, body.is-native #spInstall{ display:none !important; }
+body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only{ display:none !important; }
 
 /* Pro-gating (DORMANT — only applies to [data-pro] elements once monetisation is enabled) */
 .pro-locked{position:relative; opacity:.5; pointer-events:none; filter:saturate(.4)}
@@ -596,14 +596,14 @@ body.is-native .ext-only, body.is-native #spInstall{ display:none !important; }
       </div>
       <div class="empty" id="empty">
         <div class="box">
-          <h2>Drop a screenshot to begin</h2>
-          <p>Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste, upload, or capture your screen.</p>
+          <h2 id="emptyTitle">Drop a screenshot to begin</h2>
+          <p id="emptyHint">Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
-          <div class="urlgrab">
+          <div class="urlgrab grab-only">
             <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
             <button class="btn sm" id="btnGrab">Grab</button>
           </div>
-          <button class="feedback" id="btnKey" style="background:none;border:0;cursor:pointer;margin-top:6px"></button>
+          <button class="feedback grab-only" id="btnKey" style="background:none;border:0;cursor:pointer;margin-top:6px"></button>
           <a class="feedback ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
@@ -1110,12 +1110,12 @@ body.is-native .ext-only, body.is-native #spInstall{ display:none !important; }
 </div>
 
 <div id="setpop">
-  <div class="sp-h">Grab a webpage</div>
-  <div class="sp-row"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
-  <label class="toggle" style="margin-top:10px"><input type="checkbox" id="fullPage" checked> <span>Capture the full page (not just the visible area)</span></label>
-  <div class="sp-h" style="margin-top:14px">Screenshot API key</div>
-  <input class="txt" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
-  <p class="hint" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
+  <div class="sp-h grab-only">Grab a webpage</div>
+  <div class="sp-row grab-only"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
+  <label class="toggle grab-only" style="margin-top:10px"><input type="checkbox" id="fullPage" checked> <span>Capture the full page (not just the visible area)</span></label>
+  <div class="sp-h grab-only" style="margin-top:14px">Screenshot API key</div>
+  <input class="txt grab-only" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
+  <p class="hint grab-only" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
   <div class="sp-links">
     <button class="lnk" id="spInstall" hidden>Install app</button>
     <a class="lnk ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener">Chrome extension</a>
@@ -2352,7 +2352,15 @@ $('cropApply').onclick=()=>{
 // Running inside the native app (Capacitor)? Flag it so we can hide desktop-only
 // bits (Chrome-extension links, "Install app") that make no sense in an app.
 (function(){ const cap=window.Capacitor;
-  if(cap && cap.isNativePlatform && cap.isNativePlatform()) document.body.classList.add('is-native'); })();
+  if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;
+  document.body.classList.add('is-native');
+  // App-appropriate wording (no "drag/drop", "browser", "download").
+  const set=(id,txt)=>{ const el=$(id); if(el) el.textContent=txt; };
+  set('emptyTitle','Add a screenshot to begin');
+  set('emptyHint','Choose a screenshot from your photos, or paste one, to start.');
+  set('btnDownload2','Save image');
+  const gear=$('btnSettings'); if(gear) gear.title='Menu';
+})();
 
 // ---------- PWA: service worker + install prompt ----------
 if('serviceWorker' in navigator && window.isSecureContext){
