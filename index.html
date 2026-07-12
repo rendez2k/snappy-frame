@@ -1172,7 +1172,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.13';
+const APP_VERSION='1.6.14';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2644,6 +2644,11 @@ $('animPartGrid').addEventListener('click',e=>{ const b=e.target.closest('button
   state.animParticles=b.dataset.v; $('animPartGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
 $('animDur').addEventListener('input',e=>{ state.animDur=+e.target.value; $('animDurVal').textContent=e.target.value+'s'; });
 $('btnAnim').onclick=exportAnim;
+// Hide the whole Animated-export section where the browser can't record video
+// (notably Apple's WKWebView, i.e. an App-Store wrapper) so nothing looks broken.
+(function(){ const ok = !!window.MediaRecorder &&
+  ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].some(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(e){return false;}});
+  if(!ok){ const s=document.querySelector('section[data-sec="anim"]'); if(s) s.style.display='none'; } })();
 $('btnMagic').onclick=magicResize;
 $('btnBatchAdd').onclick=()=>$('batchInput').click();
 $('batchInput').onchange=e=>{ addBatchFiles(e.target.files); e.target.value=''; };
