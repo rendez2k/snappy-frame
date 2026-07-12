@@ -494,6 +494,12 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .progbar{height:6px; border-radius:6px; background:var(--panel-2); overflow:hidden; margin-top:10px}
 .progbar > i{display:block; height:100%; width:0; background:var(--accent); transition:width .2s}
 
+/* Pro-gating (DORMANT — only applies to [data-pro] elements once monetisation is enabled) */
+.pro-locked{position:relative; opacity:.5; pointer-events:none; filter:saturate(.4)}
+.pro-locked::after{content:'PRO'; position:absolute; top:6px; right:6px; z-index:3; pointer-events:none;
+  font-size:9px; font-weight:700; letter-spacing:.04em; color:#fff;
+  background:linear-gradient(135deg,var(--accent),#c05bff); padding:2px 6px; border-radius:6px}
+
 /* Install (PWA) snackbar */
 #installBar{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:250;
   display:flex; align-items:center; gap:10px; max-width:calc(100vw - 24px);
@@ -1172,7 +1178,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.14';
+const APP_VERSION='1.6.15';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2649,6 +2655,27 @@ $('btnAnim').onclick=exportAnim;
 (function(){ const ok = !!window.MediaRecorder &&
   ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].some(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(e){return false;}});
   if(!ok){ const s=document.querySelector('section[data-sec="anim"]'); if(s) s.style.display='none'; } })();
+
+// ---- Pro / monetisation scaffold — DORMANT. Nothing is locked today. ----
+// Everything stays free until you deliberately turn this on. To enable later:
+//   1) set MONETISATION.enabled = true
+//   2) tag Pro features in the markup with a `data-pro` attribute
+//   3) in the Capacitor build, ask RevenueCat for the entitlement and call
+//      setPro(active) — e.g.
+//        const info = await Purchases.getCustomerInfo();
+//        setPro(!!info.customerInfo.entitlements.active['pro']);
+// While enabled:false, isPro() is always true and applyProGating() is a no-op,
+// so the app behaves exactly as it does now.
+const MONETISATION = { enabled:false, entitlement:'pro' };
+let _isPro = true;                                  // unlocked by default
+function isPro(){ return !MONETISATION.enabled || _isPro; }
+function setPro(v){ _isPro = !!v; applyProGating(); }
+function applyProGating(){
+  if(!MONETISATION.enabled) return;                 // ← inert today: locks nothing
+  const locked = !isPro();
+  document.querySelectorAll('[data-pro]').forEach(el=>el.classList.toggle('pro-locked', locked));
+}
+applyProGating();
 $('btnMagic').onclick=magicResize;
 $('btnBatchAdd').onclick=()=>$('batchInput').click();
 $('batchInput').onchange=e=>{ addBatchFiles(e.target.files); e.target.value=''; };

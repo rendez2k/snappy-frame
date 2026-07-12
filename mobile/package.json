@@ -1,0 +1,20 @@
+{
+  "name": "snappy-frame-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor wrapper for Snappy Frame (iOS/Android). The web app is copied into www/ and bundled into the native app.",
+  "scripts": {
+    "copy-web": "rm -rf www && mkdir -p www && cp -r ../index.html ../vendor ../manifest.webmanifest ../sw.js ../icon-192.png ../icon-512.png ../icon-512-maskable.png ../apple-touch-icon.png www/",
+    "sync": "npm run copy-web && npx cap sync",
+    "open:ios": "npx cap open ios",
+    "open:android": "npx cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@capacitor/android": "^6.0.0"
+  }
+}

@@ -9,6 +9,13 @@ package-lock.json
 !icon-512.png
 !icon-512-maskable.png
 !apple-touch-icon.png
+# App Store icon (shipped)
+!appstore-icon-1024.png
+# Capacitor (mobile) generated dirs
+mobile/www/
+mobile/ios/
+mobile/android/
+mobile/node_modules/
 dbg.mjs
 capture.mjs
 scenarios.mjs

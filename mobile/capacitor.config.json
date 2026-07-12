@@ -1,0 +1,11 @@
+{
+  "appId": "uk.netlify.snappyframe",
+  "appName": "Snappy Frame",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always"
+  },
+  "server": {
+    "iosScheme": "https"
+  }
+}
