@@ -6,6 +6,8 @@
   "scripts": {
     "copy-web": "node copy-web.mjs",
     "sync": "npm run copy-web && npx cap sync",
+    "build:iap": "esbuild iap/revenuecat.js --bundle --format=iife --outfile=www/revenuecat.bundle.js",
+    "sync:iap": "npm run copy-web && npm run build:iap && npx cap sync",
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android"
   },

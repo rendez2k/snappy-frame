@@ -2666,15 +2666,30 @@ $('btnAnim').onclick=exportAnim;
 //        setPro(!!info.customerInfo.entitlements.active['pro']);
 // While enabled:false, isPro() is always true and applyProGating() is a no-op,
 // so the app behaves exactly as it does now.
-const MONETISATION = { enabled:false, entitlement:'pro' };
+const MONETISATION = { enabled:false, entitlement:'Snappy Pro' };
 let _isPro = true;                                  // unlocked by default
 function isPro(){ return !MONETISATION.enabled || _isPro; }
 function setPro(v){ _isPro = !!v; applyProGating(); }
+window.setPro = setPro;                             // the native RevenueCat bundle calls this
 function applyProGating(){
   if(!MONETISATION.enabled) return;                 // ← inert today: locks nothing
   const locked = !isPro();
   document.querySelectorAll('[data-pro]').forEach(el=>el.classList.toggle('pro-locked', locked));
 }
+// Purchase helpers — no-ops on the web; wired to RevenueCat inside the native app.
+function showPaywall(){ return window.SnappyIAP ? window.SnappyIAP.presentPaywall() : Promise.resolve(false); }
+function restorePurchases(){ return window.SnappyIAP ? window.SnappyIAP.restore() : Promise.resolve(false); }
+function manageSubscription(){ return window.SnappyIAP ? window.SnappyIAP.openCustomerCenter() : Promise.resolve(); }
+// Native builds only, and only when enabled: load the RevenueCat glue + initialise.
+(function bootIAP(){
+  if(!MONETISATION.enabled) return;                 // ← dormant: nothing loads today
+  const cap=window.Capacitor;
+  if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;   // web stays free
+  const s=document.createElement('script'); s.src='revenuecat.bundle.js';
+  s.onload=()=>{ window.SnappyIAP && window.SnappyIAP.init(); };
+  s.onerror=()=>console.warn('[IAP] revenuecat.bundle.js missing — run: npm run build:iap');
+  document.head.appendChild(s);
+})();
 applyProGating();
 $('btnMagic').onclick=magicResize;
 $('btnBatchAdd').onclick=()=>$('batchInput').click();

@@ -36,52 +36,60 @@ Whenever you change the web app, run `npm run sync` again and re-archive.
 
 ## Turning on paid features later (RevenueCat) — NOT enabled yet
 
-When you're ready to charge for a "Pro" tier, this is the whole flow. **Do not
-do any of this until you actually want to ship paid features.**
+The full integration is **already written** in `iap/revenuecat.js` (vanilla JS,
+Capacitor). It's dormant until you deliberately switch it on. **Do not do any of
+this until you actually want to ship paid features.**
 
-### 1. Install the RevenueCat plugin
+### 1. Install the plugins + bundler
 ```bash
 cd mobile
-npm install @revenuecat/purchases-capacitor
-npm run sync
+npm install @revenuecat/purchases-capacitor @revenuecat/purchases-capacitor-ui esbuild
+```
+`iap/revenuecat.js` gets bundled into `www/revenuecat.bundle.js` by:
+```bash
+npm run build:iap        # or: npm run sync:iap  (copy web + build IAP + cap sync)
 ```
 
-### 2. Create the product + entitlement
-- **App Store Connect** → your app → **In-App Purchases** → create either a
-  **Non-Consumable** (one-time "Pro" unlock — simplest) or an **Auto-Renewable
-  Subscription**.
-- **RevenueCat dashboard** → add the App Store app (with your shared secret) →
-  create an **Entitlement** called `pro` → attach the product to it → put the
-  product in an **Offering**.
+### 2. Configure the product, entitlement, offering & paywall
+- **App Store Connect** → your app → **In-App Purchases** → create a
+  **Non-Consumable** = your lifetime **"Pro Unlock"** (product id e.g. `pro_unlock`).
+- **RevenueCat dashboard** →
+  - **Entitlements** → create `Snappy Pro` → attach the Pro Unlock product.
+  - **Offerings** → make sure your product is in the **current** offering.
+  - **Paywalls** → design a paywall and attach it to that offering (this is what
+    `presentPaywall()` shows — no paywall UI to build yourself).
+  - **API Keys** → copy the **Apple public key** (`appl_…`). *(The `test_…` key
+    from onboarding is a test/web key, not the iOS key.)*
 
-### 3. Wire it in the web app
-The gating layer is already in `../index.html`:
+### 3. Add your key
+In `iap/revenuecat.js`, replace the placeholders:
 ```js
-const MONETISATION = { enabled:false, entitlement:'pro' };  // ← flip to true
-function setPro(v){ ... }        // call this with the entitlement state
+const API_KEYS = { ios: 'appl_YOUR_KEY', android: 'goog_YOUR_KEY' };
 ```
-In the Capacitor build, initialise RevenueCat once and push the result into
-`setPro()` (import the plugin only in the native build):
+The entitlement is already set to `Snappy Pro`.
+
+### 4. Flip the switch + tag Pro features
+In `../index.html`:
 ```js
-import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
-await Purchases.configure({ apiKey: 'appl_YOUR_REVENUECAT_KEY' });
-const { customerInfo } = await Purchases.getCustomerInfo();
-setPro(!!customerInfo.entitlements.active['pro']);
+const MONETISATION = { enabled:false, entitlement:'Snappy Pro' };  // ← set enabled:true
 ```
-To purchase (from a "Get Pro" button) and to restore:
+Then add a `data-pro` attribute to any element you want gated (a whole
+`<section>` or a single button). When enabled and the user isn't Pro, those get
+the dimmed `.pro-locked` style automatically. Good candidates: 4× export,
+exclusive looks, batch export, watermark-off.
+
+Add a "Get Snappy Pro" button and (Apple **requires**) a visible "Restore
+Purchases" button — the helpers are already global in the app:
 ```js
-const offerings = await Purchases.getOfferings();
-await Purchases.purchasePackage({ aPackage: offerings.current.availablePackages[0] });
-// Restore (Apple requires a visible Restore Purchases button):
-const info = await Purchases.restorePurchases();
-setPro(!!info.customerInfo.entitlements.active['pro']);
+showPaywall();        // presents the RevenueCat paywall
+restorePurchases();   // Apple requires this to be reachable
+manageSubscription(); // opens RevenueCat Customer Center (best with subscriptions)
 ```
 
-### 4. Mark which features are Pro
-Add a `data-pro` attribute to any element you want gated (a whole `<section>`,
-a button, etc.). When `MONETISATION.enabled` is `true` and the user isn't Pro,
-those elements get the dimmed `.pro-locked` style automatically. Suggested
-candidates: 4× export, exclusive looks/backgrounds, batch export, watermark-off.
-
-That's it — set `enabled:true`, tag your Pro elements, and RevenueCat drives the
-rest. The **web** version keeps `enabled:false`, so it stays fully free.
+### How it works
+`iap/revenuecat.js` calls `window.setPro(true/false)` on launch and whenever the
+entitlement changes (purchase, restore, refund). `setPro` flips the gating in
+`index.html`. On the **web** (`enabled:false`, no Capacitor) none of this loads,
+so the web app stays 100% free. See `iap/revenuecat.js` for init, paywall,
+`presentPaywallIfNeeded`, direct purchase, restore, Customer Center and error
+handling (user-cancel is handled quietly).
