@@ -2384,13 +2384,41 @@ async function _checkSharedIntent(){
     const SI=cap.Plugins && cap.Plugins.SendIntent;
     if(!SI || !SI.checkSendIntentReceived) return;
     const res=await SI.checkSendIntentReceived();
-    if(res && res.url){
-      const raw=decodeURIComponent(res.url);
-      const src=cap.convertFileSrc ? cap.convertFileSrc(raw) : raw;
-      loadImage(src);
+    // send-intent may hand back the file in `url` or, on some versions, in the
+    // first additionalItem — take whichever is present.
+    const url=res && (res.url || (Array.isArray(res.additionalItems)&&res.additionalItems[0]&&res.additionalItems[0].url));
+    if(url){
+      await _loadSharedUrl(cap, decodeURIComponent(url));
       if(SI.finish){ try{ await SI.finish(); }catch(e){} }
     }
   }catch(e){ /* nothing was shared to us */ }
+}
+// A shared image arrives as a content:// (Android) or file:// (iOS) URI, which a
+// WebView can't use directly as <img src>. Route it through Capacitor's local
+// file bridge, fetch the bytes, and give the editor a blob URL it fully owns —
+// this survives the sharing app revoking its temporary URI grant. Falls back to
+// the bridged URL, then the raw URI, so any one path working is enough.
+async function _loadSharedUrl(cap, raw){
+  const bridged = cap.convertFileSrc ? cap.convertFileSrc(raw) : raw;
+  const toDataUrl = (blob)=>new Promise((resolve,reject)=>{
+    const fr=new FileReader(); fr.onload=()=>resolve(fr.result); fr.onerror=reject; fr.readAsDataURL(blob);
+  });
+  for(const u of [bridged, raw]){
+    try{
+      const r = await fetch(u);
+      if(!r.ok) continue;
+      const blob = await r.blob();
+      if(!blob || !blob.size) continue;
+      // A data: URL (like the normal file-picker path) — the editor/export are
+      // already proven on these, and it can't be broken by cache-bust query
+      // strings the way a blob: URL can.
+      loadImage(await toDataUrl(blob));
+      return;
+    }catch(e){ /* try the next candidate */ }
+  }
+  // Last resort: let the <img> element try the bridged URL itself (it surfaces a
+  // visible "Could not load that image" toast if even this fails).
+  loadImage(bridged);
 }
 // Cold start, and whenever a new share arrives while the app is already open.
 window.addEventListener('sendIntentReceived', _checkSharedIntent);
