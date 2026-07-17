@@ -2372,6 +2372,31 @@ $('cropApply').onclick=()=>{
     closeCrop(); loadImage(c.toDataURL('image/png')); toast('Cropped'); };
   im.src=shot.src;
 };
+
+// ---------- Receive an image shared INTO the app ----------
+// When another app shares an image to Snappy (iOS Share Extension / Android SEND),
+// the send-intent plugin hands us the file URL; load it straight into the editor.
+// Web build is unaffected (guarded by isNativePlatform).
+async function _checkSharedIntent(){
+  try{
+    const cap=window.Capacitor;
+    if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;
+    const SI=cap.Plugins && cap.Plugins.SendIntent;
+    if(!SI || !SI.checkSendIntentReceived) return;
+    const res=await SI.checkSendIntentReceived();
+    if(res && res.url){
+      const raw=decodeURIComponent(res.url);
+      const src=cap.convertFileSrc ? cap.convertFileSrc(raw) : raw;
+      loadImage(src);
+      if(SI.finish){ try{ await SI.finish(); }catch(e){} }
+    }
+  }catch(e){ /* nothing was shared to us */ }
+}
+// Cold start, and whenever a new share arrives while the app is already open.
+window.addEventListener('sendIntentReceived', _checkSharedIntent);
+document.addEventListener('DOMContentLoaded', _checkSharedIntent);
+_checkSharedIntent();
+
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();

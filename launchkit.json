@@ -4,5 +4,8 @@
       "NSPhotoLibraryAddUsageDescription": "Save your finished images to your Photos library.",
       "ITSAppUsesNonExemptEncryption": false
     }
+  },
+  "capabilities": {
+    "shareTarget": { "accepts": ["image/*"] }
   }
 }
