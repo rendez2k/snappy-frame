@@ -1683,6 +1683,28 @@ async function renderBlob(){
   if(safari){ try{ await final(); }catch(e){} await new Promise(r=>setTimeout(r,60)); }
   return await final();
 }
+// Inside the native app (Capacitor), neither navigator.share({files}) nor an
+// <a download> works in the WebView. Write the image to the app cache with the
+// Filesystem plugin, then open the real OS share sheet with the Share plugin —
+// its "Save Image" lands in Photos. Returns false when not native / plugins
+// missing, so the web paths below are used instead. AbortError = user dismissed
+// the sheet, which counts as handled (don't then trigger a broken download).
+async function _nativeShareImage(blob,fname){
+  try{
+    const cap=window.Capacitor;
+    if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return false;
+    const P=cap.Plugins||{};
+    if(!P.Filesystem || !P.Share) return false;
+    const b64=await new Promise((res,rej)=>{ const r=new FileReader();
+      r.onloadend=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(blob); });
+    const w=await P.Filesystem.writeFile({ path:fname, data:b64, directory:'CACHE' });
+    await P.Share.share({ title:'Snappy Frame', files:[w.uri] });
+    return true;
+  }catch(e){
+    if(e && (e.name==='AbortError' || /cancell?ed|abort/i.test(e.message||''))) return true;
+    console.error('native share failed',e); return false;
+  }
+}
 async function download(){
   if(!state.hasImage) return;
   const btns=[$('btnDownload'),$('btnDownload2')]; btns.forEach(b=>b.disabled=true);
@@ -1692,6 +1714,8 @@ async function download(){
     const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
     const fname=`snappy-${ts}.${ext}`;
     const iOS=typeof IS_IOS!=='undefined' && IS_IOS;
+    // Native app first: real OS share sheet via Capacitor (Save Image → Photos).
+    if(await _nativeShareImage(blob,fname)){ btns.forEach(b=>b.disabled=false); return; }
     // On iPhone a plain download always lands in Files. The share sheet has a
     // "Save Image" option that goes to Photos, so route through it there.
     if(iOS && navigator.canShare){
