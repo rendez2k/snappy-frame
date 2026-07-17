@@ -1,16 +1,23 @@
 {
   "manifest_version": 3,
   "name": "Snappy Frame — Capture",
-  "version": "1.1.0",
+  "version": "1.3.10",
   "description": "Capture the current browser tab and open it in Snappy Frame to add backgrounds, frames and export.",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "scripting", "contextMenus"],
   "host_permissions": ["https://snappy-frame.netlify.app/*"],
   "background": { "service_worker": "background.js" },
   "action": {
     "default_title": "Capture this tab in Snappy Frame",
+    "default_popup": "popup.html",
     "default_icon": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" }
   },
   "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "commands": {
+    "capture-visible": {
+      "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" },
+      "description": "Capture the visible area in Snappy Frame"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://snappy-frame.netlify.app/*"],

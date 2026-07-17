@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root{ color-scheme: light dark; }
+  body{ width:248px; margin:0; padding:14px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    background:#0e0f14; color:#e7e9ef; }
+  @media (prefers-color-scheme: light){ body{ background:#fff; color:#1b1e28; } }
+  .head{ display:flex; align-items:center; gap:9px; margin:0 0 12px; }
+  .logo{ width:26px; height:26px; border-radius:7px; flex:0 0 auto;
+    background:linear-gradient(135deg,#6d5efc,#c05bff); }
+  .head strong{ font-size:14px; }
+  button{ display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box;
+    border:1px solid rgba(140,140,160,.28); background:rgba(140,140,160,.08); color:inherit;
+    border-radius:10px; padding:11px 12px; font-size:13.5px; font-weight:600; cursor:pointer;
+    text-align:left; margin-bottom:8px; }
+  button:hover{ background:rgba(140,140,160,.16); }
+  button .em{ font-size:16px; }
+  button small{ display:block; font-weight:400; opacity:.62; font-size:11px; margin-top:1px; }
+  .hint{ font-size:10.5px; opacity:.5; margin:6px 2px 0; line-height:1.4; }
+  .busy{ pointer-events:none; opacity:.5; }
+</style>
+</head>
+<body>
+  <div class="head"><span class="logo"></span><strong>Snappy Frame</strong></div>
+  <button id="visible"><span class="em">📷</span><span>Capture visible area<small>What you can see right now</small></span></button>
+  <button id="full"><span class="em">📄</span><span>Capture full page<small>Scroll &amp; stitch the whole page</small></span></button>
+  <p class="hint">Tip: press <b>Ctrl+Shift+Y</b> (⌘⇧Y on Mac) to grab the visible area without opening this menu.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

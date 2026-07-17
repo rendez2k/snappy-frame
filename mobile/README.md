@@ -24,6 +24,32 @@ pick your Team → press **▶ Run**. Then **Product → Archive → Distribute 
 
 Whenever you change the web app, run `npm run sync` again and re-archive.
 
+## Export share sheet (Save to Photos)
+
+Export uses the **native share sheet** on device (the web Share API is
+unreliable inside Capacitor's WKWebView). This needs two plugins — already
+listed in `package.json`, so if you set up before they were added:
+
+```bash
+cd mobile
+npm install                       # picks up @capacitor/share + @capacitor/filesystem
+npm run sync                      # copy web + cap sync (installs the pods)
+```
+
+On **iOS**, saving to Photos from the share sheet needs a usage string. Add this
+to `ios/App/App/Info.plist` (once):
+
+```xml
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Save your finished screenshots to your photo library.</string>
+```
+
+Then re-run in Xcode. Tapping **Export → Save Image** now writes to Photos; the
+same sheet also offers Share, Copy, save to Files, etc. The app writes the image
+to a temporary cache file first (auto-cleaned by the OS) and shares that. On the
+**web** build nothing changes — it keeps the browser download / Safari share
+route.
+
 ## App icon & splash screen
 
 Capacitor ships a placeholder icon/splash. Replace them with Snappy Frame's
