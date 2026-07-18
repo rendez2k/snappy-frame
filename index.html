@@ -1184,7 +1184,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.20';
+const APP_VERSION='1.6.21';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1646,7 +1646,8 @@ function loadImage(src,quiet,meta){
     if(!quiet){ state.annotations=[]; state.redactions=[]; state.origSrc=null;  // markup is per-image; a genuinely new import clears it
       // The frame caption is per-image too: use the fresh URL/title if supplied,
       // else clear it so a stale URL from a previous grab can't leak onto a new shot.
-      if(meta && meta.url){ const p=prettyUrl(meta.url); state.frameTitle=p||''; if(p && state.frame==='none') state.frame='browser-dark'; }
+      if(meta && typeof meta.frameTitle==='string'){ state.frameTitle=meta.frameTitle; }  // in-place edit (e.g. crop): keep the caption
+      else if(meta && meta.url){ const p=prettyUrl(meta.url); state.frameTitle=p||''; if(p && state.frame==='none') state.frame='browser-dark'; }
       else if(meta && meta.title){ state.frameTitle=String(meta.title).slice(0,80); if(state.frame==='none') state.frame='browser-dark'; }
       else { state.frameTitle=''; }
       syncUI();
@@ -2396,7 +2397,7 @@ $('cropApply').onclick=()=>{
   const im=new Image();
   im.onload=()=>{ const c=document.createElement('canvas'); c.width=sw; c.height=sh;
     c.getContext('2d').drawImage(im, sx,sy,sw,sh, 0,0,sw,sh);
-    closeCrop(); loadImage(c.toDataURL('image/png')); toast('Cropped'); };
+    closeCrop(); loadImage(c.toDataURL('image/png'),false,{frameTitle:state.frameTitle}); toast('Cropped'); };
   im.src=shot.src;
 };
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
