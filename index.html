@@ -1630,7 +1630,7 @@ function loadImage(src,quiet){
     shot.src=src;
     ['btnCopy','btnCrop','btnMarkup','btnDownload','btnDownload2','btnAnim','btnMagic'].forEach(id=>{ const b=$(id); if(b) b.disabled=false; });
     view.z=1; view.x=0; view.y=0;   // start each new image at fit
-    render(); if(!quiet) toast('Image loaded');
+    render(); if(!quiet){ toast('Image loaded'); document.dispatchEvent(new Event('snappy:image-loaded')); }
   };
   im.onerror=()=>{ if(!quiet) toast('Could not load that image',true); };
   im.src=src;
@@ -2424,6 +2424,25 @@ async function _loadSharedUrl(cap, raw){
 window.addEventListener('sendIntentReceived', _checkSharedIntent);
 document.addEventListener('DOMContentLoaded', _checkSharedIntent);
 _checkSharedIntent();
+
+// Native haptics: a light tap on every button, and a success bump when an image
+// loads. The @capacitor/haptics plugin is injected by the `haptics` capability
+// in launchkit.json; this just calls it (no-op on the web build).
+function _haptic(kind){
+  try{
+    const cap=window.Capacitor;
+    if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;
+    const H=cap.Plugins && cap.Plugins.Haptics;
+    if(!H) return;
+    if(kind==='success'){ H.notification && H.notification({type:'SUCCESS'}); }
+    else { H.impact && H.impact({style: (kind||'LIGHT').toUpperCase()}); }
+  }catch(e){ /* haptics are best-effort */ }
+}
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest && e.target.closest('button');
+  if(b && !b.disabled) _haptic('LIGHT');
+}, true);
+document.addEventListener('snappy:image-loaded', function(){ _haptic('success'); });
 
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';

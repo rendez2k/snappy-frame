@@ -6,6 +6,7 @@
     }
   },
   "capabilities": {
-    "shareTarget": { "accepts": ["image/*"] }
+    "shareTarget": { "accepts": ["image/*"] },
+    "haptics": true
   }
 }
