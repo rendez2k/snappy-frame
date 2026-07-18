@@ -2444,6 +2444,15 @@ document.addEventListener('click', function(e){
 }, true);
 document.addEventListener('snappy:image-loaded', function(){ _haptic('success'); });
 
+// iOS WKWebView ignores user-scalable=no and hijacks two-finger pinches as its
+// own page-magnify gesture, stealing the touches from the stage's custom
+// pinch/pan (and since you can't zoom in, single-finger pan has nothing to
+// move). Cancel the WebView's gesture so the stage handlers get the raw touches.
+// `gesture*` events only fire on iOS Safari/WKWebView — a no-op elsewhere.
+['gesturestart','gesturechange','gestureend'].forEach(function(ev){
+  document.addEventListener(ev, function(e){ e.preventDefault(); }, {passive:false});
+});
+
 (function(){ let t=null; try{ t=localStorage.getItem('snappy_theme'); }catch(e){}
   if(!t) t=(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';
   applyTheme(t==='light'); })();
