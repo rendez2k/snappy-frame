@@ -1073,6 +1073,8 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <option value="1.7778">16 : 9</option><option value="0.5625">9 : 16</option>
           <option value="1.3333">4 : 3</option><option value="0.75">3 : 4</option>
         </select>
+        <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:14px">
+          <input type="checkbox" id="cropEven"> Even (from centre)</label>
       </div>
     </div>
     <div class="modal-foot">
@@ -1183,7 +1185,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.6.16';
+const APP_VERSION='1.6.22';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1611,8 +1613,23 @@ wrap.addEventListener('wheel',e=>{
 },{passive:false});
 $('zoomReset').addEventListener('click',resetView);
 
+// Export pixel ratio. The chosen Scale (1–4×) is a FLOOR, but we also make sure
+// the screenshot renders at at least its native resolution — otherwise a large
+// grab shrunk to fit the canvas exports downsampled (grainy) text. Clamped so
+// the output stays within sane canvas bounds (and the iOS ~16.7M-px cap).
+function effectiveExportPR(){
+  let pr=state.scale;
+  if(state.hasImage && state.mode!=='code' && state.imgW && shot && shot.offsetWidth){
+    pr=Math.max(pr, state.imgW/shot.offsetWidth);
+  }
+  const w=stage.offsetWidth||1, h=stage.offsetHeight||1, MAXSIDE=12000;
+  pr=Math.min(pr, MAXSIDE/w, MAXSIDE/h);
+  if(typeof IS_IOS!=='undefined' && IS_IOS){ pr=Math.min(pr, Math.sqrt(16000000/(w*h))); }
+  return Math.max(1, Math.round(pr*100)/100);
+}
 function outSize(){
-  const w=Math.round(stage.offsetWidth*state.scale), h=Math.round(stage.offsetHeight*state.scale);
+  const pr=effectiveExportPR();
+  const w=Math.round(stage.offsetWidth*pr), h=Math.round(stage.offsetHeight*pr);
   return [w,h];
 }
 function updateDimHint(){
@@ -1622,12 +1639,21 @@ function updateDimHint(){
 }
 
 // ---------- Image loading ----------
-function loadImage(src,quiet){
+function loadImage(src,quiet,meta){
   const im=new Image();
   im.onload=()=>{
     state.imgW=im.naturalWidth; state.imgH=im.naturalHeight; state.hasImage=true;
     state.mode='image'; $('modeSeg')&&$('modeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v==='image')); $('codeCtl')&&($('codeCtl').hidden=true);
-    if(!quiet){ state.annotations=[]; state.redactions=[]; state.origSrc=null; }  // markup is per-image; a genuinely new import clears it
+    if(!quiet){ state.annotations=[]; state.redactions=[]; state.origSrc=null;  // markup is per-image; a genuinely new import clears it
+      // The frame caption is per-image too: keep it for in-place edits (crop),
+      // use a fresh URL/title if supplied, else clear it so a stale URL from a
+      // previous grab can't leak onto a new shot.
+      if(meta && typeof meta.frameTitle==='string'){ state.frameTitle=meta.frameTitle; }
+      else if(meta && meta.url){ const p=prettyUrl(meta.url); state.frameTitle=p||''; if(p && state.frame==='none') state.frame='browser-dark'; }
+      else if(meta && meta.title){ state.frameTitle=String(meta.title).slice(0,80); if(state.frame==='none') state.frame='browser-dark'; }
+      else { state.frameTitle=''; }
+      syncUI();
+    }
     shot.src=src;
     ['btnCopy','btnCrop','btnMarkup','btnDownload','btnDownload2','btnAnim','btnMagic'].forEach(id=>{ const b=$(id); if(b) b.disabled=false; });
     view.z=1; view.x=0; view.y=0;   // start each new image at fit
@@ -1667,12 +1693,9 @@ async function renderBlob(){
   const safari=_isSafari();
   try{ if(state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   try{ const lg=$('logoLayer'); if(state.logoSrc && lg.decode) await lg.decode(); }catch(e){}
-  let pr=state.scale;
-  // iOS caps a canvas at ~16.7M px; beyond that the WHOLE export comes back blank.
-  if(typeof IS_IOS!=='undefined' && IS_IOS){
-    const area=(stage.offsetWidth||1)*(stage.offsetHeight||1);
-    pr=Math.max(1, Math.min(pr, Math.floor(Math.sqrt(16000000/area)*100)/100));
-  }
+  // Native-resolution-aware pixel ratio (keeps text crisp on large grabs);
+  // already clamped to the iOS ~16.7M-px canvas cap.
+  const pr=effectiveExportPR();
   const opts={ pixelRatio:pr, width:stage.offsetWidth, height:stage.offsetHeight,
     style:{transform:'none'}, cacheBust:!safari };
   const final=()=> state.fmt==='jpeg'
@@ -2346,9 +2369,24 @@ $('cropStage').addEventListener('pointerdown',e=>{
   if(!h && e.target!==box && !box.contains(e.target)) return;
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, s={...crop}, r=cropRatioVal();
+  const even=$('cropEven') && $('cropEven').checked;
   const move=ev=>{
     const dx=ev.clientX-sx, dy=ev.clientY-sy; let n={...s};
     if(!h){ n.x=clampN(s.x+dx,0,cropD.w-s.w); n.y=clampN(s.y+dy,0,cropD.h-s.h); }
+    else if(even){
+      // Symmetric resize: keep the box centred; both sides move in/out together.
+      const cx=s.x+s.w/2, cy=s.y+s.h/2;
+      let nw=s.w, nh=s.h;
+      if(h.includes('e')) nw=2*((s.x+s.w+dx)-cx);
+      else if(h.includes('w')) nw=2*(cx-(s.x+dx));
+      if(h.includes('s')) nh=2*((s.y+s.h+dy)-cy);
+      else if(h.includes('n')) nh=2*(cy-(s.y+dy));
+      if(r){ if(h.includes('e')||h.includes('w')) nh=nw/r; else nw=nh*r; }
+      nw=clampN(nw,24,Math.min(cx,cropD.w-cx)*2);
+      nh=clampN(nh,24,Math.min(cy,cropD.h-cy)*2);
+      if(r){ if(nw/r>nh) nw=nh*r; else nh=nw/r; }
+      n.w=nw; n.h=nh; n.x=cx-nw/2; n.y=cy-nh/2;
+    }
     else{
       if(h.includes('e')) n.w=clampN(s.w+dx,24,cropD.w-s.x);
       if(h.includes('s')) n.h=clampN(s.h+dy,24,cropD.h-s.y);
@@ -2370,7 +2408,7 @@ $('cropApply').onclick=()=>{
   const im=new Image();
   im.onload=()=>{ const c=document.createElement('canvas'); c.width=sw; c.height=sh;
     c.getContext('2d').drawImage(im, sx,sy,sw,sh, 0,0,sw,sh);
-    closeCrop(); loadImage(c.toDataURL('image/png')); toast('Cropped'); };
+    closeCrop(); loadImage(c.toDataURL('image/png'),false,{frameTitle:state.frameTitle}); toast('Cropped'); };
   im.src=shot.src;
 };
 
@@ -2540,10 +2578,9 @@ function prettyUrl(u){ try{ const x=new URL(u); const host=x.hostname.replace(/^
   const s=host+(x.pathname==='/'?'':x.pathname); return s.length>52?host:s; }catch(e){ return ''; } }
 window.addEventListener('message',e=>{
   const d=e.data; if(!(d && d.type==='snappy-frame-image' && typeof d.dataUrl==='string' && d.dataUrl.startsWith('data:image/'))) return;
-  // The extension can also hand over the captured tab's URL → drop it in a browser frame.
-  const p = d.url ? prettyUrl(d.url) : '';
-  if(p){ state.frameTitle=p; if(state.frame==='none') state.frame='browser-dark'; syncUI(); }
-  loadImage(d.dataUrl);
+  // The extension can also hand over the captured tab's URL and page title.
+  // Pass them through loadImage so the caption is tied to THIS image.
+  loadImage(d.dataUrl,false,{url:d.url,title:d.title});
 });
 
 // background type segmented

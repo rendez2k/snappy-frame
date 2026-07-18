@@ -3,7 +3,7 @@
 // immediately whenever you're online (this is what stops the app getting
 // "stuck" on an old cached version); cache-first for static assets; and a
 // cache fallback so the app still opens offline. Bump CACHE each release.
-const CACHE = 'snappy-1.6.5';
+const CACHE = 'snappy-1.6.22';
 const ASSETS = [
   './', './index.html', './vendor/html-to-image.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png'
