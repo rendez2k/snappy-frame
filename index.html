@@ -495,8 +495,9 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .progbar > i{display:block; height:100%; width:0; background:var(--accent); transition:width .2s}
 
 /* Inside the native app (Capacitor), hide things that only make sense in a
-   desktop browser — the Chrome-extension links and the "Install app" entry. */
-body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only{ display:none !important; }
+   desktop browser — the Chrome-extension links, the "Install app" entry, and
+   the "What's new" changelog (which is all web-feature history). */
+body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, body.is-native #spWhatsnew{ display:none !important; }
 
 /* Pro-gating (DORMANT — only applies to [data-pro] elements once monetisation is enabled) */
 .pro-locked{position:relative; opacity:.5; pointer-events:none; filter:saturate(.4)}
