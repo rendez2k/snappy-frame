@@ -2440,9 +2440,18 @@ function _haptic(kind){
 }
 document.addEventListener('click', function(e){
   const b = e.target && e.target.closest && e.target.closest('button');
-  if(b && !b.disabled) _haptic('LIGHT');
+  if(b && !b.disabled) _haptic('MEDIUM');
 }, true);
 document.addEventListener('snappy:image-loaded', function(){ _haptic('success'); });
+// A single bump shortly after native launch — a nice "ready" cue, and an
+// unmistakable self-test that the haptics plugin is wired. If you feel this but
+// not button taps, it's the tap trigger; if you feel nothing at all on a device
+// with System Haptics enabled, the plugin isn't firing.
+(function(){
+  const cap=window.Capacitor;
+  if(!(cap && cap.isNativePlatform && cap.isNativePlatform())) return;
+  setTimeout(function(){ _haptic('MEDIUM'); }, 700);
+})();
 
 // iOS WKWebView ignores user-scalable=no and hijacks two-finger pinches as its
 // own page-magnify gesture, stealing the touches from the stage's custom
