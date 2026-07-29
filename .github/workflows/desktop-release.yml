@@ -40,12 +40,17 @@ jobs:
           name: snappy-snap-windows
           path: desktop/dist/*.exe
 
-      - name: Publish to GitHub Release (tag pushes only)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Read app version
+        id: ver
+        shell: bash
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: snappy-snap-v${{ steps.ver.outputs.v }}
+          name: Snappy Snap v${{ steps.ver.outputs.v }}
           files: desktop/dist/*.exe
-          name: Snappy Snap ${{ github.ref_name }}
           body: |
             Snappy Snap — rapid marquee screen capture for Windows.
 
