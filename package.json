@@ -1,0 +1,8 @@
+{
+  "name": "snappy-frame-site",
+  "private": true,
+  "description": "Snappy Frame static site. No build step; this file only declares the Netlify Functions runtime deps (Netlify installs them on deploy).",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
