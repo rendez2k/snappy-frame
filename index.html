@@ -1185,7 +1185,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.7.0';
+const APP_VERSION='1.7.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2989,6 +2989,7 @@ function tiltKey(){ for(const k in TILT){ const t=TILT[k];
 
 // ---------- Presets ----------
 const BUILTIN_PRESETS=[
+  {n:'Plain',     s:{bgType:'none',    pattern:'none', frame:'none',   shadow:'none', tilt:'flat', rad:0, pad:0}},   // raw screenshot, no frame/bg/padding
   {n:'Violet',    s:{bgType:'gradient',gradPreset:0,  pattern:'none', frame:'none',          shadow:'md',  tilt:'flat', rad:16,pad:64}},
   {n:'Sunset',    s:{bgType:'gradient',gradPreset:5,  pattern:'none', frame:'browser-light', shadow:'lg',  tilt:'flat', rad:12,pad:80}},
   {n:'Ocean',     s:{bgType:'mesh',    meshPreset:2,  pattern:'none', frame:'macos-dark',    shadow:'lg',  tilt:'iso',  rad:12,pad:72}},
@@ -3024,6 +3025,7 @@ const BUILTIN_PRESETS=[
   {n:'Harmony',   s:{bgType:'gradient',gradPreset:18, pattern:'harmony', patOpacity:22, frame:'arc',   shadow:'md',  tilt:'left', rad:16,pad:80}},
 ];
 function presetBg(s){
+  if(s.bgType==='none')  return 'repeating-conic-gradient(#c9cdd8 0% 25%,#eef0f5 0% 50%) 0/12px 12px';  // transparent
   if(s.bgType==='mesh')  return MESHES[s.meshPreset||0];
   if(s.bgType==='solid') return s.solid||'#1e2233';
   const g=GRADIENTS[s.gradPreset||0]; return `linear-gradient(135deg,${g[0]},${g[1]})`;
