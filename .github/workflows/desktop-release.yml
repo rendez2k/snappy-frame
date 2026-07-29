@@ -1,0 +1,56 @@
+# Build the Snappy Snap desktop app on Windows and publish the installer to a
+# GitHub Release. Trigger by pushing a tag like `snappy-snap-v0.3.0`, or run
+# manually (Actions tab → this workflow → Run workflow) to get the installer as
+# a downloadable build artifact.
+name: Build Snappy Snap (Windows)
+
+on:
+  push:
+    tags:
+      - "snappy-snap-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build installer (unsigned)
+        run: npx electron-builder --win nsis --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false" # don't attempt code signing
+
+      - name: Upload installer as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snappy-snap-windows
+          path: desktop/dist/*.exe
+
+      - name: Publish to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/dist/*.exe
+          name: Snappy Snap ${{ github.ref_name }}
+          body: |
+            Snappy Snap — rapid marquee screen capture for Windows.
+
+            Download **Snappy-Snap-Setup-*.exe** below and run it.
+            Windows SmartScreen may warn "unknown publisher" (the app is
+            unsigned) — click **More info → Run anyway**.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;cursor:crosshair;
+    user-select:none;-webkit-user-select:none;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;}
+  #shot{position:fixed;inset:0;width:100%;height:100%;display:block;-webkit-user-drag:none;pointer-events:none;}
+  #veil{position:fixed;inset:0;background:rgba(0,0,0,.34);}
+  #sel{position:fixed;display:none;border:1px solid #fff;box-shadow:0 0 0 100vmax rgba(0,0,0,.46);
+    outline:1px solid rgba(0,0,0,.5);}
+  #dim{position:fixed;display:none;background:#12141c;color:#fff;font-size:12px;font-weight:700;
+    padding:3px 8px;border-radius:6px;transform:translateY(-24px);white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+  #hint{position:fixed;left:50%;top:20px;transform:translateX(-50%);z-index:5;
+    background:rgba(18,20,28,.86);color:#fff;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:999px;
+    box-shadow:0 6px 20px rgba(0,0,0,.4);}
+  #hint b{color:#b8a7ff;}
+</style>
+</head>
+<body>
+  <img id="shot" alt="" draggable="false">
+  <div id="veil"></div>
+  <div id="sel"><div id="dim"></div></div>
+  <div id="hint">Drag to snap &nbsp;·&nbsp; <b>Esc</b> to cancel</div>
+<script>
+(async () => {
+  const shot = document.getElementById('shot'), veil = document.getElementById('veil'),
+        sel = document.getElementById('sel'), dim = document.getElementById('dim'), hint = document.getElementById('hint');
+  const d = await window.snap.getData();
+  if(!d){ window.snap.cancel(); return; }
+  shot.src = d.dataUrl;
+
+  let sx = 0, sy = 0, drag = false;
+  const rectFrom = (e) => ({ x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
+                             w: Math.abs(e.clientX - sx), h: Math.abs(e.clientY - sy) });
+  function place(r){
+    sel.style.left = r.x + 'px'; sel.style.top = r.y + 'px';
+    sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
+    dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
+  }
+  addEventListener('mousedown', (e) => { if(e.button !== 0) return; drag = true; sx = e.clientX; sy = e.clientY;
+    veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block'; place(rectFrom(e)); });
+  addEventListener('mousemove', (e) => { if(drag) place(rectFrom(e)); });
+  addEventListener('mouseup', (e) => {
+    if(!drag) return; drag = false;
+    const r = rectFrom(e);
+    if(r.w < 4 || r.h < 4){ window.snap.cancel(); return; }
+    const W = innerWidth, H = innerHeight;
+    window.snap.commit({ x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H });   // normalised → DPI-safe
+  });
+  addEventListener('keydown', (e) => { if(e.key === 'Escape') window.snap.cancel(); });
+  addEventListener('blur', () => { /* keep overlay; user can Esc */ });
+})();
+</script>
+</body>
+</html>

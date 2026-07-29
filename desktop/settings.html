@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<style>
+  :root{--bg:#f7f8fb;--card:#fff;--ink:#1b1e28;--mut:#6b7180;--line:#e6e8ef;--acc:#6d5efc;}
+  @media (prefers-color-scheme:dark){:root{--bg:#0e0f14;--card:#171a22;--ink:#e7e9ef;--mut:#9aa0b0;--line:#262b38;}}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding:22px;font-size:14px;}
+  h1{font-size:17px;margin:0 0 4px;} .sub{color:var(--mut);font-size:12.5px;margin:0 0 18px;}
+  .row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+  .row h3{margin:0 0 3px;font-size:13.5px;} .row p{margin:0;color:var(--mut);font-size:12px;}
+  .flex{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:inherit;}
+  .folder{display:flex;gap:8px;align-items:center;margin-top:8px;}
+  .folder code{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--mut);}
+  button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 13px;cursor:pointer;}
+  button.p{background:var(--acc);color:#fff;border-color:var(--acc);}
+  label.sw{display:flex;align-items:center;gap:9px;cursor:pointer;padding:5px 0;}
+  .modes{display:flex;gap:8px;margin-top:10px;}
+  .mode{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;text-align:center;font-weight:600;font-size:12.5px;}
+  .mode.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,transparent);color:var(--acc);}
+  kbd{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;}
+</style>
+</head>
+<body>
+  <h1>Snappy Snap</h1>
+  <p class="sub">Set your hotkey, where snaps land, and what happens on capture.</p>
+
+  <div class="row">
+    <h3>Global hotkey</h3>
+    <p>Type an Electron accelerator, e.g. <kbd>CommandOrControl+Shift+1</kbd>. Saved as you type.</p>
+    <input type="text" id="hotkey" spellcheck="false" style="margin-top:8px">
+  </div>
+
+  <div class="row">
+    <h3>On capture</h3>
+    <div class="modes">
+      <div class="mode" id="m-save">⚡ Raw — no frame<br><span style="font-weight:400;color:var(--mut)">save + clipboard, instant</span></div>
+      <div class="mode" id="m-beautify">✨ Beautify<br><span style="font-weight:400;color:var(--mut)">open in Snappy Frame</span></div>
+    </div>
+    <label class="sw"><input type="checkbox" id="copyToClipboard"> Copy to clipboard</label>
+    <label class="sw"><input type="checkbox" id="saveToFolder"> Save a PNG to the folder</label>
+    <label class="sw"><input type="checkbox" id="notify"> Show a notification</label>
+    <label class="sw"><input type="checkbox" id="revealAfter"> Reveal the file in Explorer after saving</label>
+    <label class="sw"><input type="checkbox" id="autoStart"> Start Snappy Snap when Windows starts</label>
+  </div>
+
+  <div class="row">
+    <h3>Save folder</h3>
+    <div class="folder"><code id="folder">…</code>
+      <button id="choose">Change…</button><button id="open">Open</button></div>
+  </div>
+
+  <div class="row">
+    <h3>Online inbox <span style="font-weight:400;color:var(--mut)">(optional · uploads)</span></h3>
+    <p>Also send each snap to your web inbox. Get a code at
+      <b>snappy-frame.netlify.app/inbox</b> and paste it here. This is the only
+      time an image leaves your PC.</p>
+    <label class="sw" style="margin-top:8px"><input type="checkbox" id="sendToInbox"> Send every snap to my inbox</label>
+    <input type="text" id="inboxCode" spellcheck="false" placeholder="snap_… (paste your inbox code)" style="margin-top:6px">
+  </div>
+
+<script>
+(async () => {
+  const $ = id => document.getElementById(id);
+  let s = await window.snap.getSettings();
+  $('autoStart').checked = await window.snap.getAutoStart();
+  $('autoStart').addEventListener('change', async e => { const on = await window.snap.setAutoStart(e.target.checked); $('autoStart').checked = on; });
+  function paint(){
+    $('hotkey').value = s.hotkey;
+    $('folder').textContent = s.saveFolder;
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox'].forEach(k => $(k).checked = !!s[k]);
+    $('inboxCode').value = s.inboxCode || '';
+    $('m-save').classList.toggle('on', s.defaultAction === 'save');
+    $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
+  }
+  async function set(patch){ s = await window.snap.setSettings(patch); paint(); }
+  paint();
+
+  $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
+  $('m-save').onclick = () => set({ defaultAction:'save' });
+  $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
+  $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
+  $('open').onclick = () => window.snap.openFolder();
+})();
+</script>
+</body>
+</html>
