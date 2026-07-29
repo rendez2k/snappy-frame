@@ -33,3 +33,4 @@ mkicons.mjs
 scenarios*.mjs
 snappy-standalone.html
 snappy-frame.html
+!desktop/assets/*.png
