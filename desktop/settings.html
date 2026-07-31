@@ -51,6 +51,7 @@
     <h3>Save folder</h3>
     <div class="folder"><code id="folder">…</code>
       <button id="choose">Change…</button><button id="open">Open</button></div>
+    <label class="sw" style="margin-top:10px"><input type="checkbox" id="dailyFolders"> Organise into a folder per day <span style="color:var(--mut)">(e.g. 2026-07-29 › Snap 16.15.26.png)</span></label>
   </div>
 
   <div class="row">
@@ -71,7 +72,7 @@
   function paint(){
     $('hotkey').value = s.hotkey;
     $('folder').textContent = s.saveFolder;
-    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox'].forEach(k => $(k).checked = !!s[k]);
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
@@ -82,7 +83,7 @@
   $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
-  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
   $('open').onclick = () => window.snap.openFolder();

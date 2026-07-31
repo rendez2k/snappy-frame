@@ -16,6 +16,7 @@ const DEFAULTS = {
   beautifyUrl: 'https://snappy-frame.netlify.app',
   sendToInbox: false,                             // also upload each snap to the online inbox
   inboxCode: '',                                  // pairing code (snap_…) — get one at /inbox
+  dailyFolders: true,                             // file each day's snaps into its own subfolder
   revealAfter: false,
   notify: true,
 };
@@ -84,7 +85,18 @@ async function handleResult(image){
   let savedPath = null;
   if(settings.saveToFolder){
     ensureFolder();
-    savedPath = path.join(settings.saveFolder, 'snap-' + stamp() + '.png');
+    const n = nameParts();
+    let dir = settings.saveFolder, base;
+    if(settings.dailyFolders){                    // one subfolder per day → filename is just the time
+      dir = path.join(settings.saveFolder, n.day);
+      try{ fs.mkdirSync(dir, { recursive:true }); }catch(e){}
+      base = `Snap ${n.time}`;
+    } else {                                       // flat folder → readable day-first date in the name
+      base = `Snap ${n.readable} ${n.time}`;
+    }
+    let p = path.join(dir, base + '.png'), i = 2;  // avoid clobbering same-second snaps
+    while(fs.existsSync(p)){ p = path.join(dir, `${base} (${i}).png`); i++; }
+    savedPath = p;
     try{ fs.writeFileSync(savedPath, image.toPNG()); }catch(e){ console.error('save failed', e); savedPath = null; }
   }
   if(settings.defaultAction === 'beautify'){ openBeautify(image.toDataURL()); }
@@ -109,8 +121,15 @@ async function sendToInbox(image){
   }catch(e){ console.error('inbox send failed', e); return false; }
 }
 
-function stamp(){ const d = new Date(), p = n => String(n).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function nameParts(){
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return {
+    day: `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`,          // 2026-07-29 (folder — sorts chronologically)
+    time: `${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`,       // 16.15.26 (dots — valid on Windows)
+    readable: `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`,      // 29 Jul 2026 (day-first, month name)
+  };
+}
 
 function notify(savedPath, inboxOk){
   const bits = [];
