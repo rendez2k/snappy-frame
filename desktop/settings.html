@@ -29,9 +29,11 @@
   <p class="sub">Set your hotkey, where snaps land, and what happens on capture.</p>
 
   <div class="row">
-    <h3>Global hotkey</h3>
-    <p>Type an Electron accelerator, e.g. <kbd>CommandOrControl+Shift+1</kbd>. Saved as you type.</p>
-    <input type="text" id="hotkey" spellcheck="false" style="margin-top:8px">
+    <h3>Global hotkeys</h3>
+    <p><b>Region</b> — freeze the screen and drag a rectangle.</p>
+    <input type="text" id="hotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Active window</b> — grab the focused window instantly, no dragging. Files under the app's name.</p>
+    <input type="text" id="windowHotkey" spellcheck="false" style="margin-top:6px">
   </div>
 
   <div class="row">
@@ -71,6 +73,7 @@
   $('autoStart').addEventListener('change', async e => { const on = await window.snap.setAutoStart(e.target.checked); $('autoStart').checked = on; });
   function paint(){
     $('hotkey').value = s.hotkey;
+    $('windowHotkey').value = s.windowHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -81,6 +84,7 @@
   paint();
 
   $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
+  $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));

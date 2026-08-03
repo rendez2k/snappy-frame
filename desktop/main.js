@@ -5,10 +5,12 @@ const { app, BrowserWindow, globalShortcut, desktopCapturer, screen, clipboard,
   nativeImage, Tray, Menu, ipcMain, Notification, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'settings.json');
 const DEFAULTS = {
   hotkey: 'CommandOrControl+Shift+1',
+  windowHotkey: 'CommandOrControl+Shift+2',        // grab the active window instantly (no marquee)
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
   saveToFolder: true,
   copyToClipboard: true,
@@ -80,20 +82,25 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   await handleResult(crop);
 });
 
-async function handleResult(image){
+function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); }
+
+async function handleResult(image, ctx){
   if(settings.copyToClipboard){ try{ clipboard.writeImage(image); }catch(e){} }
   let savedPath = null;
   if(settings.saveToFolder){
     ensureFolder();
     const n = nameParts();
     let dir = settings.saveFolder, base;
-    if(settings.dailyFolders){                    // one subfolder per day → filename is just the time
-      dir = path.join(settings.saveFolder, n.day);
-      try{ fs.mkdirSync(dir, { recursive:true }); }catch(e){}
+    // window grabs know the app → file under <App>\; marquee grabs don't.
+    const appDir = ctx && ctx.appName ? sanitizeName(ctx.appName) : '';
+    if(appDir) dir = path.join(dir, appDir);
+    if(settings.dailyFolders){                    // …\[App\]\YYYY-MM-DD\Snap 16.15.26.png
+      dir = path.join(dir, n.day);
       base = `Snap ${n.time}`;
-    } else {                                       // flat folder → readable day-first date in the name
+    } else {                                       // …\[App\]\Snap 29 Jul 2026 16.15.26.png
       base = `Snap ${n.readable} ${n.time}`;
     }
+    try{ fs.mkdirSync(dir, { recursive:true }); }catch(e){}
     let p = path.join(dir, base + '.png'), i = 2;  // avoid clobbering same-second snaps
     while(fs.existsSync(p)){ p = path.join(dir, `${base} (${i}).png`); i++; }
     savedPath = p;
@@ -165,7 +172,8 @@ function buildTray(){
 }
 function refreshTrayMenu(){
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Capture now   (' + settings.hotkey + ')', click: () => startCapture() },
+    { label: 'Capture region   (' + settings.hotkey + ')', click: () => startCapture() },
+    { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -216,11 +224,67 @@ ipcMain.handle('autostart:set', (e, on) => {
   try { return app.getLoginItemSettings().openAtLogin; } catch (e3) { return !!on; }
 });
 
+// ---- active-window capture (no marquee) ----------------------------------
+// Ask Windows for the foreground window's title + app name (no native module —
+// a one-shot PowerShell call), then grab THAT window's image via desktopCapturer
+// (which handles any monitor / DPI itself). Files under <App>\<date>\.
+function getForegroundInfo(){
+  return new Promise((resolve) => {
+    if(process.platform !== 'win32'){ resolve(null); return; }
+    const ps = [
+      'Add-Type @"',
+      'using System;using System.Runtime.InteropServices;using System.Text;',
+      'public class Fg{',
+      ' [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      ' [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h,out int pid);',
+      ' [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,StringBuilder s,int n);',
+      '}',
+      '"@',
+      '$h=[Fg]::GetForegroundWindow()',
+      '$sb=New-Object System.Text.StringBuilder 512',
+      '[Fg]::GetWindowText($h,$sb,512)|Out-Null',
+      '$procId=0;[Fg]::GetWindowThreadProcessId($h,[ref]$procId)|Out-Null',
+      '$p=Get-Process -Id $procId',
+      '$app=$p.ProcessName',
+      'try{ $pn=$p.MainModule.FileVersionInfo.ProductName; if($pn){$app=$pn} }catch{}',
+      '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8',
+      '@{app=$app;title=$sb.ToString()}|ConvertTo-Json -Compress',
+    ].join('\n');
+    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { timeout: 4000, windowsHide: true }, (err, stdout) => {
+        if(err){ resolve(null); return; }
+        try{ resolve(JSON.parse(String(stdout).trim())); }catch(e){ resolve(null); }
+      });
+  });
+}
+
+async function captureActiveWindow(){
+  const info = await getForegroundInfo();
+  const title = (info && info.title) || '';
+  const appName = (info && info.app) || '';
+  let sources;
+  try{ sources = await desktopCapturer.getSources({ types:['window'], thumbnailSize:{ width:3840, height:2160 } }); }
+  catch(e){ console.error('window sources failed', e); return; }
+  const mine = ['Snappy Snap', 'Snappy Snap — Settings', 'Snappy Frame'];
+  let src = (title && sources.find(s => s.name === title))
+    || (title && sources.find(s => s.name && (s.name.includes(title) || title.includes(s.name))))
+    || sources.find(s => s.name && !mine.includes(s.name));
+  if(!src){ try{ new Notification({ title:'Snappy Snap', body:'Couldn’t find the active window' }).show(); }catch(e){} return; }
+  const img = src.thumbnail;
+  if(!img || img.isEmpty()){ try{ new Notification({ title:'Snappy Snap', body:'That window can’t be captured — try the marquee (Ctrl+Shift+1)' }).show(); }catch(e){} return; }
+  await handleResult(img, { appName: appName || src.name });
+}
+
 // ---- hotkey / lifecycle --------------------------------------------------
 function registerHotkey(){
   globalShortcut.unregisterAll();
   try{ const ok = globalShortcut.register(settings.hotkey, () => startCapture()); if(!ok) console.error('hotkey register returned false'); }
   catch(e){ console.error('hotkey failed', e); }
+  if(settings.windowHotkey){
+    try{ globalShortcut.register(settings.windowHotkey, () => captureActiveWindow().catch(e => console.error(e))); }
+    catch(e){ console.error('window hotkey failed', e); }
+  }
 }
 
 app.whenReady().then(() => {
