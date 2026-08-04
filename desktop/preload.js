@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('snap', {
   getData: () => ipcRenderer.invoke('overlay:data'),
   commit: (rect) => ipcRenderer.send('overlay:commit', rect),
   cancel: () => ipcRenderer.send('overlay:cancel'),
+  // mark-up editor
+  getAnnotate: () => ipcRenderer.invoke('annotator:data'),
+  annotateDone: (payload) => ipcRenderer.send('annotator:done', payload),
+  annotateCancel: () => ipcRenderer.send('annotator:cancel'),
   // settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),

@@ -11,6 +11,7 @@ const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'settings.json');
 const DEFAULTS = {
   hotkey: 'CommandOrControl+Shift+1',
   windowHotkey: 'CommandOrControl+Shift+2',        // grab the active window instantly (no marquee)
+  markupHotkey: 'CommandOrControl+Shift+3',        // grab a region then open the mark-up editor
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
   saveToFolder: true,
   copyToClipboard: true,
@@ -28,12 +29,15 @@ function loadSettings(){ try{ settings = { ...DEFAULTS, ...JSON.parse(fs.readFil
 function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recursive:true }); fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2)); }catch(e){ console.error(e); } }
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
 
-let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null;
+let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null;
 const pending = new Map();                         // webContents.id -> { dataUrl, w, h }
+const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
+let captureMode = 'normal';                        // 'normal' | 'markup' — what to do after the marquee
 
 // ---- capture flow --------------------------------------------------------
-async function startCapture(){
+async function startCapture(mode){
   if(overlayWin) return;                           // one marquee at a time
+  captureMode = mode === 'markup' ? 'markup' : 'normal';
   const pt = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(pt);
   const sf = display.scaleFactor || 1;
@@ -79,13 +83,14 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   cx = Math.max(0, Math.min(cx, iw - 1)); cy = Math.max(0, Math.min(cy, ih - 1));
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
+  if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }
   await handleResult(crop);
 });
 
 function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); }
 
 async function handleResult(image, ctx){
-  if(settings.copyToClipboard){ try{ clipboard.writeImage(image); }catch(e){} }
+  if(settings.copyToClipboard || (ctx && ctx.forceCopy)){ try{ clipboard.writeImage(image); }catch(e){} }
   let savedPath = null;
   if(settings.saveToFolder){
     ensureFolder();
@@ -158,6 +163,41 @@ function openBeautify(dataUrl){
   beautifyWin.on('closed', () => { beautifyWin = null; });
 }
 
+// ---- mark-up editor ------------------------------------------------------
+// Hand the fresh crop to a canvas annotator; on finish it posts back a flattened
+// PNG. Markup always copies to the clipboard (that's the point — paste into a
+// chat), plus save/inbox/notify per the normal settings.
+function openAnnotator(dataUrl){
+  if(annotatorWin){ annotatorWin.focus(); return; }
+  const img = nativeImage.createFromDataURL(dataUrl);
+  const sz = img.getSize();
+  const CHROME = 96, PADX = 40, MAXW = 1200, MAXH = 860;   // toolbar height + window padding
+  const scale = Math.min(1, MAXW / sz.width, (MAXH - CHROME) / sz.height);
+  const winW = Math.max(600, Math.round(sz.width * scale) + PADX);
+  const winH = Math.min(MAXH, Math.round(sz.height * scale) + CHROME);
+  annotatorWin = new BrowserWindow({
+    width: winW, height: winH, title: 'Snappy Snap — Mark up',
+    autoHideMenuBar: true, backgroundColor: '#1b1e28', minWidth: 480, minHeight: 320,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
+  });
+  annPending.set(annotatorWin.webContents.id, { dataUrl, w: sz.width, h: sz.height });
+  annotatorWin.loadFile('annotator.html');
+  annotatorWin.once('ready-to-show', () => annotatorWin.focus());
+  annotatorWin.on('closed', () => { annotatorWin = null; });
+}
+
+ipcMain.handle('annotator:data', (e) => annPending.get(e.sender.id) || null);
+ipcMain.on('annotator:cancel', (e) => { const w = BrowserWindow.fromWebContents(e.sender); annPending.delete(e.sender.id); if(w) w.close(); });
+ipcMain.on('annotator:done', async (e, payload) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  annPending.delete(e.sender.id);
+  if(w) w.close();
+  if(!payload || !payload.dataUrl) return;
+  const img = nativeImage.createFromDataURL(payload.dataUrl);
+  if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(payload.dataUrl); return; }
+  await handleResult(img, { markup: true, forceCopy: true });
+});
+
 // ---- tray ----------------------------------------------------------------
 function trayImage(){
   const p = path.join(__dirname, 'assets', 'tray.png');
@@ -174,6 +214,7 @@ function refreshTrayMenu(){
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Capture region   (' + settings.hotkey + ')', click: () => startCapture() },
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
+    { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -202,10 +243,9 @@ function openSettings(){
 // ---- settings IPC --------------------------------------------------------
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
-  const oldHotkey = settings.hotkey;
   settings = { ...settings, ...patch };
   saveSettings();
-  if(patch.hotkey && patch.hotkey !== oldHotkey) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch) registerHotkey();
   refreshTrayMenu();
   return settings;
 });
@@ -284,6 +324,10 @@ function registerHotkey(){
   if(settings.windowHotkey){
     try{ globalShortcut.register(settings.windowHotkey, () => captureActiveWindow().catch(e => console.error(e))); }
     catch(e){ console.error('window hotkey failed', e); }
+  }
+  if(settings.markupHotkey){
+    try{ globalShortcut.register(settings.markupHotkey, () => startCapture('markup')); }
+    catch(e){ console.error('markup hotkey failed', e); }
   }
 }
 
