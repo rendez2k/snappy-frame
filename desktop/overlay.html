@@ -23,14 +23,13 @@
   <div id="sel"><div id="dim"></div></div>
   <div id="hint">Drag to snap &nbsp;·&nbsp; <b>Esc</b> to cancel</div>
 <script>
-(async () => {
+(() => {
   const shot = document.getElementById('shot'), veil = document.getElementById('veil'),
         sel = document.getElementById('sel'), dim = document.getElementById('dim'), hint = document.getElementById('hint');
-  const d = await window.snap.getData();
-  if(!d){ window.snap.cancel(); return; }
-  shot.src = d.dataUrl;
-
-  let sx = 0, sy = 0, drag = false;
+  // The window is reused across grabs — each grab arrives as an 'overlay:show'
+  // message and re-arms the marquee. `armed` gates input so stray events
+  // between grabs (while hidden) can't fire a commit.
+  let sx = 0, sy = 0, drag = false, armed = false;
   const rectFrom = (e) => ({ x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
                              w: Math.abs(e.clientX - sx), h: Math.abs(e.clientY - sy) });
   function place(r){
@@ -38,18 +37,26 @@
     sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
     dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
   }
-  addEventListener('mousedown', (e) => { if(e.button !== 0) return; drag = true; sx = e.clientX; sy = e.clientY;
+  window.snap.onOverlayShow((d) => {
+    drag = false; armed = true;
+    sel.style.display = 'none'; dim.style.display = 'none';
+    veil.style.display = 'block'; hint.style.display = 'block';
+    shot.style.visibility = 'hidden';                 // avoid a flash of the previous grab
+    shot.onload = () => { shot.style.visibility = 'visible'; };
+    shot.src = d.dataUrl;
+  });
+
+  addEventListener('mousedown', (e) => { if(!armed || e.button !== 0) return; drag = true; sx = e.clientX; sy = e.clientY;
     veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block'; place(rectFrom(e)); });
   addEventListener('mousemove', (e) => { if(drag) place(rectFrom(e)); });
   addEventListener('mouseup', (e) => {
-    if(!drag) return; drag = false;
+    if(!armed || !drag) return; drag = false; armed = false;
     const r = rectFrom(e);
     if(r.w < 4 || r.h < 4){ window.snap.cancel(); return; }
     const W = innerWidth, H = innerHeight;
     window.snap.commit({ x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H });   // normalised → DPI-safe
   });
-  addEventListener('keydown', (e) => { if(e.key === 'Escape') window.snap.cancel(); });
-  addEventListener('blur', () => { /* keep overlay; user can Esc */ });
+  addEventListener('keydown', (e) => { if(e.key === 'Escape' && armed){ armed = false; window.snap.cancel(); } });
 })();
 </script>
 </body>

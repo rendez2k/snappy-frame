@@ -37,46 +37,59 @@ const batch = [];                                  // collected region grabs (fu
 let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' — what to do after the marquee
 
 // ---- capture flow --------------------------------------------------------
-async function startCapture(mode){
-  if(overlayWin) return;                           // one marquee at a time
-  captureMode = (mode === 'markup' || mode === 'batch') ? mode : 'normal';
-  const pt = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(pt);
-  const sf = display.scaleFactor || 1;
-  const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
-
-  let sources;
-  try{ sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px }); }
-  catch(e){ console.error('getSources failed', e); return; }
-
-  const displays = screen.getAllDisplays();
-  const idx = displays.findIndex(d => d.id === display.id);
-  let src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
-  if(!src){ return; }
-  const size = src.thumbnail.getSize();
-
+// The marquee overlay is built once and kept hidden between grabs, so a
+// keypress only pays for the screen capture itself — not window creation,
+// HTML load, and first-paint every single time (that overhead was the lag).
+let overlayBusy = false;                           // a grab is already in flight
+function ensureOverlay(){
+  if(overlayWin) return;
   overlayWin = new BrowserWindow({
-    x: display.bounds.x, y: display.bounds.y,
-    width: display.bounds.width, height: display.bounds.height,
-    frame:false, transparent:true, backgroundColor:'#00000000',
+    width: 200, height: 200, frame:false, transparent:true, backgroundColor:'#00000000',
     alwaysOnTop:true, skipTaskbar:true, resizable:false, movable:false,
     hasShadow:false, fullscreenable:false, enableLargerThanScreen:true, show:false,
     webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true },
   });
-  pending.set(overlayWin.webContents.id, { dataUrl: src.thumbnail.toDataURL(), w:size.width, h:size.height });
   overlayWin.setAlwaysOnTop(true, 'screen-saver');
   overlayWin.loadFile('overlay.html');
-  overlayWin.once('ready-to-show', () => { overlayWin.show(); overlayWin.focus(); });
   overlayWin.on('closed', () => { overlayWin = null; });
+}
+function hideOverlay(){ overlayBusy = false; if(overlayWin && !overlayWin.isDestroyed()) overlayWin.hide(); }
+
+async function startCapture(mode){
+  if(overlayBusy) return;                           // one marquee at a time
+  overlayBusy = true;
+  captureMode = (mode === 'markup' || mode === 'batch') ? mode : 'normal';
+  try{
+    const pt = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(pt);
+    const sf = display.scaleFactor || 1;
+    const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
+    let sources;
+    try{ sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px }); }
+    catch(e){ console.error('getSources failed', e); overlayBusy = false; return; }
+    const displays = screen.getAllDisplays();
+    const idx = displays.findIndex(d => d.id === display.id);
+    const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
+    if(!src){ overlayBusy = false; return; }
+    const size = src.thumbnail.getSize();
+    const dataUrl = src.thumbnail.toDataURL();
+    ensureOverlay();
+    if(overlayWin.webContents.isLoading()){          // only the very first grab waits for the page
+      await new Promise(r => overlayWin.webContents.once('did-finish-load', r));
+    }
+    pending.set(overlayWin.webContents.id, { dataUrl, w:size.width, h:size.height });
+    overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
+    overlayWin.webContents.send('overlay:show', { dataUrl, w:size.width, h:size.height });
+    overlayWin.show(); overlayWin.focus();
+  }catch(e){ console.error('startCapture failed', e); overlayBusy = false; }
 }
 
 ipcMain.handle('overlay:data', (e) => pending.get(e.sender.id) || null);
-ipcMain.on('overlay:cancel', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if(w){ pending.delete(e.sender.id); w.close(); } });
+ipcMain.on('overlay:cancel', (e) => { pending.delete(e.sender.id); hideOverlay(); });
 ipcMain.on('overlay:commit', async (e, rect) => {
   const data = pending.get(e.sender.id);
-  const w = BrowserWindow.fromWebContents(e.sender);
   pending.delete(e.sender.id);
-  if(w) w.close();
+  hideOverlay();
   if(!data || !rect) return;
   const full = nativeImage.createFromDataURL(data.dataUrl);
   const iw = data.w, ih = data.h;
@@ -422,8 +435,10 @@ function registerHotkey(){
 }
 
 app.whenReady().then(() => {
-  loadSettings(); ensureFolder(); buildTray(); registerHotkey();
+  loadSettings(); ensureFolder(); buildTray(); registerHotkey(); ensureOverlay();
   if(process.platform === 'darwin' && app.dock) app.dock.hide();   // tray-only
+  // Prime the screen-capture pipeline so the first grab isn't a cold start.
+  setTimeout(() => { desktopCapturer.getSources({ types:['screen'], thumbnailSize:{ width:1, height:1 } }).catch(() => {}); }, 600);
 });
 app.on('window-all-closed', () => { /* keep running in the tray */ });
 app.on('will-quit', () => globalShortcut.unregisterAll());
