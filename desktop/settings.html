@@ -36,6 +36,8 @@
     <input type="text" id="windowHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw arrows, boxes, text or blur before it's copied. Great for flagging a fix to paste into a chat.</p>
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
+    <input type="text" id="batchHotkey" spellcheck="false" style="margin-top:6px">
   </div>
 
   <div class="row">
@@ -77,6 +79,7 @@
     $('hotkey').value = s.hotkey;
     $('windowHotkey').value = s.windowHotkey || '';
     $('markupHotkey').value = s.markupHotkey || '';
+    $('batchHotkey').value = s.batchHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -89,6 +92,7 @@
   $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
   $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
   $('markupHotkey').addEventListener('change', e => set({ markupHotkey: e.target.value.trim() }));
+  $('batchHotkey').addEventListener('change', e => set({ batchHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));

@@ -12,6 +12,7 @@ const DEFAULTS = {
   hotkey: 'CommandOrControl+Shift+1',
   windowHotkey: 'CommandOrControl+Shift+2',        // grab the active window instantly (no marquee)
   markupHotkey: 'CommandOrControl+Shift+3',        // grab a region then open the mark-up editor
+  batchHotkey: 'CommandOrControl+Shift+5',         // collect several region grabs, hand them over together
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
   saveToFolder: true,
   copyToClipboard: true,
@@ -29,15 +30,16 @@ function loadSettings(){ try{ settings = { ...DEFAULTS, ...JSON.parse(fs.readFil
 function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recursive:true }); fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2)); }catch(e){ console.error(e); } }
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
 
-let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null;
+let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null;
 const pending = new Map();                         // webContents.id -> { dataUrl, w, h }
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
-let captureMode = 'normal';                        // 'normal' | 'markup' — what to do after the marquee
+const batch = [];                                  // collected region grabs (full-res dataURLs) awaiting hand-off
+let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' — what to do after the marquee
 
 // ---- capture flow --------------------------------------------------------
 async function startCapture(mode){
   if(overlayWin) return;                           // one marquee at a time
-  captureMode = mode === 'markup' ? 'markup' : 'normal';
+  captureMode = (mode === 'markup' || mode === 'batch') ? mode : 'normal';
   const pt = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(pt);
   const sf = display.scaleFactor || 1;
@@ -83,6 +85,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   cx = Math.max(0, Math.min(cx, iw - 1)); cy = Math.max(0, Math.min(cy, ih - 1));
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
+  if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }
   await handleResult(crop);
 });
@@ -198,6 +201,78 @@ ipcMain.on('annotator:done', async (e, payload) => {
   await handleResult(img, { markup: true, forceCopy: true });
 });
 
+// ---- batch collector ------------------------------------------------------
+// Gather several region grabs, then hand them over together — either as
+// separate files opened in a folder (drag them all into a chat at full quality)
+// or stitched into one image (one paste, but readability drops with count).
+function addToBatch(dataUrl){
+  batch.push({ dataUrl });
+  openBatchHud();
+  sendBatchUpdate();
+}
+function sendBatchUpdate(){
+  if(batchWin && !batchWin.isDestroyed()){ batchWin.webContents.send('batch:update', batch.map((b, i) => ({ i, dataUrl: b.dataUrl }))); }
+}
+function openBatchHud(){
+  if(batchWin && !batchWin.isDestroyed()){ return; }
+  const wa = screen.getPrimaryDisplay().workArea;
+  const W = 320, H = 300, M = 16;
+  batchWin = new BrowserWindow({
+    x: wa.x + wa.width - W - M, y: wa.y + wa.height - H - M, width: W, height: H,
+    frame: false, transparent: true, backgroundColor: '#00000000', resizable: false,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, fullscreenable: false, show: false,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
+  });
+  batchWin.setAlwaysOnTop(true, 'screen-saver');
+  batchWin.loadFile('batch.html');
+  batchWin.once('ready-to-show', () => batchWin.show());
+  batchWin.on('closed', () => { batchWin = null; });
+}
+function clearBatch(){ batch.length = 0; if(batchWin && !batchWin.isDestroyed()) batchWin.close(); }
+
+ipcMain.on('batch:ready', () => sendBatchUpdate());
+ipcMain.on('batch:action', async (e, msg) => {
+  if(!msg) return;
+  if(msg.name === 'clear'){ clearBatch(); return; }
+  if(msg.name === 'save'){                        // one folder, one PNG per shot → drag them all in
+    ensureFolder();
+    const n = nameParts();
+    let dir = settings.saveFolder;
+    if(settings.dailyFolders) dir = path.join(dir, n.day);
+    dir = path.join(dir, 'Batch ' + n.time);
+    let d = dir, k = 2; while(fs.existsSync(d)){ d = `${dir} (${k})`; k++; } dir = d;
+    try{ fs.mkdirSync(dir, { recursive:true }); }catch(e2){}
+    const pad = String(batch.length).length;
+    batch.forEach((b, i) => {
+      const img = nativeImage.createFromDataURL(b.dataUrl);
+      try{ fs.writeFileSync(path.join(dir, `Shot ${String(i+1).padStart(pad, '0')}.png`), img.toPNG()); }catch(e2){ console.error('batch save failed', e2); }
+    });
+    const count = batch.length;
+    shell.openPath(dir);
+    clearBatch();
+    if(settings.notify){ try{ new Notification({ title:'Snappy Snap', body:`Saved ${count} shots — drag them into your chat` }).show(); }catch(e2){} }
+    return;
+  }
+  if(msg.name === 'copy' && msg.dataUrl){          // renderer stitched them → clipboard (+ save the combined PNG)
+    const img = nativeImage.createFromDataURL(msg.dataUrl);
+    try{ clipboard.writeImage(img); }catch(e2){}
+    let savedName = null;
+    if(settings.saveToFolder){
+      ensureFolder();
+      const n = nameParts();
+      let dir = settings.saveFolder;
+      if(settings.dailyFolders) dir = path.join(dir, n.day);
+      try{ fs.mkdirSync(dir, { recursive:true }); }catch(e2){}
+      let p = path.join(dir, `Batch ${n.time}.png`), k = 2;
+      while(fs.existsSync(p)){ p = path.join(dir, `Batch ${n.time} (${k}).png`); k++; }
+      try{ fs.writeFileSync(p, img.toPNG()); savedName = path.basename(p); }catch(e2){ console.error('stitch save failed', e2); }
+    }
+    clearBatch();
+    if(settings.notify){ try{ new Notification({ title:'Snappy Snap', body: savedName ? `Stitched ${savedName} · copied to clipboard` : 'Stitched image copied to clipboard' }).show(); }catch(e2){} }
+    return;
+  }
+});
+
 // ---- tray ----------------------------------------------------------------
 function trayImage(){
   const p = path.join(__dirname, 'assets', 'tray.png');
@@ -215,6 +290,7 @@ function refreshTrayMenu(){
     { label: 'Capture region   (' + settings.hotkey + ')', click: () => startCapture() },
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
+    { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -234,7 +310,7 @@ function refreshTrayMenu(){
 
 function openSettings(){
   if(settingsWin){ settingsWin.focus(); return; }
-  settingsWin = new BrowserWindow({ width:520, height:560, title:'Snappy Snap — Settings', resizable:false, autoHideMenuBar:true,
+  settingsWin = new BrowserWindow({ width:520, height:640, title:'Snappy Snap — Settings', resizable:true, autoHideMenuBar:true,
     webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true } });
   settingsWin.loadFile('settings.html');
   settingsWin.on('closed', () => { settingsWin = null; });
@@ -245,7 +321,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch) registerHotkey();
   refreshTrayMenu();
   return settings;
 });
@@ -328,6 +404,10 @@ function registerHotkey(){
   if(settings.markupHotkey){
     try{ globalShortcut.register(settings.markupHotkey, () => startCapture('markup')); }
     catch(e){ console.error('markup hotkey failed', e); }
+  }
+  if(settings.batchHotkey){
+    try{ globalShortcut.register(settings.batchHotkey, () => startCapture('batch')); }
+    catch(e){ console.error('batch hotkey failed', e); }
   }
 }
 

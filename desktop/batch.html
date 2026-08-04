@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#171a22;--line:#2b3040;--ink:#e7e9ef;--mut:#9aa0b0;--acc:#6d5efc;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);user-select:none;-webkit-user-select:none;}
+  #card{height:100%;background:var(--bg);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 14px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;padding:12px;gap:10px;}
+  .top{display:flex;align-items:center;gap:8px;}
+  .top h1{font-size:13.5px;margin:0;font-weight:700;flex:1;}
+  .count{background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 9px;}
+  .x{width:24px;height:24px;border:1px solid var(--line);background:#2b3040;color:var(--ink);border-radius:7px;
+    cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;}
+  #strip{flex:1;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;overflow-y:auto;
+    background:#10131a;border:1px solid var(--line);border-radius:10px;padding:8px;}
+  #strip img{width:60px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:#000;}
+  #empty{color:var(--mut);font-size:12px;margin:auto;text-align:center;padding:0 10px;}
+  .btns{display:flex;flex-direction:column;gap:6px;}
+  button.act{width:100%;height:34px;border-radius:9px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
+    font:inherit;font-weight:600;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+  button.act:hover{border-color:#48506a;}
+  button.act.primary{background:var(--acc);border-color:var(--acc);color:#fff;}
+  button.act:disabled{opacity:.5;cursor:default;}
+  .hint{font-size:10.5px;color:var(--mut);text-align:center;margin:-2px 0 0;line-height:1.3;}
+</style>
+</head>
+<body>
+  <div id="card">
+    <div class="top">
+      <h1>Batch</h1><span class="count" id="count">0</span>
+      <button class="x" id="clear" title="Discard batch">✕</button>
+    </div>
+    <div id="strip"><div id="empty">Press the batch hotkey again to add more shots.</div></div>
+    <div class="btns">
+      <button class="act primary" id="save" title="Save each as its own PNG and open the folder">📂 Save all &amp; open folder</button>
+      <button class="act" id="copy" title="Stitch into one image on the clipboard">🧷 Copy stitched</button>
+    </div>
+    <p class="hint">Save all keeps every shot crisp — best for Claude. Stitching loses sharpness as the count grows.</p>
+  </div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let items = [];
+
+  window.snap.batchOnUpdate((list) => { items = list || []; paint(); });
+  window.snap.batchReady();
+
+  function paint(){
+    $('count').textContent = items.length;
+    const strip = $('strip');
+    if(!items.length){ strip.innerHTML = '<div id="empty">Press the batch hotkey again to add more shots.</div>'; }
+    else { strip.innerHTML = ''; items.forEach(it => { const im = document.createElement('img'); im.src = it.dataUrl; strip.appendChild(im); }); strip.scrollTop = strip.scrollHeight; }
+    const none = items.length === 0;
+    $('save').disabled = none; $('copy').disabled = none;
+  }
+
+  $('clear').onclick = () => window.snap.batchAction('clear');
+  $('save').onclick = () => { if(items.length) window.snap.batchAction('save'); };
+  $('copy').onclick = async () => {
+    if(!items.length) return;
+    const dataUrl = await stitch(items.map(i => i.dataUrl));
+    window.snap.batchAction('copy', dataUrl);
+  };
+
+  // Vertical stack, native resolution, each shot centred on a white canvas of
+  // the widest shot's width, with a small gap. No downscaling here — we hand
+  // over full pixels and let the destination do any resizing.
+  function loadImg(src){ return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.src = src; }); }
+  async function stitch(urls){
+    const imgs = await Promise.all(urls.map(loadImg));
+    const GAP = 10, PAD = 10, BG = '#ffffff';
+    const w = Math.max(...imgs.map(i => i.width)) + PAD * 2;
+    const h = imgs.reduce((s, i) => s + i.height, 0) + GAP * (imgs.length - 1) + PAD * 2;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h);
+    let y = PAD;
+    for(const im of imgs){ ctx.drawImage(im, Math.round((w - im.width) / 2), y); y += im.height + GAP; }
+    return c.toDataURL('image/png');
+  }
+})();
+</script>
+</body>
+</html>
