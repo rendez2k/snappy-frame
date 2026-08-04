@@ -191,14 +191,24 @@ function openAnnotator(dataUrl){
 
 ipcMain.handle('annotator:data', (e) => annPending.get(e.sender.id) || null);
 ipcMain.on('annotator:cancel', (e) => { const w = BrowserWindow.fromWebContents(e.sender); annPending.delete(e.sender.id); if(w) w.close(); });
+ipcMain.on('annotator:report', (e, msg) => {
+  console.error('annotator report:', msg);
+  try{ new Notification({ title:'Snappy Snap — Mark up', body: String(msg).slice(0, 200) }).show(); }catch(e2){}
+});
 ipcMain.on('annotator:done', async (e, payload) => {
   const w = BrowserWindow.fromWebContents(e.sender);
   annPending.delete(e.sender.id);
   if(w) w.close();
-  if(!payload || !payload.dataUrl) return;
-  const img = nativeImage.createFromDataURL(payload.dataUrl);
-  if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(payload.dataUrl); return; }
-  await handleResult(img, { markup: true, forceCopy: true });
+  if(!payload || (!payload.bytes && !payload.dataUrl)) return;
+  try{
+    const img = payload.bytes ? nativeImage.createFromBuffer(Buffer.from(payload.bytes))
+                              : nativeImage.createFromDataURL(payload.dataUrl);
+    if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); return; }
+    await handleResult(img, { markup: true, forceCopy: true });
+  }catch(err){
+    console.error('annotator done failed', err);
+    try{ new Notification({ title:'Snappy Snap — Mark up', body:'Copy failed: ' + String(err && err.message || err).slice(0, 160) }).show(); }catch(e2){}
+  }
 });
 
 // ---- batch collector ------------------------------------------------------

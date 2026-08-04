@@ -60,6 +60,15 @@
   <div id="stage"><div id="wrap"><canvas id="c"></canvas><input id="tin" spellcheck="false"></div></div>
 
 <script>
+  // Surface any failure both on-screen (the toolbar hint turns red) and to the
+  // main process (a Windows notification), so a silent throw can't hide.
+  function report(msg){
+    try{ if(window.snap && window.snap.annotateReport) window.snap.annotateReport(String(msg)); }catch(_){}
+    const h = document.querySelector('.hint'); if(h){ h.textContent = String(msg).slice(0, 110); h.style.color = '#ff6b6b'; }
+  }
+  window.addEventListener('error', (e) => report('Error: ' + (e.message || (e.error && e.error.message) || 'unknown')));
+  window.addEventListener('unhandledrejection', (e) => report('Error: ' + (e.reason && e.reason.message || e.reason)));
+
 (async () => {
   const $ = id => document.getElementById(id);
   const cv = $('c'), ctx = cv.getContext('2d'), tin = $('tin'), wrap = $('wrap');
@@ -188,10 +197,25 @@
 
   // ---- toolbar actions ---------------------------------------------------
   $('undo').onclick = () => { shapes.pop(); redraw(); };
+  function sendDone(payload){
+    if(!(window.snap && window.snap.annotateDone)){ report('Bridge missing — reinstall may be incomplete'); return; }
+    window.snap.annotateDone(payload);
+  }
   function finish(action){
-    if(tin.style.display === 'block') commitText();
-    draft = null; redraw();
-    window.snap.annotateDone({ dataUrl: cv.toDataURL('image/png'), action });
+    try{
+      if(tin.style.display === 'block') commitText();
+      draft = null; redraw();
+      // toBlob → raw bytes is robust on large canvases and avoids a multi-MB
+      // base64 string over IPC. Fall back to toDataURL if the blob is null.
+      cv.toBlob(async (blob) => {
+        try{
+          if(blob){ sendDone({ bytes: new Uint8Array(await blob.arrayBuffer()), action }); return; }
+          let url = ''; try{ url = cv.toDataURL('image/png'); }catch(_){}
+          if(url && url.length > 40){ sendDone({ dataUrl: url, action }); return; }
+          report('Export produced an empty image (' + cv.width + '×' + cv.height + ')');
+        }catch(err){ report('Export failed: ' + (err && err.message || err)); }
+      }, 'image/png');
+    }catch(err){ report('Finish failed: ' + (err && err.message || err)); }
   }
   $('done').onclick = () => finish('done');
   $('beautify').onclick = () => finish('beautify');

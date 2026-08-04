@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('snap', {
   getAnnotate: () => ipcRenderer.invoke('annotator:data'),
   annotateDone: (payload) => ipcRenderer.send('annotator:done', payload),
   annotateCancel: () => ipcRenderer.send('annotator:cancel'),
+  annotateReport: (msg) => ipcRenderer.send('annotator:report', msg),
   // batch collector
   batchReady: () => ipcRenderer.send('batch:ready'),
   batchOnUpdate: (cb) => ipcRenderer.on('batch:update', (e, items) => cb(items)),
