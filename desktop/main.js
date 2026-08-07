@@ -31,7 +31,7 @@ function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recu
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
 
 let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null;
-const pending = new Map();                         // webContents.id -> { dataUrl, w, h }
+const pending = new Map();                         // webContents.id -> { img (nativeImage), w, h }
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
 const batch = [];                                  // collected region grabs (full-res dataURLs) awaiting hand-off
 let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' — what to do after the marquee
@@ -55,43 +55,59 @@ function ensureOverlay(){
 }
 function hideOverlay(){ overlayBusy = false; if(overlayWin && !overlayWin.isDestroyed()) overlayWin.hide(); }
 
+let grabSeq = 0, shotPromise = null;               // shotPromise resolves when the current grab's frame is in `pending`
+
 async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
+  const seq = ++grabSeq;
   captureMode = (mode === 'markup' || mode === 'batch') ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
     const sf = display.scaleFactor || 1;
     const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
-    let sources;
-    try{ sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px }); }
-    catch(e){ console.error('getSources failed', e); overlayBusy = false; return; }
-    const displays = screen.getAllDisplays();
-    const idx = displays.findIndex(d => d.id === display.id);
-    const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
-    if(!src){ overlayBusy = false; return; }
-    const size = src.thumbnail.getSize();
-    const dataUrl = src.thumbnail.toDataURL();
+
     ensureOverlay();
     if(overlayWin.webContents.isLoading()){          // only the very first grab waits for the page
       await new Promise(r => overlayWin.webContents.once('did-finish-load', r));
     }
-    pending.set(overlayWin.webContents.id, { dataUrl, w:size.width, h:size.height });
+
+    // Show the marquee IMMEDIATELY (fully transparent, crosshair armed) and run
+    // the screen capture in parallel — the frozen shot swaps in when it lands.
+    // The overlay draws nothing until then, so the capture can't include it.
+    pending.delete(overlayWin.webContents.id);
     overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
-    overlayWin.webContents.send('overlay:show', { dataUrl, w:size.width, h:size.height });
+    overlayWin.webContents.send('overlay:arm');
     overlayWin.show(); overlayWin.focus();
+
+    shotPromise = (async () => {
+      const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+      const displays = screen.getAllDisplays();
+      const idx = displays.findIndex(d => d.id === display.id);
+      const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
+      if(!src || !overlayWin || overlayWin.isDestroyed()) return;
+      const img = src.thumbnail;
+      const size = img.getSize();
+      pending.set(overlayWin.webContents.id, { img, w:size.width, h:size.height });
+      // JPEG preview: ~10× smaller than a PNG dataURL of the whole screen, so
+      // encode + IPC + paint are all fast. The final crop uses `img` untouched.
+      if(seq === grabSeq){
+        overlayWin.webContents.send('overlay:shot', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') });
+      }
+    })();
+    shotPromise.catch(e => { console.error('capture failed', e); if(seq === grabSeq) hideOverlay(); });
   }catch(e){ console.error('startCapture failed', e); overlayBusy = false; }
 }
 
-ipcMain.handle('overlay:data', (e) => pending.get(e.sender.id) || null);
 ipcMain.on('overlay:cancel', (e) => { pending.delete(e.sender.id); hideOverlay(); });
 ipcMain.on('overlay:commit', async (e, rect) => {
+  hideOverlay();                                     // overlay vanishes the instant the drag ends
+  try{ if(shotPromise) await shotPromise; }catch(_){} // near-always already resolved by mouse-up
   const data = pending.get(e.sender.id);
   pending.delete(e.sender.id);
-  hideOverlay();
   if(!data || !rect) return;
-  const full = nativeImage.createFromDataURL(data.dataUrl);
+  const full = data.img;
   const iw = data.w, ih = data.h;
   let cx = Math.round(rect.x * iw), cy = Math.round(rect.y * ih);
   let cw = Math.round(rect.w * iw), ch = Math.round(rect.h * ih);

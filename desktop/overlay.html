@@ -26,8 +26,7 @@
 (() => {
   const shot = document.getElementById('shot'), veil = document.getElementById('veil'),
         sel = document.getElementById('sel'), dim = document.getElementById('dim'), hint = document.getElementById('hint');
-  // The window is reused across grabs — each grab arrives as an 'overlay:show'
-  // message and re-arms the marquee. `armed` gates input so stray events
+  // The window is reused across grabs. `armed` gates input so stray events
   // between grabs (while hidden) can't fire a commit.
   let sx = 0, sy = 0, drag = false, armed = false;
   const rectFrom = (e) => ({ x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
@@ -37,12 +36,21 @@
     sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
     dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
   }
-  window.snap.onOverlayShow((d) => {
+  // 'arm' fires the instant the hotkey lands: the window is fully transparent
+  // (nothing to accidentally capture) but the crosshair is live and dragging
+  // works right away. 'shot' arrives ~100–300ms later with the frozen frame
+  // (taken at keypress) and brings in the dim veil + hint.
+  window.snap.onOverlayArm(() => {
     drag = false; armed = true;
     sel.style.display = 'none'; dim.style.display = 'none';
-    veil.style.display = 'block'; hint.style.display = 'block';
+    veil.style.display = 'none'; hint.style.display = 'none';
     shot.style.visibility = 'hidden';                 // avoid a flash of the previous grab
-    shot.onload = () => { shot.style.visibility = 'visible'; };
+  });
+  window.snap.onOverlayShot((d) => {
+    shot.onload = () => {
+      shot.style.visibility = 'visible';
+      if(armed && !drag){ veil.style.display = 'block'; hint.style.display = 'block'; }
+    };
     shot.src = d.dataUrl;
   });
 

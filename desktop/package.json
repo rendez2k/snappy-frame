@@ -1,6 +1,6 @@
 {
   "name": "snappy-snap",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Rapid marquee screen capture — save to a folder, copy to clipboard, or beautify in Snappy Frame.",
   "main": "main.js",
