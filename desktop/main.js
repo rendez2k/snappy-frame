@@ -61,9 +61,9 @@ function hideOverlay(){
   }
 }
 
-let grabSeq = 0, shotPromise = null;               // shotPromise resolves when the current grab's frame is in `pending`
-let armResolve = null;                             // resolves when the renderer confirms it's wiped + armed
-ipcMain.on('overlay:armed', () => { if(armResolve){ armResolve(); armResolve = null; } });
+let grabSeq = 0;
+let readyResolve = null;                           // resolves when the renderer confirms the frozen frame is painted
+ipcMain.on('overlay:ready', () => { if(readyResolve){ readyResolve(); readyResolve = null; } });
 
 async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
@@ -76,59 +76,44 @@ async function startCapture(mode){
     const sf = display.scaleFactor || 1;
     const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
 
-    // Capture FIRST — the frame grab is initiated before anything is shown or
-    // focused, so menus/dropdowns/popups that dismiss on focus loss are still
-    // in it. (The 0.9.0 regression: showing+focusing the overlay before the
-    // capture closed them, and they vanished from the shot.)
-    const grab = desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+    // The capture COMPLETES before the overlay appears. The moment any window —
+    // even an inactive, fully transparent one — slides under the cursor, hover
+    // UI (tooltips, hover menus, :hover styling) dismisses itself; so nothing
+    // may be shown until the frame is safely in hand. This puts the capture
+    // latency back on the critical path (~100–300ms before the marquee shows),
+    // which is the accepted trade for hover-safe grabs.
+    const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+    if(seq !== grabSeq){ return; }
+    const displays = screen.getAllDisplays();
+    const idx = displays.findIndex(d => d.id === display.id);
+    const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
+    if(!src){ overlayBusy = false; return; }
+    const img = src.thumbnail;
+    const size = img.getSize();
 
     ensureOverlay();
     if(overlayWin.webContents.isLoading()){          // only the very first grab waits for the page
       await new Promise(r => overlayWin.webContents.once('did-finish-load', r));
     }
-
-    // Arm the marquee immediately, but WITHOUT activating it (showInactive) —
-    // activation is what closes popups. The overlay draws nothing until the
-    // shot lands, so the capture can't include it either.
-    pending.delete(overlayWin.webContents.id);
+    pending.set(overlayWin.webContents.id, { img, w:size.width, h:size.height });
     overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
-    // Don't show until the renderer confirms it has wiped the previous grab's
-    // image and re-armed — showing first raced that message, so the LAST
-    // screenshot could flash up ("a completely different image on screen").
-    // The ack round-trip is ~1ms; the 150ms race is only a dead-renderer failsafe.
-    const armed = new Promise(r => { armResolve = r; });
-    overlayWin.webContents.send('overlay:arm');
-    await Promise.race([armed, new Promise(r => setTimeout(r, 150))]);
-    armResolve = null;
+    // JPEG preview (~10× smaller than a PNG dataURL) keeps encode + IPC + decode
+    // quick. Wait until the renderer confirms the frozen frame is PAINTED before
+    // showing, so the window appears already dimmed — no stale-image flash and
+    // no live-transparent phase. Focus is safe now: the frame is captured.
+    const ready = new Promise(r => { readyResolve = r; });
+    overlayWin.webContents.send('overlay:show', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') });
+    await Promise.race([ready, new Promise(r => setTimeout(r, 400))]);
+    readyResolve = null;
     if(seq !== grabSeq){ return; }                   // superseded while waiting
-    overlayWin.showInactive();
-
-    shotPromise = (async () => {
-      const sources = await grab;
-      if(seq !== grabSeq) return;                    // a newer grab owns `pending` now — don't write a stale frame
-      const displays = screen.getAllDisplays();
-      const idx = displays.findIndex(d => d.id === display.id);
-      const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
-      if(!src || !overlayWin || overlayWin.isDestroyed()) return;
-      const img = src.thumbnail;
-      const size = img.getSize();
-      pending.set(overlayWin.webContents.id, { img, w:size.width, h:size.height });
-      // JPEG preview: ~10× smaller than a PNG dataURL of the whole screen, so
-      // encode + IPC + paint are all fast. The final crop uses `img` untouched.
-      if(seq === grabSeq){
-        overlayWin.webContents.send('overlay:shot', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') });
-        overlayWin.focus();                          // frame is safe now — take focus so Esc works
-      }
-    })();
-    shotPromise.catch(e => { console.error('capture failed', e); if(seq === grabSeq) hideOverlay(); });
+    overlayWin.show(); overlayWin.focus();
   }catch(e){ console.error('startCapture failed', e); overlayBusy = false; }
 }
 
 ipcMain.on('overlay:cancel', (e) => { pending.delete(e.sender.id); hideOverlay(); });
 ipcMain.on('overlay:commit', async (e, rect) => {
   hideOverlay();                                     // overlay vanishes the instant the drag ends
-  try{ if(shotPromise) await shotPromise; }catch(_){} // near-always already resolved by mouse-up
-  const data = pending.get(e.sender.id);
+  const data = pending.get(e.sender.id);             // guaranteed set — the frame lands before the overlay is ever shown
   pending.delete(e.sender.id);
   if(!data || !rect) return;
   const full = data.img;
