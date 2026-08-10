@@ -53,9 +53,17 @@ function ensureOverlay(){
   overlayWin.loadFile('overlay.html');
   overlayWin.on('closed', () => { overlayWin = null; });
 }
-function hideOverlay(){ overlayBusy = false; if(overlayWin && !overlayWin.isDestroyed()) overlayWin.hide(); }
+function hideOverlay(){
+  overlayBusy = false;
+  if(overlayWin && !overlayWin.isDestroyed()){
+    overlayWin.webContents.send('overlay:clear');    // wipe the frozen shot while hidden, so it can never flash on the next grab
+    overlayWin.hide();
+  }
+}
 
 let grabSeq = 0, shotPromise = null;               // shotPromise resolves when the current grab's frame is in `pending`
+let armResolve = null;                             // resolves when the renderer confirms it's wiped + armed
+ipcMain.on('overlay:armed', () => { if(armResolve){ armResolve(); armResolve = null; } });
 
 async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
@@ -84,11 +92,20 @@ async function startCapture(mode){
     // shot lands, so the capture can't include it either.
     pending.delete(overlayWin.webContents.id);
     overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
+    // Don't show until the renderer confirms it has wiped the previous grab's
+    // image and re-armed — showing first raced that message, so the LAST
+    // screenshot could flash up ("a completely different image on screen").
+    // The ack round-trip is ~1ms; the 150ms race is only a dead-renderer failsafe.
+    const armed = new Promise(r => { armResolve = r; });
     overlayWin.webContents.send('overlay:arm');
+    await Promise.race([armed, new Promise(r => setTimeout(r, 150))]);
+    armResolve = null;
+    if(seq !== grabSeq){ return; }                   // superseded while waiting
     overlayWin.showInactive();
 
     shotPromise = (async () => {
       const sources = await grab;
+      if(seq !== grabSeq) return;                    // a newer grab owns `pending` now — don't write a stale frame
       const displays = screen.getAllDisplays();
       const idx = displays.findIndex(d => d.id === display.id);
       const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];

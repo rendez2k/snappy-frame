@@ -36,15 +36,22 @@
     sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
     dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
   }
-  // 'arm' fires the instant the hotkey lands: the window is fully transparent
-  // (nothing to accidentally capture) but the crosshair is live and dragging
-  // works right away. 'shot' arrives ~100–300ms later with the frozen frame
-  // (taken at keypress) and brings in the dim veil + hint.
-  window.snap.onOverlayArm(() => {
-    drag = false; armed = true;
+  function wipe(){
     sel.style.display = 'none'; dim.style.display = 'none';
     veil.style.display = 'none'; hint.style.display = 'none';
-    shot.style.visibility = 'hidden';                 // avoid a flash of the previous grab
+    shot.style.visibility = 'hidden'; shot.removeAttribute('src');
+  }
+  // 'clear' fires as the window hides after a grab, so the frozen shot is long
+  // gone before the window is ever shown again — it can't flash the previous
+  // screenshot. 'arm' fires the instant the hotkey lands: it wipes again,
+  // arms input, and ACKS so the main process knows it's safe to show the
+  // window. 'shot' arrives ~100–300ms later with the frozen frame (taken at
+  // keypress) and brings in the dim veil + hint.
+  window.snap.onOverlayClear(() => { drag = false; armed = false; wipe(); });
+  window.snap.onOverlayArm(() => {
+    drag = false; armed = true;
+    wipe();
+    window.snap.armReady();
   });
   window.snap.onOverlayShot((d) => {
     shot.onload = () => {

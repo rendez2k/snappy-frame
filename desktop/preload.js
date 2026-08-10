@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('snap', {
   // overlay
   onOverlayArm: (cb) => ipcRenderer.on('overlay:arm', () => cb()),
+  onOverlayClear: (cb) => ipcRenderer.on('overlay:clear', () => cb()),
   onOverlayShot: (cb) => ipcRenderer.on('overlay:shot', (e, d) => cb(d)),
+  armReady: () => ipcRenderer.send('overlay:armed'),
   commit: (rect) => ipcRenderer.send('overlay:commit', rect),
   cancel: () => ipcRenderer.send('overlay:cancel'),
   // mark-up editor
