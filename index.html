@@ -91,7 +91,7 @@ input,select{font-family:inherit}
   .tb-group .btn{padding:6px}              /* override .btn.icon/.sm/.primary alike */
   .tb-group .btn svg{width:15px; height:15px}
   #btnScreen{display:none}                 /* screen capture isn't available on mobile */
-  #btnScreen .lbl, #btnUpload .lbl, #btnDownload .lbl{display:none}
+  #btnScreen .lbl, #btnUpload .lbl, #btnText .lbl, #btnDownload .lbl{display:none}
   .main .stage-wrap{padding:12px; padding-bottom:46vh}
 }
 /* keep the empty-state card inside the shorter mobile preview area */
@@ -552,6 +552,10 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
         <span class="lbl">Upload</span>
       </button>
+      <button class="btn sm lblbtn" id="btnText" title="Render pasted text or code as a card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        <span class="lbl">Text</span>
+      </button>
       <button class="btn sm icon" id="btnCrop" title="Crop image" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
       </button>
@@ -598,8 +602,9 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
       <div class="empty" id="empty">
         <div class="box">
           <h2 id="emptyTitle">Drop a screenshot to begin</h2>
-          <p id="emptyHint">Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste, upload, or capture your screen.</p>
+          <p id="emptyHint">Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste a screenshot <em>or text</em>, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
+          <button class="btn" id="btnText2" style="margin-left:8px">📝 Text card</button>
           <div class="urlgrab grab-only">
             <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
             <button class="btn sm" id="btnGrab">Grab</button>
@@ -1047,6 +1052,24 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
   <div class="cprow"><input type="text" class="hx" id="cpHex" spellcheck="false"><button class="done" id="cpDone">Done</button></div>
 </div>
 
+<div id="textModal" class="modal">
+  <div class="modal-card" style="width:min(94vw,760px)">
+    <div class="modal-head"><h3>Text card</h3><button class="modal-x" id="textX" title="Close">✕</button></div>
+    <div class="modal-body" style="padding:14px 18px">
+      <div class="field" style="margin-bottom:10px"><label>File name (shown in the window title bar)</label>
+        <input class="txt" id="textName" value="notes.md" spellcheck="false"></div>
+      <div class="field"><label>Text · markdown and code get simple syntax colouring</label>
+        <textarea class="txt" id="textBody" spellcheck="false" placeholder="Paste code, markdown or plain text…"
+          style="width:100%;min-height:42vh;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;white-space:pre;overflow:auto"></textarea></div>
+      <p style="margin:8px 0 0;font-size:12px;color:var(--muted)"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> renders · you can restyle it like any screenshot afterwards</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn sm" id="textCancel">Cancel</button>
+      <button class="btn sm primary" id="textRender">Render card</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal" class="modal">
   <div class="modal-card">
     <div class="modal-head"><h3 id="modalTitle">What’s new</h3><button class="modal-x" id="modalX" title="Close">✕</button></div>
@@ -1186,7 +1209,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.7.2';
+const APP_VERSION='1.8.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1664,7 +1687,12 @@ function loadImage(src,quiet,meta){
   im.src=src;
 }
 function handleFile(file){
-  if(!file || !file.type.startsWith('image/')){ toast('Please choose an image file',true); return; }
+  if(!file){ toast('Please choose an image file',true); return; }
+  // Text/markdown/code files render as a styled text card instead of erroring.
+  const textFile = !file.type.startsWith('image/') && (file.type.startsWith('text/') || file.type==='application/json' ||
+    /\.(md|markdown|txt|json|js|jsx|ts|tsx|py|rb|go|rs|java|c|h|cpp|cs|sh|bash|yml|yaml|toml|ini|css|html|xml|sql|swift|kt|log)$/i.test(file.name||''));
+  if(textFile){ const r=new FileReader(); r.onload=e=>renderTextCard(String(e.target.result), file.name||'notes.md'); r.readAsText(file); return; }
+  if(!file.type.startsWith('image/')){ toast('Please choose an image file',true); return; }
   const r=new FileReader(); r.onload=e=>loadImage(e.target.result); r.readAsDataURL(file);
 }
 
@@ -2232,6 +2260,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.8.0', items:[
+    'New: Text cards — paste text, markdown or code (or drop a .md/.txt/code file) and it renders as a beautiful code-window card with syntax colouring, ready to restyle and export like any screenshot',
+    'Find it via the 📝 Text button, or just Ctrl/⌘+V some text onto the page',
+  ]},
   {v:'1.6.16', items:[
     'Chrome extension now sends the page’s URL too — it drops straight into the browser-frame address bar',
   ]},
@@ -2573,6 +2605,15 @@ wrap.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleF
 window.addEventListener('paste',e=>{
   const items=e.clipboardData && e.clipboardData.items; if(!items) return;
   for(const it of items){ if(it.type.startsWith('image/')){ handleFile(it.getAsFile()); e.preventDefault(); return; } }
+  // No image on the clipboard: pasted TEXT opens the text-card editor prefilled.
+  // Skip when typing in a field, when a modal is up, or for bare URLs (those
+  // belong to the "grab a webpage" box).
+  const a=document.activeElement;
+  if(a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable)) return;
+  if(document.querySelector('.modal.open')) return;
+  const txt=e.clipboardData.getData('text/plain');
+  if(!txt || txt.trim().length<3 || /^https?:\/\/\S+$/.test(txt.trim())) return;
+  e.preventDefault(); openTextModal(txt);
 });
 // Snappy Frame browser extension hands a captured tab screenshot to the page here.
 function prettyUrl(u){ try{ const x=new URL(u); const host=x.hostname.replace(/^www\./,'');
@@ -2583,6 +2624,100 @@ window.addEventListener('message',e=>{
   // Pass them through loadImage so the caption is tied to THIS image.
   loadImage(d.dataUrl,false,{url:d.url,title:d.title});
 });
+
+// ---------- Text cards (paste text/markdown/code → styled code-window card) ----------
+// The text panel is drawn to a canvas at 2× and fed through loadImage like any
+// screenshot, so every existing background/frame/shadow/export path applies.
+// The macOS-dark frame supplies the title bar + traffic lights (frameTitle = file name).
+const TC={bg:'#101b29', fg:'#e8edf4', kw:'#5aa2ff', str:'#7ee0a3', num:'#f2c05c', com:'#64748b', mark:'#5aa2ff', code:'#3ad0f0'};
+const TC_KW=new Set(('and or not in is of to from for use when before without only if else return const let var function class def '+
+  'import export new async await try catch finally while do switch case break continue this self true false null none undefined '+
+  'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
+let textCard={text:'', name:'notes.md'}, textCardStyled=false;
+
+function tcTokens(line, isProse){
+  const out=[], push=(t,c)=>{ if(t) out.push([t,c]); };
+  let i=0;
+  const m=isProse && line.match(/^(\s*)([-*>]|\d+\.|#{1,6})(\s+)/);
+  if(m){ push(m[0], TC.mark); i=m[0].length; }
+  const s=line.slice(i);
+  // prose skips the comment rule so '#' headers and 'https://…' don't grey out
+  const re=isProse
+    ? /(`[^`]*`)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|()(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g
+    : /(`[^`]*`)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\/\/.*$|#.*$)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
+  let last=0, t;
+  while((t=re.exec(s))){
+    push(s.slice(last,t.index), TC.fg);
+    if(t[1]) push(t[1], TC.code);
+    else if(t[2]) push(t[2], TC.str);
+    else if(t[3]) push(t[3], TC.com);
+    else if(t[4]) push(t[4], TC.num);
+    else push(t[5], TC_KW.has(t[5].toLowerCase())?TC.kw:TC.fg);
+    last=t.index+t[0].length;
+  }
+  push(s.slice(last), TC.fg);
+  return out;
+}
+
+function renderTextCard(raw, name){
+  let text=String(raw).replace(/\r\n?/g,'\n').replace(/\t/g,'  ');
+  if(!text.trim()){ toast('Nothing to render',true); return; }
+  name=(name||'notes.md').trim()||'notes.md';
+  textCard={text, name};
+  const isProse=!/\.[a-z0-9]+$/i.test(name) || /\.(md|markdown|txt|log)$/i.test(name);
+  let rawLines=text.split('\n');
+  while(rawLines.length>1 && !rawLines[rawLines.length-1].trim()) rawLines.pop();
+  let cut=false; if(rawLines.length>400){ rawLines=rawLines.slice(0,400); cut=true; }
+  const S=2, FS=15, LH=26, PAD=34;
+  const font=`500 ${FS}px ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace`;
+  const meas=document.createElement('canvas').getContext('2d'); meas.font=font;
+  const cw=meas.measureText('M').width;
+  const longest=rawLines.reduce((a,l)=>Math.max(a,l.length),0);
+  const cols=Math.max(42, Math.min(longest, 96));
+  const lines=[];
+  rawLines.forEach(l=>{
+    while(l.length>cols){
+      let at=l.lastIndexOf(' ',cols); if(at<cols*0.6) at=cols;
+      lines.push(l.slice(0,at)); l=l.slice(at).replace(/^ /,'');
+    }
+    lines.push(l);
+  });
+  const W=Math.round(cols*cw+PAD*2), H=lines.length*LH+PAD*2;
+  const c=document.createElement('canvas'); c.width=W*S; c.height=H*S;
+  const x2=c.getContext('2d'); x2.scale(S,S);
+  x2.fillStyle=TC.bg; x2.fillRect(0,0,W,H);
+  x2.font=font; x2.textBaseline='middle';
+  lines.forEach((ln,li)=>{
+    let x=PAD; const y=PAD+li*LH+LH/2;
+    tcTokens(ln,isProse).forEach(([t,col])=>{ x2.fillStyle=col; x2.fillText(t,x,y); x+=x2.measureText(t).width; });
+  });
+  // Style the scene like a code screenshot the first time; after that leave the
+  // user's own tweaks alone when they re-render edited text.
+  if(!textCardStyled){
+    state.gradPreset=-1; state.gradC1='#7d9ee2'; state.gradC2='#3f5fc4'; state.gradAngle=135;
+    applyPreset({bgType:'gradient', pattern:'none', frame:'macos-dark', shadow:'lg', tilt:'flat', rad:14, pad:72});
+    textCardStyled=true;
+  }
+  // Per-image state the quiet load path doesn't touch: this is a new image, so
+  // clear old markup and caption it with the file name (shown in the title bar).
+  state.annotations=[]; state.redactions=[]; state.origSrc=null;
+  state.frameTitle=name; syncUI();
+  loadImage(c.toDataURL('image/png'), true);
+  toast(cut?'Rendered first 400 lines':'Text card rendered');
+}
+
+function openTextModal(prefill){
+  if(typeof prefill==='string') textCard.text=prefill;
+  $('textBody').value=textCard.text; $('textName').value=textCard.name;
+  $('textModal').classList.add('open');
+  setTimeout(()=>$('textBody').focus(),0);
+}
+const closeTextModal=()=>$('textModal').classList.remove('open');
+$('btnText').onclick=$('btnText2').onclick=()=>openTextModal();
+$('textX').onclick=$('textCancel').onclick=closeTextModal;
+$('textModal').addEventListener('click',e=>{ if(e.target===$('textModal')) closeTextModal(); });
+$('textRender').onclick=()=>{ closeTextModal(); renderTextCard($('textBody').value, $('textName').value); };
+$('textBody').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $('textRender').click(); } });
 
 // background type segmented
 $('bgType').addEventListener('click',e=>{
