@@ -68,21 +68,27 @@ async function startCapture(mode){
     const sf = display.scaleFactor || 1;
     const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
 
+    // Capture FIRST — the frame grab is initiated before anything is shown or
+    // focused, so menus/dropdowns/popups that dismiss on focus loss are still
+    // in it. (The 0.9.0 regression: showing+focusing the overlay before the
+    // capture closed them, and they vanished from the shot.)
+    const grab = desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+
     ensureOverlay();
     if(overlayWin.webContents.isLoading()){          // only the very first grab waits for the page
       await new Promise(r => overlayWin.webContents.once('did-finish-load', r));
     }
 
-    // Show the marquee IMMEDIATELY (fully transparent, crosshair armed) and run
-    // the screen capture in parallel — the frozen shot swaps in when it lands.
-    // The overlay draws nothing until then, so the capture can't include it.
+    // Arm the marquee immediately, but WITHOUT activating it (showInactive) —
+    // activation is what closes popups. The overlay draws nothing until the
+    // shot lands, so the capture can't include it either.
     pending.delete(overlayWin.webContents.id);
     overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
     overlayWin.webContents.send('overlay:arm');
-    overlayWin.show(); overlayWin.focus();
+    overlayWin.showInactive();
 
     shotPromise = (async () => {
-      const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+      const sources = await grab;
       const displays = screen.getAllDisplays();
       const idx = displays.findIndex(d => d.id === display.id);
       const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
@@ -94,6 +100,7 @@ async function startCapture(mode){
       // encode + IPC + paint are all fast. The final crop uses `img` untouched.
       if(seq === grabSeq){
         overlayWin.webContents.send('overlay:shot', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') });
+        overlayWin.focus();                          // frame is safe now — take focus so Esc works
       }
     })();
     shotPromise.catch(e => { console.error('capture failed', e); if(seq === grabSeq) hideOverlay(); });
