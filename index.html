@@ -1209,7 +1209,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.8.1';
+const APP_VERSION='1.8.2';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2641,7 +2641,42 @@ const TC={bg:'#101b29', fg:'#e8edf4', kw:'#5aa2ff', str:'#7ee0a3', num:'#f2c05c'
 const TC_KW=new Set(('and or not in is of to from for use when before without only if else return const let var function class def '+
   'import export new async await try catch finally while do switch case break continue this self true false null none undefined '+
   'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
-let textCard={text:'', name:'notes.md'}, textCardStyled=false;
+let textCard={text:'', name:'notes.md', mode:''}, textCardStyled=false;
+
+// Terminal mode — Windows Terminal "Campbell" palette + PowerShell-ish colouring
+// (prompt grey, command yellow, -Parameters dimmed, # comments green, error
+// records red, table headers green), so a captured session looks like the real thing.
+const TERM={bg:'#0d0d0d', fg:'#cccccc', prompt:'#b8b8b8', cmd:'#f9f1a5', param:'#8a8a8a',
+  com:'#13a10e', err:'#e74856', hdr:'#16c60c', str:'#3b8eea'};
+function termLineClass(l){
+  if(/^\s*\+\s/.test(l) || /CategoryInfo|FullyQualifiedErrorId/.test(l) || /^[A-Za-z][\w.-]*(?:-[\w.-]+)*\s:\s/.test(l)) return 'err';
+  if(/^\s*-{2,}[\s-]*$/.test(l)) return 'sep';
+  return null;
+}
+function termTokens(s){
+  const out=[], push=(t,c)=>{ if(t) out.push([t,c]); };
+  const pm=s.match(/^((?:PS\s+)?(?:[A-Za-z]:[\\\/]|\\\\|~|\/)[^>]{0,160}>|PS>)\s?/);
+  if(pm){
+    push(pm[0], TERM.prompt);
+    const rest=s.slice(pm[0].length);
+    if(rest.startsWith('#')){ push(rest, TERM.com); return out; }
+    let first=true;
+    rest.replace(/("(?:[^"\\]|\\.)*"|'[^']*')|(\s+)|(\S+)/g,(m,q,ws,w)=>{
+      if(q) push(q, TERM.str);
+      else if(ws) push(ws, TERM.fg);
+      else if(w){
+        if(w==='|'||w==='&&'||w===';'){ push(w, TERM.fg); first=true; }
+        else if(first){ push(w, TERM.cmd); first=false; }
+        else if(w[0]==='-'&&w.length>1&&!/^\d/.test(w[1])) push(w, TERM.param);
+        else push(w, TERM.fg);
+      }
+      return m;
+    });
+    return out;
+  }
+  if(/^(fatal|error|err!?):/i.test(s)){ push(s, TERM.err); return out; }
+  push(s, TERM.fg); return out;
+}
 
 function tcTokens(line, isProse){
   const out=[], push=(t,c)=>{ if(t) out.push([t,c]); };
@@ -2667,37 +2702,59 @@ function tcTokens(line, isProse){
   return out;
 }
 
-function renderTextCard(raw, name){
+function renderTextCard(raw, name, mode){
   let text=String(raw).replace(/\r\n?/g,'\n').replace(/\t/g,'  ');
   if(!text.trim()){ toast('Nothing to render',true); return; }
   name=(name||'notes.md').trim()||'notes.md';
-  textCard={text, name};
-  const isProse=!/\.[a-z0-9]+$/i.test(name) || /\.(md|markdown|txt|log)$/i.test(name);
-  let rawLines=text.split('\n');
+  const isTerm = mode==='terminal' || /^PS(?:\s+[A-Za-z]:[\\\/]|>)/m.test(text.slice(0,4000)) ||
+    /^(powershell|windows powershell|command prompt|terminal)$/i.test(name);
+  textCard={text, name, mode: isTerm?'terminal':''};
+  const isProse=!isTerm && (!/\.[a-z0-9]+$/i.test(name) || /\.(md|markdown|txt|log)$/i.test(name));
+  let rawLines=text.split('\n').map(l=>l.replace(/\s+$/,''));
+  // Terminal buffers arrive padded with big runs of empty rows — collapse them
+  // so the card isn't mostly black void.
+  if(isTerm){ const out=[]; let blanks=0;
+    rawLines.forEach(l=>{ if(l){ blanks=0; out.push(l); } else if(++blanks<=1) out.push(l); });
+    rawLines=out;
+  }
+  while(rawLines.length>1 && !rawLines[0].trim()) rawLines.shift();
   while(rawLines.length>1 && !rawLines[rawLines.length-1].trim()) rawLines.pop();
-  let cut=false; if(rawLines.length>400){ rawLines=rawLines.slice(0,400); cut=true; }
-  const S=2, FS=15, LH=26, PAD=34;
+  // Terminals: the RECENT lines are the ones that matter — keep the tail.
+  let cut=false; if(rawLines.length>400){ rawLines=isTerm?rawLines.slice(-400):rawLines.slice(0,400); cut=true; }
+  const FS=15, LH=26, PAD=34;
   const font=`500 ${FS}px ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace`;
   const meas=document.createElement('canvas').getContext('2d'); meas.font=font;
   const cw=meas.measureText('M').width;
   const longest=rawLines.reduce((a,l)=>Math.max(a,l.length),0);
-  const cols=Math.max(42, Math.min(longest, 96));
+  const cols=Math.max(42, Math.min(longest, isTerm?110:96));
+  // per-line class first (error blocks, table header rows), then wrap — wrapped
+  // continuations inherit the class so an error block stays red across wraps
+  const cls=rawLines.map(termLineClass);
+  if(isTerm) cls.forEach((c2,i)=>{ if(c2==='sep' && i>0 && !cls[i-1]) cls[i-1]='hdr'; });
   const lines=[];
-  rawLines.forEach(l=>{
+  rawLines.forEach((l,i)=>{
+    const k=isTerm ? (cls[i]==='sep'?'hdr':cls[i]) : null;
     while(l.length>cols){
       let at=l.lastIndexOf(' ',cols); if(at<cols*0.6) at=cols;
-      lines.push(l.slice(0,at)); l=l.slice(at).replace(/^ /,'');
+      lines.push([l.slice(0,at),k]); l=l.slice(at).replace(/^ /,'');
     }
-    lines.push(l);
+    lines.push([l,k]);
   });
   const W=Math.round(cols*cw+PAD*2), H=lines.length*LH+PAD*2;
-  const c=document.createElement('canvas'); c.width=W*S; c.height=H*S;
+  // Mobile Safari/WebKit silently renders oversized canvases as SOLID BLACK
+  // (~16.7M px area cap) — clamp the supersample so that can never happen.
+  const S=Math.max(1, Math.min(2, Math.sqrt(14e6/(W*H))));
+  const c=document.createElement('canvas'); c.width=Math.round(W*S); c.height=Math.round(H*S);
   const x2=c.getContext('2d'); x2.scale(S,S);
-  x2.fillStyle=TC.bg; x2.fillRect(0,0,W,H);
+  x2.fillStyle=isTerm?TERM.bg:TC.bg; x2.fillRect(0,0,W,H);
   x2.font=font; x2.textBaseline='middle';
-  lines.forEach((ln,li)=>{
+  lines.forEach(([ln,k],li)=>{
     let x=PAD; const y=PAD+li*LH+LH/2;
-    tcTokens(ln,isProse).forEach(([t,col])=>{ x2.fillStyle=col; x2.fillText(t,x,y); x+=x2.measureText(t).width; });
+    const runs = !isTerm ? tcTokens(ln,isProse)
+      : k==='err' ? [[ln,TERM.err]]
+      : k==='hdr' ? [[ln,TERM.hdr]]
+      : termTokens(ln);
+    runs.forEach(([t,col])=>{ x2.fillStyle=col; x2.fillText(t,x,y); x+=x2.measureText(t).width; });
   });
   // Style the scene like a code screenshot the first time; after that leave the
   // user's own tweaks alone when they re-render edited text.
