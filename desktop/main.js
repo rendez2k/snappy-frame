@@ -14,6 +14,8 @@ const DEFAULTS = {
   markupHotkey: 'CommandOrControl+Shift+3',        // grab a region then open the mark-up editor
   batchHotkey: 'CommandOrControl+Shift+5',         // collect several region grabs, hand them over together
   termHotkey: 'CommandOrControl+Shift+4',          // grab the focused terminal's whole scrollback as text
+  terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
+  warnSecrets: true,                               // warn if a snipped terminal held something key-shaped
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
   saveToFolder: true,
   copyToClipboard: true,
@@ -127,6 +129,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }
   await handleResult(crop);
+  if(settings.warnSecrets !== false) warnIfSecretsOnScreen();   // async, never blocks the grab
 });
 
 function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); }
@@ -425,10 +428,53 @@ function getForegroundInfo(){
   });
 }
 
+// ---- secret awareness ----------------------------------------------------
+// Screenshots of terminals are where API keys leak. We can't read pixels, but
+// when the focused window IS a terminal we can read its text buffer and check
+// it — so an image grab can at least WARN, and window grabs can route to the
+// masked text card instead. Kept in sync with the site's masking rules.
+const SECRET_RE = [
+  /\bsk-ant-[A-Za-z0-9_-]{16,}/, /\bsk-[A-Za-z0-9]{20,}/,
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/, /\bgithub_pat_[A-Za-z0-9_]{20,}/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/, /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/,
+  /\bAIza[0-9A-Za-z_-]{30,}/, /\bnpm_[A-Za-z0-9]{20,}/, /\bglpat-[A-Za-z0-9_-]{16,}/,
+  /\b(?:r8_|hf_|pk_live_|sk_live_|rk_live_)[A-Za-z0-9]{16,}/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /(?:api[_-]?key|apikey|secret|token|password|passwd|client[_-]?secret)["'\s]*[:=]\s*["']?[^\s"',;]{6,}/i,
+  /Authorization:\s*(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/i,
+  /\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*\S{4,}/,
+];
+const hasSecrets = (t) => !!t && SECRET_RE.some(re => re.test(t));
+const isTerminalApp = (a) => /powershell|pwsh|cmd|conhost|windowsterminal|wt|terminal/i.test(a || '');
+
+// Fired AFTER an image grab (never blocks it): if the shot was of a terminal
+// holding something key-shaped, say so — the user can redo it as masked text.
+async function warnIfSecretsOnScreen(){
+  try{
+    const info = await getForegroundInfo();
+    if(!info || !isTerminalApp(info.app)) return;
+    const r = await readTerminalText();
+    if(!r || !r.ok || !hasSecrets(r.text)) return;
+    const n = new Notification({
+      title: 'Snappy Snap — possible API key in that shot',
+      body: 'This terminal contains something key-shaped. ' + (settings.termHotkey || 'The terminal hotkey') + ' captures it as text with secrets masked.',
+    });
+    n.on('click', () => captureTerminalText().catch(() => {}));
+    n.show();
+  }catch(e){}
+}
+
 async function captureActiveWindow(){
   const info = await getForegroundInfo();
   const title = (info && info.title) || '';
   const appName = (info && info.app) || '';
+  // A terminal window has real text behind it — grab THAT (sharper, unlimited
+  // scrollback, secrets masked) rather than pixels that can leak a key.
+  if(settings.terminalAsText !== false && isTerminalApp(appName)){
+    const r = await readTerminalText();
+    if(r && r.ok && r.text && r.text.trim()){ await deliverTerminalText(r); return; }
+  }
   let sources;
   try{ sources = await desktopCapturer.getSources({ types:['window'], thumbnailSize:{ width:3840, height:2160 } }); }
   catch(e){ console.error('window sources failed', e); return; }
@@ -561,7 +607,11 @@ async function captureTerminalText(){
     try{ new Notification({ title:'Snappy Snap', body:'Couldn’t read that window as text' + why }).show(); }catch(e){}
     return;
   }
-  // Tidy: per-line right-trim, drop leading/trailing blank lines, cap size.
+  await deliverTerminalText(r);
+}
+
+// Tidy the buffer and hand it to Snappy Frame (which masks secrets on render).
+async function deliverTerminalText(r){
   let lines = String(r.text).replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+$/, ''));
   while(lines.length && !lines[0]) lines.shift();
   while(lines.length && !lines[lines.length - 1]) lines.pop();

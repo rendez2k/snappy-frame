@@ -56,6 +56,15 @@
   </div>
 
   <div class="row">
+    <h3>🔒 API keys &amp; secrets</h3>
+    <p>Screenshots of terminals are the usual way keys leak into a chat. Text
+      captures mask them automatically; pixels can't be masked, so the app
+      steers you to the safe path instead.</p>
+    <label class="sw" style="margin-top:8px"><input type="checkbox" id="terminalAsText"> Capture terminal <b>windows</b> as masked text, not a picture <span style="color:var(--mut)">(active-window hotkey)</span></label>
+    <label class="sw"><input type="checkbox" id="warnSecrets"> Warn me if I snip a terminal that has a key on screen</label>
+  </div>
+
+  <div class="row">
     <h3>Save folder</h3>
     <div class="folder"><code id="folder">…</code>
       <button id="choose">Change…</button><button id="open">Open</button></div>
@@ -84,7 +93,7 @@
     $('batchHotkey').value = s.batchHotkey || '';
     $('termHotkey').value = s.termHotkey || '';
     $('folder').textContent = s.saveFolder;
-    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).checked = !!s[k]);
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
@@ -99,7 +108,7 @@
   $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
-  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
   $('open').onclick = () => window.snap.openFolder();
