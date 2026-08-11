@@ -1061,6 +1061,10 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
       <div class="field"><label>Text · markdown and code get simple syntax colouring</label>
         <textarea class="txt" id="textBody" spellcheck="false" placeholder="Paste code, markdown or plain text…"
           style="width:100%;min-height:42vh;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.55;white-space:pre;overflow:auto"></textarea></div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="textHideSecrets" checked>
+        <span>🔒 Hide secrets — mask API keys, tokens &amp; passwords <span style="color:var(--muted)">(removed from the image, not just covered)</span></span>
+      </label>
       <p style="margin:8px 0 0;font-size:12px;color:var(--muted)"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> renders · you can restyle it like any screenshot afterwards</p>
     </div>
     <div class="modal-foot">
@@ -1166,7 +1170,7 @@ const state = {
   bgType:'gradient', gradAngle:120, gradC1:'#6d5efc', gradC2:'#c05bff',
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
-  frame:'none', frameTitle:'',
+  frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
   textVal:'', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
@@ -1209,7 +1213,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.8.2';
+const APP_VERSION='1.9.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2643,6 +2647,46 @@ const TC_KW=new Set(('and or not in is of to from for use when before without on
   'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
 let textCard={text:'', name:'notes.md', mode:''}, textCardStyled=false;
 
+// ---------- Secret masking ----------
+// Secrets are removed from the TEXT before the card is drawn, so the pixels
+// never contain them — unlike a blur/box drawn over an image, there is nothing
+// underneath to recover. Length is preserved (●) so layout doesn't shift.
+const SECRET_RULES=[
+  // provider-shaped keys (match the whole token)
+  [/\bsk-ant-[A-Za-z0-9_-]{16,}/g, 0],
+  [/\bsk-[A-Za-z0-9]{20,}/g, 0],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, 0],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, 0],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}/g, 0],
+  [/\bAKIA[0-9A-Z]{16}\b/g, 0],
+  [/\bASIA[0-9A-Z]{16}\b/g, 0],
+  [/\bAIza[0-9A-Za-z_-]{30,}/g, 0],
+  [/\bnpm_[A-Za-z0-9]{20,}/g, 0],
+  [/\bglpat-[A-Za-z0-9_-]{16,}/g, 0],
+  [/\bshpat_[A-Za-z0-9]{20,}/g, 0],
+  [/\b(?:r8_|hf_|pk_live_|sk_live_|rk_live_)[A-Za-z0-9]{16,}/g, 0],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, 0],          // JWT
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, 0],
+  // assignments: mask only the VALUE (group 1)
+  [/(?:api[_-]?key|apikey|secret|token|password|passwd|pwd|auth|bearer|access[_-]?key|client[_-]?secret)["'\s]*[:=]\s*["']?([^\s"',;]{6,})/gi, 1],
+  [/(?:Authorization:\s*(?:Bearer|Basic)\s+)([A-Za-z0-9._~+/=-]{12,})/gi, 1],
+  [/(?:password|pwd)=([^;\s]{4,})/gi, 1],                                          // connection strings
+  [/\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)\s*=\s*([^\s]{4,})/g, 1], // .env style
+];
+function maskSecrets(text){
+  let n=0, out=String(text);
+  for(const [re, grp] of SECRET_RULES){
+    out=out.replace(re,(m,g1)=>{
+      const target = grp===1 ? g1 : m;
+      if(!target || /^[●*]+$/.test(target)) return m;
+      n++;
+      const dots='●'.repeat(Math.min(Math.max(target.length,6),44));
+      return grp===1 ? m.replace(target,dots) : dots;
+    });
+  }
+  return {text:out, count:n};
+}
+
 // Terminal mode — Windows Terminal "Campbell" palette + PowerShell-ish colouring
 // (prompt grey, command yellow, -Parameters dimmed, # comments green, error
 // records red, table headers green), so a captured session looks like the real thing.
@@ -2708,7 +2752,10 @@ function renderTextCard(raw, name, mode){
   name=(name||'notes.md').trim()||'notes.md';
   const isTerm = mode==='terminal' || /^PS(?:\s+[A-Za-z]:[\\\/]|>)/m.test(text.slice(0,4000)) ||
     /^(powershell|windows powershell|command prompt|terminal)$/i.test(name);
-  textCard={text, name, mode: isTerm?'terminal':''};
+  textCard={text, name, mode: isTerm?'terminal':''};   // keep the ORIGINAL so the toggle is reversible
+  // Strip secrets before anything is drawn — the rendered pixels never hold them.
+  let masked=0;
+  if(state.hideSecrets!==false){ const m=maskSecrets(text); text=m.text; masked=m.count; }
   const isProse=!isTerm && (!/\.[a-z0-9]+$/i.test(name) || /\.(md|markdown|txt|log)$/i.test(name));
   let rawLines=text.split('\n').map(l=>l.replace(/\s+$/,''));
   // Terminal buffers arrive padded with big runs of empty rows — collapse them
@@ -2768,12 +2815,15 @@ function renderTextCard(raw, name, mode){
   state.annotations=[]; state.redactions=[]; state.origSrc=null;
   state.frameTitle=name; syncUI();
   loadImage(c.toDataURL('image/png'), true);
-  toast(cut?'Rendered first 400 lines':'Text card rendered');
+  toast(masked ? ('🔒 '+masked+' secret'+(masked>1?'s':'')+' hidden')
+     : cut ? (isTerm?'Rendered last 400 lines':'Rendered first 400 lines')
+     : 'Text card rendered');
 }
 
 function openTextModal(prefill){
   if(typeof prefill==='string') textCard.text=prefill;
   $('textBody').value=textCard.text; $('textName').value=textCard.name;
+  $('textHideSecrets').checked = state.hideSecrets!==false;
   $('textModal').classList.add('open');
   setTimeout(()=>$('textBody').focus(),0);
 }
@@ -2781,7 +2831,13 @@ const closeTextModal=()=>$('textModal').classList.remove('open');
 $('btnText').onclick=$('btnText2').onclick=()=>openTextModal();
 $('textX').onclick=$('textCancel').onclick=closeTextModal;
 $('textModal').addEventListener('click',e=>{ if(e.target===$('textModal')) closeTextModal(); });
-$('textRender').onclick=()=>{ closeTextModal(); renderTextCard($('textBody').value, $('textName').value); };
+$('textRender').onclick=()=>{ state.hideSecrets=$('textHideSecrets').checked; closeTextModal();
+  renderTextCard($('textBody').value, $('textName').value); };
+// Live toggle: re-render the current card with masking on/off, no retyping.
+$('textHideSecrets').addEventListener('change',e=>{
+  state.hideSecrets=e.target.checked;
+  if(textCard.text && state.hasImage) renderTextCard(textCard.text, $('textName').value||textCard.name, textCard.mode);
+});
 $('textBody').addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $('textRender').click(); } });
 
 // background type segmented
