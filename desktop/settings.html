@@ -38,6 +38,8 @@
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
     <input type="text" id="batchHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Terminal text</b> — grab the focused PowerShell / cmd / Windows Terminal window's <i>entire scrollback</i> as text and open it in Snappy Frame as a crisp code card.</p>
+    <input type="text" id="termHotkey" spellcheck="false" style="margin-top:6px">
   </div>
 
   <div class="row">
@@ -80,6 +82,7 @@
     $('windowHotkey').value = s.windowHotkey || '';
     $('markupHotkey').value = s.markupHotkey || '';
     $('batchHotkey').value = s.batchHotkey || '';
+    $('termHotkey').value = s.termHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -93,6 +96,7 @@
   $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
   $('markupHotkey').addEventListener('change', e => set({ markupHotkey: e.target.value.trim() }));
   $('batchHotkey').addEventListener('change', e => set({ batchHotkey: e.target.value.trim() }));
+  $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));

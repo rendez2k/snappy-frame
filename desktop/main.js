@@ -13,6 +13,7 @@ const DEFAULTS = {
   windowHotkey: 'CommandOrControl+Shift+2',        // grab the active window instantly (no marquee)
   markupHotkey: 'CommandOrControl+Shift+3',        // grab a region then open the mark-up editor
   batchHotkey: 'CommandOrControl+Shift+5',         // collect several region grabs, hand them over together
+  termHotkey: 'CommandOrControl+Shift+4',          // grab the focused terminal's whole scrollback as text
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
   saveToFolder: true,
   copyToClipboard: true,
@@ -339,6 +340,7 @@ function refreshTrayMenu(){
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
+    { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -369,7 +371,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch) registerHotkey();
   refreshTrayMenu();
   return settings;
 });
@@ -440,6 +442,125 @@ async function captureActiveWindow(){
   await handleResult(img, { appName: appName || src.name });
 }
 
+// ---- terminal scrollback capture (text, not pixels) ----------------------
+// A terminal's scrollback is text, so instead of scroll-and-stitching pixels
+// we read the buffer itself and hand it to Snappy Frame's Text cards, which
+// render it as a crisp framed card at any length. Two routes, one PowerShell
+// one-shot: classic conhost windows (powershell/cmd) expose the whole buffer
+// via the console API; Windows Terminal exposes it via UI Automation's
+// TextPattern (the same surface screen readers use).
+function readTerminalText(){
+  return new Promise((resolve) => {
+    if(process.platform !== 'win32'){ resolve(null); return; }
+    const ps = [
+      '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8',
+      'Add-Type @"',
+      'using System; using System.Runtime.InteropServices; using System.Text;',
+      'public class TG {',
+      ' [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+      ' [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h, out int pid);',
+      ' [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);',
+      ' [DllImport("kernel32.dll")] public static extern bool FreeConsole();',
+      ' [DllImport("kernel32.dll")] public static extern bool AttachConsole(int pid);',
+      ' [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr CreateFile(string n, uint a, uint s, IntPtr se, uint d, uint f, IntPtr t);',
+      ' [StructLayout(LayoutKind.Sequential)] public struct COORD { public short X; public short Y; }',
+      ' [StructLayout(LayoutKind.Sequential)] public struct SRECT { public short L; public short T; public short R; public short B; }',
+      ' [StructLayout(LayoutKind.Sequential)] public struct CSBI { public COORD Size; public COORD Cur; public ushort Attr; public SRECT Win; public COORD Max; }',
+      ' [DllImport("kernel32.dll")] public static extern bool GetConsoleScreenBufferInfo(IntPtr h, out CSBI i);',
+      ' [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern bool ReadConsoleOutputCharacter(IntPtr h, StringBuilder b, uint len, COORD c, out uint n);',
+      '}',
+      '"@',
+      '$h=[TG]::GetForegroundWindow()',
+      '$sb=New-Object System.Text.StringBuilder 512',
+      '[TG]::GetWindowText($h,$sb,512)|Out-Null',
+      '$title=$sb.ToString()',
+      '$procId=0',
+      '[TG]::GetWindowThreadProcessId($h,[ref]$procId)|Out-Null',
+      '$app=""',
+      'try{ $app=(Get-Process -Id $procId).ProcessName }catch{}',
+      '$text=$null',
+      '$err=""',
+      'try{',
+      ' [TG]::FreeConsole()|Out-Null',
+      ' if([TG]::AttachConsole($procId)){',
+      '  $out=[TG]::CreateFile("CONOUT$",0xC0000000,3,[IntPtr]::Zero,3,0,[IntPtr]::Zero)',
+      '  if($out -ne [IntPtr]::Zero -and $out.ToInt64() -ne -1){',
+      '   $info=New-Object "TG+CSBI"',
+      '   if([TG]::GetConsoleScreenBufferInfo($out,[ref]$info)){',
+      '    $w=[int]$info.Size.X',
+      '    $rows=[int]$info.Cur.Y+1',
+      '    if($w -gt 0 -and $rows -gt 0){',
+      '     $len=[uint32]($w*$rows)',
+      '     $buf=New-Object System.Text.StringBuilder ([int]$len)',
+      '     $pos=New-Object "TG+COORD"',
+      '     $n=[uint32]0',
+      '     if([TG]::ReadConsoleOutputCharacter($out,$buf,$len,$pos,[ref]$n)){',
+      '      $s=$buf.ToString()',
+      '      $ls=New-Object System.Collections.Generic.List[string]',
+      '      for($y=0;$y -lt $rows;$y++){ $i=$y*$w; if($i -ge $s.Length){ break }; $ls.Add($s.Substring($i,[Math]::Min($w,$s.Length-$i)).TrimEnd()) }',
+      '      $text=([string]::Join("`n",$ls)).TrimEnd()',
+      '     }',
+      '    }',
+      '   }',
+      '  }',
+      ' }',
+      '}catch{ $err=$_.Exception.Message }',
+      'if(-not $text){',
+      ' try{',
+      '  Add-Type -AssemblyName UIAutomationClient',
+      '  Add-Type -AssemblyName UIAutomationTypes',
+      '  $el=[System.Windows.Automation.AutomationElement]::FromHandle($h)',
+      '  $cond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsTextPatternAvailableProperty,$true)',
+      '  $tEl=$el.FindFirst([System.Windows.Automation.TreeScope]::Subtree,$cond)',
+      '  if($tEl){',
+      '   $pat=$tEl.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)',
+      '   $text=$pat.DocumentRange.GetText(-1)',
+      '  } elseif(-not $err){ $err="no readable text surface in the focused window" }',
+      ' }catch{ if(-not $err){ $err=$_.Exception.Message } }',
+      '}',
+      'if($text -and $text.Trim()){ @{ok=$true;app=$app;title=$title;text=$text}|ConvertTo-Json -Compress }',
+      'else{ @{ok=$false;app=$app;title=$title;err=[string]$err}|ConvertTo-Json -Compress }',
+    ].join('\n');
+    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { timeout: 9000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+        if(err){ resolve({ ok:false, err: String(err.message || err).slice(0, 160) }); return; }
+        try{ resolve(JSON.parse(String(stdout).trim())); }catch(e){ resolve({ ok:false, err:'unexpected reader output' }); }
+      });
+  });
+}
+
+async function captureTerminalText(){
+  const r = await readTerminalText();
+  if(!r || !r.ok || !r.text || !r.text.trim()){
+    const why = (r && r.err) ? (' — ' + String(r.err).slice(0, 120)) : '';
+    try{ new Notification({ title:'Snappy Snap', body:'Couldn’t read that window as text' + why }).show(); }catch(e){}
+    return;
+  }
+  // Tidy: per-line right-trim, drop leading/trailing blank lines, cap size.
+  let lines = String(r.text).replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+$/, ''));
+  while(lines.length && !lines[0]) lines.shift();
+  while(lines.length && !lines[lines.length - 1]) lines.pop();
+  const text = lines.join('\n').slice(0, 200000);
+  if(!text){ try{ new Notification({ title:'Snappy Snap', body:'That terminal appears to be empty' }).show(); }catch(e){} return; }
+  const a = (r.app || '').toLowerCase();
+  const title = /powershell|pwsh/.test(a) ? 'PowerShell'
+    : a === 'cmd' ? 'Command Prompt'
+    : (r.title && r.title.trim()) ? r.title.trim().slice(0, 80)
+    : (r.app || 'Terminal');
+  openBeautifyText(text, title);
+}
+
+// Hand terminal text to Snappy Frame, which renders it as a Text card.
+function openBeautifyText(text, title){
+  const w = new BrowserWindow({ width:1240, height:840, title:'Snappy Frame', autoHideMenuBar:true });
+  w.loadURL(settings.beautifyUrl);
+  w.webContents.on('did-finish-load', () => {
+    const js = 'window.postMessage(' + JSON.stringify({ type:'snappy-frame-text', text, title }) + ', "*");';
+    setTimeout(() => { w.webContents.executeJavaScript(js).catch(() => {}); }, 700);
+  });
+}
+
 // ---- hotkey / lifecycle --------------------------------------------------
 function registerHotkey(){
   globalShortcut.unregisterAll();
@@ -456,6 +577,10 @@ function registerHotkey(){
   if(settings.batchHotkey){
     try{ globalShortcut.register(settings.batchHotkey, () => startCapture('batch')); }
     catch(e){ console.error('batch hotkey failed', e); }
+  }
+  if(settings.termHotkey){
+    try{ globalShortcut.register(settings.termHotkey, () => captureTerminalText().catch(e => console.error(e))); }
+    catch(e){ console.error('terminal hotkey failed', e); }
   }
 }
 
