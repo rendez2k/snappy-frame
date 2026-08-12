@@ -2,17 +2,17 @@
 // If the extension stashed a freshly captured screenshot, hand it to the page.
 (async () => {
   try {
-    const { snappyShot, snappyUrl, snappyTitle, snappyTs } =
-      await chrome.storage.local.get(["snappyShot", "snappyUrl", "snappyTitle", "snappyTs"]);
+    const { snappyShot, snappyUrl, snappyTitle, snappyDesign, snappyTs } =
+      await chrome.storage.local.get(["snappyShot", "snappyUrl", "snappyTitle", "snappyDesign", "snappyTs"]);
     if (!snappyShot) return;
     // Only use recent captures (ignore anything older than 60s).
     if (snappyTs && Date.now() - snappyTs > 60000) {
-      await chrome.storage.local.remove(["snappyShot", "snappyUrl", "snappyTitle", "snappyTs"]);
+      await chrome.storage.local.remove(["snappyShot", "snappyUrl", "snappyTitle", "snappyDesign", "snappyTs"]);
       return;
     }
-    await chrome.storage.local.remove(["snappyShot", "snappyUrl", "snappyTitle", "snappyTs"]);
+    await chrome.storage.local.remove(["snappyShot", "snappyUrl", "snappyTitle", "snappyDesign", "snappyTs"]);
     const send = () => window.postMessage(
-      { type: "snappy-frame-image", dataUrl: snappyShot, url: snappyUrl || "", title: snappyTitle || "" },
+      { type: "snappy-frame-image", dataUrl: snappyShot, url: snappyUrl || "", title: snappyTitle || "", design: snappyDesign || null },
       "*"
     );
     // Give the app a moment to register its message listener.

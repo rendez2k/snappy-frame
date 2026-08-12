@@ -5,14 +5,141 @@ const APP_URL = "https://snappy-frame.netlify.app/";
 const MAXDIM = 16384; // canvas ceiling for the app + downstream export
 
 // ---- hand-off ------------------------------------------------------------
-async function handoff(dataUrl, url, title) {
+async function handoff(dataUrl, url, title, design) {
   await chrome.storage.local.set({
     snappyShot: dataUrl,
     snappyUrl: url && /^https?:/i.test(url) ? url : "",
     snappyTitle: title || "",
+    snappyDesign: design || null,
     snappyTs: Date.now(),
   });
   await chrome.tabs.create({ url: APP_URL });
+}
+
+// ---- design extraction (runs IN the page) --------------------------------
+// Everything here is read from live computed styles — measured, not guessed.
+// Colours are ranked by painted area, type by how much text actually uses it,
+// and the component samples come from real elements on the page.
+function extractDesignTokens() {
+  const px = (v) => Math.round(parseFloat(v) || 0);
+  const rgb = (c) => {
+    const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
+    const p = m[1].split(",").map((n) => parseFloat(n));
+    if (p.length > 3 && p[3] === 0) return null;           // fully transparent
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  };
+  const hex = (c) => { const o = rgb(c); if (!o) return null;
+    return "#" + [o.r, o.g, o.b].map((n) => Math.round(n).toString(16).padStart(2, "0")).join("").toUpperCase(); };
+  const lum = (o) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(o.r) + 0.7152 * f(o.g) + 0.0722 * f(o.b); };
+  const ratio = (a, b) => { const A = rgb(a), B = rgb(b); if (!A || !B) return null;
+    const l1 = lum(A), l2 = lum(B); return +(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2)); };
+  const top = (map) => [...map.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+
+  const vw = innerWidth, vh = innerHeight;
+  const bgArea = new Map(), textWeight = new Map(), fontWeightMap = new Map(), headFont = new Map(), radii = new Map();
+  const els = document.querySelectorAll("body *");
+  let scanned = 0;
+  for (const el of els) {
+    if (scanned++ > 4000) break;                            // keep it quick on huge pages
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2 || r.top > vh * 4) continue;
+    const s = getComputedStyle(el);
+    if (s.visibility === "hidden" || s.display === "none" || +s.opacity === 0) continue;
+    const a = Math.min(r.width, vw) * Math.min(r.height, vh * 2);
+    const bg = hex(s.backgroundColor);
+    if (bg) bgArea.set(bg, (bgArea.get(bg) || 0) + a);
+    let txt = 0;
+    for (const n of el.childNodes) if (n.nodeType === 3) txt += n.textContent.trim().length;
+    if (txt > 0) {
+      const col = hex(s.color); if (col) textWeight.set(col, (textWeight.get(col) || 0) + txt);
+      const fam = (s.fontFamily || "").split(",")[0].replace(/["']/g, "").trim();
+      const size = px(s.fontSize);
+      if (fam) {
+        const key = fam + "|" + s.fontWeight + "|" + size;
+        (size >= 24 ? headFont : fontWeightMap).set(key, ((size >= 24 ? headFont : fontWeightMap).get(key) || 0) + txt);
+      }
+    }
+    const rad = px(s.borderTopLeftRadius);
+    if (rad > 0 && rad < 80 && r.width > 24) radii.set(rad, (radii.get(rad) || 0) + 1);
+  }
+
+  const pageBg = hex(getComputedStyle(document.body).backgroundColor) || hex(getComputedStyle(document.documentElement).backgroundColor) || "#FFFFFF";
+  const bgs = top(bgArea).filter((c) => c);
+  const surface = bgs[0] || pageBg;
+  const elevated = bgs.find((c) => c !== surface) || surface;
+  const texts = top(textWeight);
+  const textCol = texts[0] || "#000000";
+  const muted = texts.find((c) => c !== textCol) || null;
+  const dark = (() => { const o = rgb(surface); return o ? lum(o) < 0.4 : false; })();
+
+  // Accent: the most-used colour that is neither surface nor body text — look
+  // at links and primary buttons first, since that is what an accent IS.
+  let accent = null;
+  const linkish = document.querySelector("a[href], button, [role='button']");
+  const accCand = new Map();
+  for (const el of document.querySelectorAll("a[href], button, [role='button'], .btn")) {
+    const s = getComputedStyle(el); const r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) continue;
+    const b = hex(s.backgroundColor); const c = hex(s.color);
+    if (b && b !== surface && b !== elevated) accCand.set(b, (accCand.get(b) || 0) + r.width * r.height);
+    else if (c && c !== textCol) accCand.set(c, (accCand.get(c) || 0) + 60);
+  }
+  accent = top(accCand)[0] || null;
+
+  const parseFont = (key) => { if (!key) return null; const [fam, w, size] = key.split("|");
+    return { family: fam, weight: w, size: +size }; };
+  const heading = parseFont(top(headFont)[0]);
+  const bodyF = parseFont(top(fontWeightMap)[0]);
+
+  const sample = (sel, keys) => {
+    for (const el of document.querySelectorAll(sel)) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 40 || r.height < 16 || r.top > vh * 3) continue;
+      const s = getComputedStyle(el); const out = {};
+      for (const k of keys) out[k] = s[k];
+      out.radius = px(s.borderTopLeftRadius);
+      out.padding = px(s.paddingTop) + "px " + px(s.paddingLeft) + "px";
+      out.bg = hex(s.backgroundColor); out.fg = hex(s.color);
+      return out;
+    }
+    return null;
+  };
+
+  const contrast = [];
+  const cr1 = ratio(textCol, surface);
+  if (cr1) contrast.push({ label: "Text on surface", ratio: cr1, level: cr1 >= 7 ? "AAA" : cr1 >= 4.5 ? "AA" : cr1 >= 3 ? "AA-L" : "Fail" });
+  if (muted) { const cr2 = ratio(muted, surface);
+    if (cr2) contrast.push({ label: "Muted on surface", ratio: cr2, level: cr2 >= 7 ? "AAA" : cr2 >= 4.5 ? "AA" : cr2 >= 3 ? "AA-L" : "Fail" }); }
+  if (accent) { const cr3 = ratio(accent, surface);
+    if (cr3) contrast.push({ label: "Accent on surface", ratio: cr3, level: cr3 >= 7 ? "AAA" : cr3 >= 4.5 ? "AA" : cr3 >= 3 ? "AA-L" : "Fail" }); }
+
+  const radiusTop = top(radii)[0];
+  const hues = new Set(bgs.slice(0, 6).concat(accent ? [accent] : []).map((c) => c && c.slice(0, 4)));
+  const vibe = [dark ? "dark" : "light", hues.size <= 2 ? "monochrome" : "colourful",
+    radiusTop >= 16 ? "rounded" : radiusTop <= 4 ? "sharp" : "modern"].join(" · ");
+
+  return {
+    url: location.href, host: location.host, title: document.title, vibe, dark,
+    palette: { accent, surface, elevated, text: textCol, muted },
+    typography: { heading, body: bodyF },
+    tokens: { radius: radiusTop != null ? radiusTop + "px" : null,
+              radii: top(radii).slice(0, 4).map((r) => r + "px") },
+    components: {
+      button: sample("button, .btn, a.button, [role='button']", ["fontWeight", "fontSize"]),
+      card: sample("[class*='card'], article, section > div", ["borderStyle", "borderColor"]),
+      input: sample("input[type='text'], input[type='email'], input:not([type]), textarea", ["borderColor"]),
+    },
+    contrast,
+  };
+}
+
+// Read design tokens from a tab; never fatal — a null brief just hides the panel.
+async function grabDesign(tabId) {
+  try {
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: extractDesignTokens });
+    return (r && r.result) || null;
+  } catch (e) { return null; }
 }
 
 async function activeTab() {
@@ -37,7 +164,7 @@ async function captureVisible(tab) {
   const dataUrl = await throttledCapture(tab.windowId);
   // Crop a scrollbar out of the view too (no blank-band trim — a visible grab
   // should stay "what you see" apart from the scrollbar).
-  await handoff(await cropRightBar(dataUrl), tab.url, tab.title);
+  await handoff(await cropRightBar(dataUrl), tab.url, tab.title, await grabDesign(tab.id));
 }
 
 // ---- trim the blank vertical tail (worker-side, full-page only) ----------
@@ -402,7 +529,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // survives a service-worker restart mid-capture.
     const tab = sender.tab;
     (async () => {
-      if (msg.dataUrl) await handoff(await finishImage(msg.dataUrl), tab && tab.url, tab && tab.title);
+      if (msg.dataUrl) await handoff(await finishImage(msg.dataUrl), tab && tab.url, tab && tab.title, tab ? await grabDesign(tab.id) : null);
       else if (tab) await captureVisible(tab); // capture produced nothing — at least grab the view
     })();
     sendResponse({ ok: true });

@@ -91,7 +91,7 @@ input,select{font-family:inherit}
   .tb-group .btn{padding:6px}              /* override .btn.icon/.sm/.primary alike */
   .tb-group .btn svg{width:15px; height:15px}
   #btnScreen{display:none}                 /* screen capture isn't available on mobile */
-  #btnScreen .lbl, #btnUpload .lbl, #btnText .lbl, #btnDownload .lbl{display:none}
+  #btnScreen .lbl, #btnUpload .lbl, #btnText .lbl, #btnBrief .lbl, #btnDownload .lbl{display:none}
   .main .stage-wrap{padding:12px; padding-bottom:46vh}
 }
 /* keep the empty-state card inside the shorter mobile preview area */
@@ -551,6 +551,10 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
       <button class="btn sm lblbtn" id="btnUpload" title="Upload an image">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
         <span class="lbl">Upload</span>
+      </button>
+      <button class="btn sm lblbtn" id="btnBrief" title="Design brief from the captured page" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="19" cy="13" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="10" cy="19" r="2.5"/><path d="M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-1.5-1-1.7-1-3 0-1.1.9-2 2-2h1a6 6 0 0 0 6-6c0-4.4-4.5-7-10-7z"/></svg>
+        <span class="lbl">Brief</span>
       </button>
       <button class="btn sm lblbtn" id="btnText" title="Render pasted text or code as a card">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
@@ -1052,6 +1056,21 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
   <div class="cprow"><input type="text" class="hx" id="cpHex" spellcheck="false"><button class="done" id="cpDone">Done</button></div>
 </div>
 
+<div id="briefModal" class="modal">
+  <div class="modal-card" style="width:min(96vw,860px)">
+    <div class="modal-head"><h3>🎨 Design brief <span id="briefHost" style="font-weight:400;color:var(--muted);font-size:13px"></span></h3>
+      <button class="modal-x" id="briefX" title="Close">✕</button></div>
+    <div class="modal-body" id="briefBody" style="padding:16px 18px;max-height:66vh;overflow:auto"></div>
+    <div class="modal-foot" style="flex-wrap:wrap;gap:6px">
+      <button class="btn sm" data-brief="css">CSS vars</button>
+      <button class="btn sm" data-brief="tw">Tailwind</button>
+      <button class="btn sm" data-brief="json">JSON</button>
+      <span style="flex:1"></span>
+      <button class="btn sm primary" data-brief="ai">📋 Copy AI brief</button>
+    </div>
+  </div>
+</div>
+
 <div id="textModal" class="modal">
   <div class="modal-card" style="width:min(94vw,760px)">
     <div class="modal-head"><h3>Text card</h3><button class="modal-x" id="textX" title="Close">✕</button></div>
@@ -1213,7 +1232,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.9.0';
+const APP_VERSION='1.10.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2632,6 +2651,7 @@ window.addEventListener('message',e=>{
     return;
   }
   if(!(d && d.type==='snappy-frame-image' && typeof d.dataUrl==='string' && d.dataUrl.startsWith('data:image/'))) return;
+  setBrief(d.design || null);
   // The extension can also hand over the captured tab's URL and page title.
   // Pass them through loadImage so the caption is tied to THIS image.
   loadImage(d.dataUrl,false,{url:d.url,title:d.title});
@@ -2646,6 +2666,104 @@ const TC_KW=new Set(('and or not in is of to from for use when before without on
   'import export new async await try catch finally while do switch case break continue this self true false null none undefined '+
   'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
 let textCard={text:'', name:'notes.md', mode:''}, textCardStyled=false;
+
+// ---------- Design brief (tokens measured from the captured page) ----------
+// The extension reads live computed styles and hands them over with the shot.
+// Everything here is editable: fix a mis-detected accent before exporting.
+let brief=null;
+function setBrief(b){
+  brief=b; const btn=$('btnBrief'); if(btn) btn.hidden=!b;
+  if(b) toast('🎨 Design brief captured');
+}
+const briefRows=[
+  ['palette','Palette',[['accent','accent'],['surface','surface'],['elevated','elevated'],['text','text'],['muted','muted']]],
+];
+function renderBrief(){
+  if(!brief) return;
+  $('briefHost').textContent = brief.host || '';
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const sec=(t)=>`<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px">${t}</div>`;
+  const row=(l,v)=>`<div style="display:flex;gap:12px;padding:5px 0;font-size:13px"><span style="width:96px;color:var(--muted);flex:none">${esc(l)}</span><b style="font-weight:600">${esc(v)}</b></div>`;
+  let h='';
+  h+=`<div style="font-size:13px;color:var(--muted)">${esc(brief.vibe||'')}</div>`;
+  h+=sec('Palette');
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
+  for(const [k] of briefRows[0][2]){ const c=brief.palette[k];
+    h+=`<label style="text-align:center;font-size:10.5px;color:var(--muted)">
+      <input type="color" data-pal="${k}" value="${esc(c||'#000000')}" ${c?'':'disabled'}
+        style="display:block;width:46px;height:38px;border:1px solid var(--line-2);border-radius:9px;background:none;cursor:pointer;padding:2px">
+      ${k}<br><code style="font-size:10px">${esc(c||'—')}</code></label>`;
+  }
+  h+='</div>';
+  const ty=brief.typography||{};
+  h+=sec('Typography');
+  if(ty.heading) h+=row('heading', ty.heading.family+' '+ty.heading.weight+' · '+ty.heading.size+'px');
+  if(ty.body) h+=row('body', ty.body.family+' '+ty.body.weight+' · '+ty.body.size+'px');
+  h+=sec('Tokens');
+  h+=row('radius', (brief.tokens&&brief.tokens.radius)||'—');
+  if(brief.tokens&&brief.tokens.radii&&brief.tokens.radii.length>1) h+=row('scale', brief.tokens.radii.join(', '));
+  const C=brief.components||{};
+  if(C.button||C.card||C.input){
+    h+=sec('Components');
+    const desc=(c)=>c?[c.bg&&('bg '+c.bg), c.fg&&('text '+c.fg), c.radius!=null&&(c.radius+'px radius'), c.padding&&(c.padding+' padding'), c.fontWeight&&(c.fontWeight+' weight')].filter(Boolean).join(', '):'—';
+    if(C.button) h+=row('button', desc(C.button));
+    if(C.card) h+=row('card', desc(C.card));
+    if(C.input) h+=row('input', desc(C.input));
+  }
+  if(brief.contrast&&brief.contrast.length){
+    h+=sec('Contrast — WCAG 2.x');
+    for(const c of brief.contrast){
+      const ok=c.level!=='Fail';
+      h+=`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px">
+        <span style="flex:1">${esc(c.label)}</span><b>${c.ratio}:1</b>
+        <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid ${ok?'#2ea043':'#e5484d'};color:${ok?'#2ea043':'#e5484d'}">${esc(c.level)}</span></div>`;
+    }
+  }
+  $('briefBody').innerHTML=h;
+  $('briefBody').querySelectorAll('[data-pal]').forEach(inp=>{
+    inp.oninput=e=>{ brief.palette[e.target.dataset.pal]=e.target.value.toUpperCase();
+      const code=e.target.parentElement.querySelector('code'); if(code) code.textContent=e.target.value.toUpperCase(); };
+  });
+}
+function briefExport(kind){
+  if(!brief) return '';
+  const p=brief.palette||{}, ty=brief.typography||{}, tk=brief.tokens||{};
+  const pal=Object.entries(p).filter(([,v])=>v);
+  if(kind==='json') return JSON.stringify(brief,null,2);
+  if(kind==='css') return ':root{\n'+pal.map(([k,v])=>`  --color-${k}: ${v};`).join('\n')
+    +(ty.body?`\n  --font-body: ${ty.body.family};`:'')+(ty.heading?`\n  --font-heading: ${ty.heading.family};`:'')
+    +(tk.radius?`\n  --radius: ${tk.radius};`:'')+'\n}';
+  if(kind==='tw') return 'module.exports = {\n  theme: { extend: {\n    colors: {\n'
+    +pal.map(([k,v])=>`      ${k}: '${v}',`).join('\n')+'\n    },\n'
+    +(ty.body?`    fontFamily: { sans: ['${ty.body.family}'] },\n`:'')
+    +(tk.radius?`    borderRadius: { DEFAULT: '${tk.radius}' },\n`:'')+'  } },\n};';
+  // AI brief — the prompt you paste next to the screenshot
+  const L=[];
+  L.push(`Design brief — ${brief.host||'captured page'}`);
+  if(brief.vibe) L.push(`Vibe: ${brief.vibe}`);
+  L.push('', 'Palette:');
+  pal.forEach(([k,v])=>L.push(`- ${k}: ${v}`));
+  if(ty.heading||ty.body){ L.push('', 'Typography:');
+    if(ty.heading) L.push(`- headings: ${ty.heading.family} ${ty.heading.weight}, ${ty.heading.size}px`);
+    if(ty.body) L.push(`- body: ${ty.body.family} ${ty.body.weight}, ${ty.body.size}px`); }
+  if(tk.radius) L.push('', `Corner radius: ${tk.radius}`);
+  const C=brief.components||{};
+  const cd=(n,c)=>c?`- ${n}: ${[c.bg&&('bg '+c.bg),c.fg&&('text '+c.fg),c.radius!=null&&(c.radius+'px radius'),c.padding&&(c.padding+' padding')].filter(Boolean).join(', ')}`:null;
+  const comps=[cd('button',C.button),cd('card',C.card),cd('input',C.input)].filter(Boolean);
+  if(comps.length){ L.push('', 'Components:'); L.push(...comps); }
+  if(brief.contrast&&brief.contrast.length){ L.push('', 'Contrast (WCAG):');
+    brief.contrast.forEach(c=>L.push(`- ${c.label}: ${c.ratio}:1 ${c.level}`)); }
+  L.push('', 'Use these exact values. Match the spacing rhythm and visual weight of the attached screenshot.');
+  return L.join('\n');
+}
+$('btnBrief').onclick=()=>{ renderBrief(); $('briefModal').classList.add('open'); };
+$('briefX').onclick=()=>$('briefModal').classList.remove('open');
+$('briefModal').addEventListener('click',e=>{ if(e.target===$('briefModal')) $('briefModal').classList.remove('open'); });
+document.querySelectorAll('[data-brief]').forEach(b=>b.onclick=async()=>{
+  const txt=briefExport(b.dataset.brief);
+  try{ await navigator.clipboard.writeText(txt); toast('Copied '+(b.dataset.brief==='ai'?'AI brief':b.textContent)); }
+  catch(e){ toast('Copy failed',true); }
+});
 
 // ---------- Secret masking ----------
 // Secrets are removed from the TEXT before the card is drawn, so the pixels
