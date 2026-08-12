@@ -169,10 +169,25 @@ async function scrollStitchCapture() {
   // Hide every scrollbar for the duration of the capture so none is baked into
   // the tiles. Content reflows to use the freed width — cleaner than cropping.
   const sbStyle = document.createElement("style");
-  sbStyle.textContent = "*{scrollbar-width:none !important}*::-webkit-scrollbar{width:0 !important;height:0 !important;display:none !important}";
+  sbStyle.textContent = "*{scrollbar-width:none !important}*::-webkit-scrollbar{width:0 !important;height:0 !important;display:none !important}" +
+    // Smooth scrolling animates window.scrollTo, so a tile could be grabbed
+    // mid-flight; scroll-snap fights the tiling outright on 100vh-section
+    // sites. Force both off for the capture only.
+    "html,body,*{scroll-behavior:auto !important;scroll-snap-type:none !important}";
   try { document.documentElement.appendChild(badge); document.documentElement.appendChild(sbStyle); } catch (e) {}
+
+  // Pause playing video/animation so every tile shows the SAME frame — an
+  // animated hero otherwise shifts between tiles and stitches together wrong.
+  // The current frame stays on screen, so a video background is still captured.
+  const paused = [];
+  try {
+    for (const v of document.querySelectorAll("video")) {
+      if (!v.paused) { v.pause(); paused.push(v); }
+    }
+  } catch (e) {}
+  const resumeMedia = () => { for (const v of paused) { try { v.play(); } catch (e) {} } };
   const setPct = (p) => { try { badge.textContent = "Snappy Frame — capturing " + Math.min(99, Math.round(p)) + "%"; } catch (e) {} };
-  const cleanup = () => { try { badge.remove(); } catch (e) {} try { sbStyle.remove(); } catch (e) {} };
+  const cleanup = () => { try { badge.remove(); } catch (e) {} try { sbStyle.remove(); } catch (e) {} resumeMedia(); };
 
   try {
     await sleep(60); // let the no-scrollbar reflow settle before measuring
@@ -256,6 +271,10 @@ async function scrollStitchCapture() {
         scroller.scrollTop = y;
         await sleep(first ? 280 : 170);
         const realY = scroller.scrollTop; // clamped at the bottom
+        const img = await tile();
+        if (img) ctx.drawImage(img, sx * dpr, sy * dpr, sw * dpr, sh * dpr, 0, Math.round(realY * dpr), sw * dpr, sh * dpr);
+        // Hide sticky/fixed chrome only AFTER the first tile — see the note on
+        // the document path; the top of the page legitimately contains them.
         if (first) {
           for (const el of scroller.querySelectorAll("*")) {
             const cs = getComputedStyle(el);
@@ -264,8 +283,6 @@ async function scrollStitchCapture() {
             }
           }
         }
-        const img = await tile();
-        if (img) ctx.drawImage(img, sx * dpr, sy * dpr, sw * dpr, sh * dpr, 0, Math.round(realY * dpr), sw * dpr, sh * dpr);
         setPct((realY + sh) / total * 100);
         first = false;
         if (realY + sh >= total) break;
@@ -296,6 +313,15 @@ async function scrollStitchCapture() {
     for (let y = 0; y < capH; y += vh) {
       window.scrollTo(0, y);
       await sleep(first ? 250 : 180);
+      // Wait for the scroll to actually settle — smooth-scrolling sites (and
+      // scroll-linked animation) otherwise hand back a torn or duplicated tile.
+      for (let t = 0; t < 12 && Math.abs(window.scrollY - Math.min(y, totalH - vh)) > 2; t++) await sleep(40);
+      const img = await tile();
+      if (img) ctx.drawImage(img, 0, 0, Math.round(cw * dpr), Math.round(vh * dpr), 0, Math.round(window.scrollY * dpr), Math.round(cw * dpr), Math.round(vh * dpr));
+      // Fixed/sticky elements are hidden only AFTER the first tile: they belong
+      // to the top of the page (hero video, gradient, nav) and must appear
+      // there — hiding them up front stripped the very thing being captured.
+      // From tile 2 on they'd just repeat down the image, so out they go.
       if (first && body) {
         for (const el of body.querySelectorAll("*")) {
           const cs = getComputedStyle(el);
@@ -304,8 +330,6 @@ async function scrollStitchCapture() {
           }
         }
       }
-      const img = await tile();
-      if (img) ctx.drawImage(img, 0, 0, Math.round(cw * dpr), Math.round(vh * dpr), 0, Math.round(window.scrollY * dpr), Math.round(cw * dpr), Math.round(vh * dpr));
       setPct((y + vh) / capH * 100);
       first = false;
       if (y + vh >= capH) break;
