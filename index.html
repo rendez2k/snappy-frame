@@ -617,6 +617,10 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <a class="feedback ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
       </div>
+      <button id="motionBadge" title="Play / pause the captured motion" hidden
+        style="position:absolute;left:14px;top:14px;z-index:6;border:0;cursor:pointer;border-radius:999px;
+               padding:6px 12px;font:600 12px/1 -apple-system,'Segoe UI',Roboto,sans-serif;
+               background:rgba(18,20,28,.86);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.35)">🎞️ Motion</button>
       <button id="zoomReset" title="Reset zoom">⤢ Reset zoom</button>
     </div>
 
@@ -1232,7 +1236,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.10.0';
+const APP_VERSION='1.11.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2036,8 +2040,51 @@ function drawParticles(g,W,H,p,kind,parts){
   }
   g.restore();
 }
+// A motion capture already IS an animation — export the real frames (styled
+// with the current background/frame) rather than faking movement on one still.
+async function exportMotionVideo(){
+  if(!window.MediaRecorder){ toast('Video export not supported in this browser',true); return; }
+  const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(_){return false;}});
+  if(!mime){ toast('No supported video format in this browser',true); return; }
+  const btn=$('btnAnim'); btn.disabled=true;
+  const wasPlaying=!!motionTimer; clearInterval(motionTimer); motionTimer=null;
+  const restore=shot.src;
+  try{
+    const pr=Math.min(2,state.scale);
+    // Render every captured frame through the current styling once.
+    const rendered=[];
+    for(let i=0;i<motion.frames.length;i++){
+      toast('Rendering motion… '+(i+1)+'/'+motion.frames.length);
+      shot.src=motion.frames[i];
+      await new Promise(r=>{ if(shot.complete&&shot.naturalWidth) return r(); shot.onload=shot.onerror=r; });
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      rendered.push(await rasterStage('all',pr));
+    }
+    const W=rendered[0].width, H=rendered[0].height;
+    const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
+    const stream=c.captureStream(30);
+    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:12000000});
+    const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    const stopped=new Promise(r=>rec.onstop=r);
+    rec.start();
+    const hold=Math.round(1000/motion.fps), loops=Math.max(2,Math.ceil(motion.fps*4/motion.frames.length));
+    for(let l=0;l<loops;l++) for(const im of rendered){
+      g.clearRect(0,0,W,H); g.drawImage(im,0,0,W,H);
+      await new Promise(r=>setTimeout(r,hold));
+    }
+    rec.stop(); await stopped;
+    const ext=mime.includes('mp4')?'mp4':'webm';
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(chunks,{type:mime}));
+    const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.download=`snappy-motion-${ts}.${ext}`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    toast('Motion exported ('+ext.toUpperCase()+')');
+  }catch(e){ console.error(e); toast('Motion export failed',true); }
+  finally{ shot.src=restore; btn.disabled=false; if(wasPlaying) playMotion(); }
+}
+
 async function exportAnim(){
   if(!state.hasImage) return;
+  if(motion && motion.frames.length>1) return exportMotionVideo();
   if(!window.MediaRecorder){ toast('Video export not supported in this browser',true); return; }
   const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(_){return false;}});
   if(!mime){ toast('No supported video format in this browser',true); return; }
@@ -2652,6 +2699,7 @@ window.addEventListener('message',e=>{
   }
   if(!(d && d.type==='snappy-frame-image' && typeof d.dataUrl==='string' && d.dataUrl.startsWith('data:image/'))) return;
   setBrief(d.design || null);
+  setMotion(Array.isArray(d.frames)&&d.frames.length>1 ? d.frames : null, d.fps||8);
   // The extension can also hand over the captured tab's URL and page title.
   // Pass them through loadImage so the caption is tied to THIS image.
   loadImage(d.dataUrl,false,{url:d.url,title:d.title});
@@ -2666,6 +2714,35 @@ const TC_KW=new Set(('and or not in is of to from for use when before without on
   'import export new async await try catch finally while do switch case break continue this self true false null none undefined '+
   'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
 let textCard={text:'', name:'notes.md', mode:''}, textCardStyled=false;
+
+// ---------- Motion captures (a burst of frames, not one still) ----------
+// The extension records a few seconds of the live page so an animated hero
+// keeps its motion. Frames drive the preview and the WebM export; every other
+// tool still works because `shot` always holds a real single frame.
+let motion=null, motionTimer=null, motionIdx=0;
+function setMotion(frames, fps){
+  clearInterval(motionTimer); motionTimer=null; motionIdx=0;
+  motion = frames ? { frames, fps: Math.max(2, Math.min(fps||8, 24)), imgs:[] } : null;
+  const badge=$('motionBadge'); if(badge) badge.hidden=!motion;
+  if(!motion) return;
+  // Decode once so playback doesn't thrash the network/cache.
+  let n=motion.frames.length;
+  motion.frames.forEach((src,i)=>{ const im=new Image(); im.onload=im.onerror=()=>{ if(--n===0) playMotion(); }; im.src=src; motion.imgs[i]=im; });
+  toast('🎞️ Motion captured — '+motion.frames.length+' frames');
+}
+function playMotion(){
+  if(!motion || motion.frames.length<2) return;
+  clearInterval(motionTimer);
+  motionTimer=setInterval(()=>{
+    if(!motion || !state.hasImage){ clearInterval(motionTimer); motionTimer=null; return; }
+    motionIdx=(motionIdx+1)%motion.frames.length;
+    shot.src=motion.frames[motionIdx];
+  }, Math.round(1000/motion.fps));
+}
+$('motionBadge') && ($('motionBadge').onclick=()=>{
+  if(motionTimer){ clearInterval(motionTimer); motionTimer=null; toast('Motion paused'); }
+  else { playMotion(); toast('Motion playing'); }
+});
 
 // ---------- Design brief (tokens measured from the captured page) ----------
 // The extension reads live computed styles and hands them over with the shot.

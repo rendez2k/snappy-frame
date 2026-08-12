@@ -11,3 +11,4 @@ function run(type, el) {
 }
 document.getElementById('visible').addEventListener('click', (e) => run('capture-visible', e.currentTarget));
 document.getElementById('full').addEventListener('click', (e) => run('capture-full', e.currentTarget));
+document.getElementById('motion').addEventListener('click', (e) => run('capture-motion', e.currentTarget));

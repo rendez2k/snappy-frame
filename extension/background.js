@@ -134,6 +134,32 @@ function extractDesignTokens() {
   };
 }
 
+// ---- motion capture ------------------------------------------------------
+// A screenshot of an animated hero is one arbitrary frame. This grabs a short
+// burst of the visible area instead, so the gradient/video motion survives.
+// captureVisibleTab is rate-limited (~2/s), so the burst is paced by the same
+// throttle and we take what we can get rather than promising a frame rate.
+async function captureMotion(seconds) {
+  const tab = await activeTab();
+  if (!tab) return;
+  const t0 = Date.now(), frames = [], ms = Math.max(1, Math.min(seconds || 3, 6)) * 1000;
+  while (Date.now() - t0 < ms && frames.length < 40) {
+    let d = null;
+    try { d = await throttledCapture(tab.windowId); } catch (e) {}
+    if (d) frames.push(await cropRightBar(d));
+  }
+  if (!frames.length) return captureVisible(tab);        // nothing captured — fall back
+  if (frames.length < 2) return handoff(frames[0], tab.url, tab.title, await grabDesign(tab.id));
+  const design = await grabDesign(tab.id);
+  await chrome.storage.local.set({
+    snappyShot: frames[0], snappyFrames: frames,
+    snappyFps: Math.max(2, Math.round(frames.length / (ms / 1000))),
+    snappyUrl: tab.url && /^https?:/i.test(tab.url) ? tab.url : "",
+    snappyTitle: tab.title || "", snappyDesign: design || null, snappyTs: Date.now(),
+  });
+  await chrome.tabs.create({ url: APP_URL });
+}
+
 // Read design tokens from a tab; never fatal — a null brief just hides the panel.
 async function grabDesign(tabId) {
   try {
@@ -536,6 +562,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "capture-visible") { captureVisible().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false })); return true; }
+  if (msg.type === "capture-motion") { captureMotion(msg.seconds || 3).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false })); return true; }
   if (msg.type === "capture-full") { captureFull().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false })); return true; }
 });
 
