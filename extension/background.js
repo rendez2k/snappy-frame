@@ -54,7 +54,9 @@ function extractDesignTokens() {
     if (out.length > 24000) return out;
     for (const el of root.querySelectorAll("*")) {
       out.push(el);
-      if (el.shadowRoot) collect(el.shadowRoot, out);
+      let sr = el.shadowRoot;
+      if (!sr) { try { sr = chrome.dom && chrome.dom.openOrClosedShadowRoot(el); } catch (e) {} }
+      if (sr) collect(sr, out);
       if (out.length > 24000) break;
     }
     return out;
@@ -86,9 +88,9 @@ function extractDesignTokens() {
   }
 
   const pageBg = hex(getComputedStyle(document.body).backgroundColor) || hex(getComputedStyle(document.documentElement).backgroundColor) || "#FFFFFF";
+  if (pageBg) bgArea.set(pageBg, (bgArea.get(pageBg) || 0) + vw * vh * 1.2);
   const bgs = top(bgArea).filter((c) => c);
   const surface = bgs[0] || pageBg;
-  const elevated = bgs.find((c) => c !== surface) || surface;
   const texts = top(textWeight);
   const bodyCS = getComputedStyle(document.body || document.documentElement);
   // Rank by usage, but pick the PRIMARY text colour as the highest-contrast of
@@ -101,20 +103,20 @@ function extractDesignTokens() {
   const muted = cand.find((c) => c !== textCol) || null;
   const dark = (() => { const o = rgb(surface); return o ? lum(o) < 0.4 : false; })();
 
-  // Accent: the most-used colour that is neither surface nor body text — look
-  // at links and primary buttons first, since that is what an accent IS.
-  let accent = null;
-  const linkish = document.querySelector("a[href], button, [role='button']");
+  // Accent: what links and primary buttons are painted with — decided BEFORE
+  // 'elevated', otherwise the accent colour gets picked as elevated and is then
+  // excluded from its own candidate list.
   const accCand = new Map();
-  const clickable = els.filter((e) => /^(a|button)$/i.test(e.tagName) || e.getAttribute && e.getAttribute("role") === "button");
+  const clickable = els.filter((e) => /^(a|button)$/i.test(e.tagName) || (e.getAttribute && e.getAttribute("role") === "button"));
   for (const el of clickable) {
     const s = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (r.width < 8 || r.height < 8) continue;
     const b = hex(s.backgroundColor); const c = hex(s.color);
-    if (b && b !== surface && b !== elevated) accCand.set(b, (accCand.get(b) || 0) + r.width * r.height);
+    if (b && b !== surface) accCand.set(b, (accCand.get(b) || 0) + r.width * r.height);
     else if (c && c !== textCol) accCand.set(c, (accCand.get(c) || 0) + 60);
   }
-  accent = top(accCand)[0] || null;
+  const accent = top(accCand)[0] || null;
+  const elevated = bgs.find((c) => c !== surface && c !== accent) || surface;
 
   const parseFont = (key) => { if (!key) return null; const [fam, w, size] = key.split("|");
     return { family: fam, weight: w, size: +size }; };
@@ -149,7 +151,10 @@ function extractDesignTokens() {
   const vibe = [dark ? "dark" : "light", hues.size <= 2 ? "monochrome" : "colourful",
     radiusTop >= 16 ? "rounded" : radiusTop <= 4 ? "sharp" : "modern"].join(" · ");
 
+  const score = textWeight.size * 10 + radii.size * 5 + bgArea.size + (accent ? 20 : 0)
+    + (heading ? 20 : 0) + (bodyF ? 20 : 0);
   return {
+    score, frameArea: innerWidth * innerHeight,
     url: location.href, host: location.host, title: document.title, vibe, dark,
     palette: { accent, surface, elevated, text: textCol, muted },
     typography: { heading, body: bodyF },
@@ -187,25 +192,30 @@ async function cropToWidth(dataUrl, w) {
 async function captureMotion(seconds) {
   const tab = await activeTab();
   if (!tab) return;
+  // Hide scrollbars in the page for the whole burst. Detecting a scrollbar by
+  // brightness per frame was unreliable on dark pages (it stayed in the shot,
+  // and differing crops made the loop flicker) — removing it at the source is
+  // exact. Runs in every frame so an inner scroller is covered too.
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => {
+      const st = document.createElement("style");
+      st.id = "__snappy_nobars";
+      st.textContent = "*{scrollbar-width:none !important}*::-webkit-scrollbar{width:0 !important;height:0 !important;display:none !important}";
+      document.documentElement.appendChild(st);
+    } });
+    await new Promise((r) => setTimeout(r, 120));           // let the reflow settle
+  } catch (e) {}
   const t0 = Date.now(), frames = [], ms = Math.max(1, Math.min(seconds || 3, 6)) * 1000;
   while (Date.now() - t0 < ms && frames.length < 40) {
     let d = null;
     try { d = await throttledCapture(tab.windowId); } catch (e) {}
     if (d) frames.push(d);
   }
-  // One crop decision, applied to all: the first frame is measured, then every
-  // frame is cut to that exact width so the burst can't change size mid-loop.
-  if (frames.length > 1) {
-    try {
-      const probe = await cropRightBar(frames[0]);
-      const w0 = await imgWidth(frames[0]), w1 = await imgWidth(probe);
-      if (w1 && w0 && w1 < w0) {
-        const out = [probe];
-        for (let i = 1; i < frames.length; i++) out.push(await cropToWidth(frames[i], w1));
-        frames.length = 0; frames.push(...out);
-      }
-    } catch (e) {}
-  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => {
+      const st = document.getElementById("__snappy_nobars"); if (st) st.remove();
+    } });
+  } catch (e) {}
   if (!frames.length) return captureVisible(tab);        // nothing captured — fall back
   if (frames.length < 2) return handoff(frames[0], tab.url, tab.title, await grabDesign(tab.id));
   const design = await grabDesign(tab.id);
@@ -221,8 +231,11 @@ async function captureMotion(seconds) {
 // Read design tokens from a tab; never fatal — a null brief just hides the panel.
 async function grabDesign(tabId) {
   try {
-    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: extractDesignTokens });
-    return (r && r.result) || null;
+    const res = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: extractDesignTokens });
+    const cands = (res || []).map((r) => r && r.result).filter(Boolean);
+    if (!cands.length) return null;
+    cands.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.frameArea || 0) - (a.frameArea || 0));
+    return cands[0];
   } catch (e) { return null; }
 }
 
