@@ -1237,7 +1237,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.13.0';
+const APP_VERSION='1.13.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2930,12 +2930,16 @@ function paletteFromImage(im){
     const withC=common.map(e=>({hex:_hexOf(e),n:e.n,sat:_sat(e),cr:_ratio(_hexOf(e),surface)||0}));
     // Accent FIRST (the saturated one), else a saturated brand colour gets
     // claimed as 'text' for having the highest contrast and vanishes.
-    const accent=(withC.filter(e=>e.sat>0.25&&e.hex!==surface)
-      .sort((a,b)=>b.sat*Math.log(1+b.n)-a.sat*Math.log(1+a.n))[0]||{}).hex||null;
+    const accPool=withC.filter(e=>e.sat>0.22&&e.hex!==surface&&e.cr>=1.9);
+    const accent=(accPool.sort((a,b)=>b.sat*Math.log(1+b.n)*Math.min(b.cr,6)
+                                     -a.sat*Math.log(1+a.n)*Math.min(a.cr,6))[0]||{}).hex||null;
     const text=(withC.filter(e=>e.hex!==accent&&e.sat<0.35).sort((a,b)=>b.cr-a.cr)[0]||{}).hex||null;
     const elevated=(withC.find(e=>e.hex!==surface&&e.hex!==accent&&e.cr<3)||{}).hex||null;
-    const muted=(withC.filter(e=>e.hex!==surface&&e.hex!==text&&e.hex!==accent&&e.cr>=2.5&&e.cr<=8)
-      .sort((a,b)=>b.n-a.n)[0]||{}).hex||null;
+    // Muted text is nearly always greyish, so prefer low saturation before
+    // falling back to whatever else sits in the mid-contrast band.
+    const mPool=withC.filter(e=>e.hex!==surface&&e.hex!==text&&e.hex!==accent&&e.cr>=2.5&&e.cr<=9);
+    const mGrey=mPool.filter(e=>e.sat<0.2);
+    const muted=((mGrey.length?mGrey:mPool).sort((a,b)=>b.n-a.n)[0]||{}).hex||null;
     return {accent,surface,elevated,text,muted};
   }catch(e){ return null; }
 }
@@ -2992,12 +2996,17 @@ function renderBrief(){
   }
   h+='</div>';
   const ty=brief.typography||{};
-  h+=sec('Typography');
-  if(ty.heading) h+=row('heading', ty.heading.family+' '+ty.heading.weight+' · '+ty.heading.size+'px');
-  if(ty.body) h+=row('body', ty.body.family+' '+ty.body.weight+' · '+ty.body.size+'px');
-  h+=sec('Tokens');
-  h+=row('radius', (brief.tokens&&brief.tokens.radius)||'—');
-  if(brief.tokens&&brief.tokens.radii&&brief.tokens.radii.length>1) h+=row('scale', brief.tokens.radii.join(', '));
+  if(ty.heading||ty.body){
+    h+=sec('Typography');
+    if(ty.heading) h+=row('heading', ty.heading.family+' '+ty.heading.weight+' · '+ty.heading.size+'px');
+    if(ty.body) h+=row('body', ty.body.family+' '+ty.body.weight+' · '+ty.body.size+'px');
+  }
+  const tk=brief.tokens||{};
+  if(tk.radius){
+    h+=sec('Tokens');
+    h+=row('radius', tk.radius);
+    if(tk.radii&&tk.radii.length>1) h+=row('scale', tk.radii.join(', '));
+  }
   const C=brief.components||{};
   if(C.button||C.card||C.input){
     h+=sec('Components');
@@ -3014,6 +3023,13 @@ function renderBrief(){
         <span style="flex:1">${esc(c.label)}</span><b>${c.ratio}:1</b>
         <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid ${ok?'#2ea043':'#e5484d'};color:${ok?'#2ea043':'#e5484d'}">${esc(c.level)}</span></div>`;
     }
+  }
+  const C2=brief.components||{};
+  if(!ty.heading&&!ty.body&&!tk.radius&&!C2.button){
+    h+=`<div style="margin-top:18px;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;
+      font-size:12px;color:var(--muted);line-height:1.5">Fonts, radii and component styles come from reading the
+      page itself, which wasn't possible here — this site renders inside a cross-origin frame. The palette and
+      contrast above were measured from the captured pixels instead.</div>`;
   }
   $('briefBody').innerHTML=h;
   $('briefBody').querySelectorAll('[data-pal]').forEach(inp=>{
