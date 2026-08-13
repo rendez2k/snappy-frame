@@ -22,9 +22,18 @@ async function handoff(dataUrl, url, title, design) {
 // and the component samples come from real elements on the page.
 function extractDesignTokens() {
   const px = (v) => Math.round(parseFloat(v) || 0);
+  // Accepts rgb()/rgba() AND #hex — by the time colours are compared they have
+  // already been normalised to hex, so a rgb-only parser silently returned null
+  // and killed both the dark/light call and every contrast ratio.
   const rgb = (c) => {
-    const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return null;
-    const p = m[1].split(",").map((n) => parseFloat(n));
+    if (!c) return null;
+    const s = String(c).trim();
+    const h = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (h) { let v = h[1];
+      if (v.length === 3) v = v.split("").map((x) => x + x).join("");
+      return { r: parseInt(v.slice(0, 2), 16), g: parseInt(v.slice(2, 4), 16), b: parseInt(v.slice(4, 6), 16), a: 1 }; }
+    const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null;
+    const p = m[1].split(/[,\s/]+/).filter(Boolean).map((n) => parseFloat(n));
     if (p.length > 3 && p[3] === 0) return null;           // fully transparent
     return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
   };
@@ -38,10 +47,22 @@ function extractDesignTokens() {
 
   const vw = innerWidth, vh = innerHeight;
   const bgArea = new Map(), textWeight = new Map(), fontWeightMap = new Map(), headFont = new Map(), radii = new Map();
-  const els = document.querySelectorAll("body *");
+  // Walk into shadow roots — sites built from web components (Google's own
+  // properties especially) keep ALL their content there, so `body *` alone
+  // returned almost nothing and the brief came back empty.
+  const collect = (root, out) => {
+    if (out.length > 24000) return out;
+    for (const el of root.querySelectorAll("*")) {
+      out.push(el);
+      if (el.shadowRoot) collect(el.shadowRoot, out);
+      if (out.length > 24000) break;
+    }
+    return out;
+  };
+  const els = collect(document.body || document.documentElement, []);
   let scanned = 0;
   for (const el of els) {
-    if (scanned++ > 4000) break;                            // keep it quick on huge pages
+    if (scanned++ > 24000) break;                           // keep it quick on huge pages
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2 || r.top > vh * 4) continue;
     const s = getComputedStyle(el);
@@ -69,8 +90,15 @@ function extractDesignTokens() {
   const surface = bgs[0] || pageBg;
   const elevated = bgs.find((c) => c !== surface) || surface;
   const texts = top(textWeight);
-  const textCol = texts[0] || "#000000";
-  const muted = texts.find((c) => c !== textCol) || null;
+  const bodyCS = getComputedStyle(document.body || document.documentElement);
+  // Rank by usage, but pick the PRIMARY text colour as the highest-contrast of
+  // the common ones: a long grey paragraph outweighs a short white headline by
+  // character count, which had text/muted the wrong way round.
+  const surf0 = bgs[0] || pageBg;
+  const cand = texts.slice(0, 4);
+  const textCol = cand.slice().sort((a, b) => (ratio(b, surf0) || 0) - (ratio(a, surf0) || 0))[0]
+    || hex(bodyCS.color) || "#000000";
+  const muted = cand.find((c) => c !== textCol) || null;
   const dark = (() => { const o = rgb(surface); return o ? lum(o) < 0.4 : false; })();
 
   // Accent: the most-used colour that is neither surface nor body text — look
@@ -78,7 +106,8 @@ function extractDesignTokens() {
   let accent = null;
   const linkish = document.querySelector("a[href], button, [role='button']");
   const accCand = new Map();
-  for (const el of document.querySelectorAll("a[href], button, [role='button'], .btn")) {
+  const clickable = els.filter((e) => /^(a|button)$/i.test(e.tagName) || e.getAttribute && e.getAttribute("role") === "button");
+  for (const el of clickable) {
     const s = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (r.width < 8 || r.height < 8) continue;
     const b = hex(s.backgroundColor); const c = hex(s.color);
@@ -93,7 +122,8 @@ function extractDesignTokens() {
   const bodyF = parseFont(top(fontWeightMap)[0]);
 
   const sample = (sel, keys) => {
-    for (const el of document.querySelectorAll(sel)) {
+    for (const el of els) {
+      try { if (!el.matches || !el.matches(sel)) continue; } catch (e) { continue; }
       const r = el.getBoundingClientRect();
       if (r.width < 40 || r.height < 16 || r.top > vh * 3) continue;
       const s = getComputedStyle(el); const out = {};
@@ -139,6 +169,21 @@ function extractDesignTokens() {
 // burst of the visible area instead, so the gradient/video motion survives.
 // captureVisibleTab is rate-limited (~2/s), so the burst is paced by the same
 // throttle and we take what we can get rather than promising a frame rate.
+async function imgWidth(dataUrl) {
+  try { const b = await (await fetch(dataUrl)).blob(); const bmp = await createImageBitmap(b); return bmp.width; }
+  catch (e) { return 0; }
+}
+async function cropToWidth(dataUrl, w) {
+  try {
+    const b = await (await fetch(dataUrl)).blob(); const bmp = await createImageBitmap(b);
+    if (bmp.width <= w) return dataUrl;
+    const c = new OffscreenCanvas(w, bmp.height);
+    c.getContext("2d").drawImage(bmp, 0, 0);
+    const out = await c.convertToBlob({ type: "image/png" });
+    return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(out); });
+  } catch (e) { return dataUrl; }
+}
+
 async function captureMotion(seconds) {
   const tab = await activeTab();
   if (!tab) return;
@@ -146,7 +191,20 @@ async function captureMotion(seconds) {
   while (Date.now() - t0 < ms && frames.length < 40) {
     let d = null;
     try { d = await throttledCapture(tab.windowId); } catch (e) {}
-    if (d) frames.push(await cropRightBar(d));
+    if (d) frames.push(d);
+  }
+  // One crop decision, applied to all: the first frame is measured, then every
+  // frame is cut to that exact width so the burst can't change size mid-loop.
+  if (frames.length > 1) {
+    try {
+      const probe = await cropRightBar(frames[0]);
+      const w0 = await imgWidth(frames[0]), w1 = await imgWidth(probe);
+      if (w1 && w0 && w1 < w0) {
+        const out = [probe];
+        for (let i = 1; i < frames.length; i++) out.push(await cropToWidth(frames[i], w1));
+        frames.length = 0; frames.push(...out);
+      }
+    } catch (e) {}
   }
   if (!frames.length) return captureVisible(tab);        // nothing captured — fall back
   if (frames.length < 2) return handoff(frames[0], tab.url, tab.title, await grabDesign(tab.id));

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Snappy Frame — Capture",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Capture the current browser tab and open it in Snappy Frame to add backgrounds, frames and export.",
   "permissions": ["activeTab", "storage", "scripting", "contextMenus"],
   "host_permissions": ["https://snappy-frame.netlify.app/*"],
