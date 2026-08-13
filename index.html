@@ -1236,7 +1236,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.11.0';
+const APP_VERSION='1.12.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1708,6 +1708,7 @@ function loadImage(src,quiet,meta){
     shot.src=src;
     ['btnCopy','btnCrop','btnMarkup','btnDownload','btnDownload2','btnAnim','btnMagic'].forEach(id=>{ const b=$(id); if(b) b.disabled=false; });
     view.z=1; view.x=0; view.y=0;   // start each new image at fit
+    try{ completeBrief(); }catch(e){}
     render(); if(!quiet){ toast('Image loaded'); document.dispatchEvent(new Event('snappy:image-loaded')); }
   };
   im.onerror=()=>{ if(!quiet) toast('Could not load that image',true); };
@@ -2748,6 +2749,75 @@ $('motionBadge') && ($('motionBadge').onclick=()=>{
 // The extension reads live computed styles and hands them over with the shot.
 // Everything here is editable: fix a mis-detected accent before exporting.
 let brief=null;
+// Reading a page's DOM can fail for reasons we can't fix from here (content in
+// a cross-origin iframe, closed shadow roots, a plain uploaded screenshot). The
+// PIXELS are always available, so the palette is derived from the image itself
+// whenever the DOM didn't yield one — measured either way, never blank.
+const _rgbOf=h=>{ const m=/^#?([0-9a-f]{6})$/i.exec(String(h||'')); if(!m) return null; const v=parseInt(m[1],16);
+  return {r:(v>>16)&255,g:(v>>8)&255,b:v&255}; };
+const _lum=o=>{ const f=v=>{v/=255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);};
+  return 0.2126*f(o.r)+0.7152*f(o.g)+0.0722*f(o.b); };
+const _ratio=(a,b)=>{ const A=_rgbOf(a),B=_rgbOf(b); if(!A||!B) return null;
+  const l1=_lum(A),l2=_lum(B); return +(((Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05)).toFixed(2)); };
+const _hexOf=o=>'#'+[o.r,o.g,o.b].map(n=>Math.round(n).toString(16).padStart(2,'0')).join('').toUpperCase();
+const _sat=o=>{ const mx=Math.max(o.r,o.g,o.b), mn=Math.min(o.r,o.g,o.b); return mx?(mx-mn)/mx:0; };
+function paletteFromImage(im){
+  try{
+    const W=260, H=Math.max(1,Math.round((im.naturalHeight/im.naturalWidth)*W));
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const g=c.getContext('2d',{willReadFrequently:true}); g.drawImage(im,0,0,W,H);
+    const d=g.getImageData(0,0,W,H).data, buckets=new Map();
+    for(let i=0;i<d.length;i+=4){
+      if(d[i+3]<128) continue;
+      const key=((d[i]>>4)<<8)|((d[i+1]>>4)<<4)|(d[i+2]>>4);
+      let e=buckets.get(key); if(!e) buckets.set(key,e={n:0,r:0,g:0,b:0});
+      e.n++; e.r+=d[i]; e.g+=d[i+1]; e.b+=d[i+2];
+    }
+    const list=[...buckets.values()].map(e=>({n:e.n,r:e.r/e.n,g:e.g/e.n,b:e.b/e.n})).sort((a,b)=>b.n-a.n);
+    if(!list.length) return null;
+    // Thin antialiased text is a small share of pixels, so keep a low floor.
+    const total=list.reduce((s,e)=>s+e.n,0), common=list.filter(e=>e.n/total>0.0008).slice(0,40);
+    const surface=_hexOf(list[0]);
+    const withC=common.map(e=>({hex:_hexOf(e),n:e.n,sat:_sat(e),cr:_ratio(_hexOf(e),surface)||0}));
+    // Accent FIRST (the saturated one), else a saturated brand colour gets
+    // claimed as 'text' for having the highest contrast and vanishes.
+    const accent=(withC.filter(e=>e.sat>0.25&&e.hex!==surface)
+      .sort((a,b)=>b.sat*Math.log(1+b.n)-a.sat*Math.log(1+a.n))[0]||{}).hex||null;
+    const text=(withC.filter(e=>e.hex!==accent&&e.sat<0.35).sort((a,b)=>b.cr-a.cr)[0]||{}).hex||null;
+    const elevated=(withC.find(e=>e.hex!==surface&&e.hex!==accent&&e.cr<3)||{}).hex||null;
+    const muted=(withC.filter(e=>e.hex!==surface&&e.hex!==text&&e.hex!==accent&&e.cr>=2.5&&e.cr<=8)
+      .sort((a,b)=>b.n-a.n)[0]||{}).hex||null;
+    return {accent,surface,elevated,text,muted};
+  }catch(e){ return null; }
+}
+function buildContrast(p){
+  const out=[], lv=r=>r>=7?'AAA':r>=4.5?'AA':r>=3?'AA-L':'Fail';
+  const add=(label,a,b)=>{ const r=_ratio(a,b); if(r) out.push({label,ratio:r,level:lv(r)}); };
+  if(p.text) add('Text on surface',p.text,p.surface);
+  if(p.muted) add('Muted on surface',p.muted,p.surface);
+  if(p.accent) add('Accent on surface',p.accent,p.surface);
+  return out;
+}
+// Fill any gap in a DOM-read brief from the image, and build one from scratch
+// when there is no brief at all (uploads, pastes, sites we can't read).
+function completeBrief(){
+  const im=shot; if(!im || !im.naturalWidth) return;
+  const fromPix=paletteFromImage(im);
+  if(!fromPix) return;
+  if(!brief) brief={ host:'', vibe:'', palette:{}, typography:{}, tokens:{}, components:{}, contrast:[], _pixels:true };
+  brief.palette=brief.palette||{};
+  let filled=false;
+  for(const k of ['surface','text','accent','elevated','muted'])
+    if(!brief.palette[k] && fromPix[k]){ brief.palette[k]=fromPix[k]; filled=true; }
+  if(filled||!brief.contrast||!brief.contrast.length) brief.contrast=buildContrast(brief.palette);
+  if(!brief.vibe){
+    const o=_rgbOf(brief.palette.surface); const dark=o?_lum(o)<0.4:false;
+    const sats=['accent','elevated','muted'].map(k=>brief.palette[k]).filter(Boolean).map(h=>_sat(_rgbOf(h)||{r:0,g:0,b:0}));
+    brief.vibe=[dark?'dark':'light', sats.some(s=>s>0.3)?'colourful':'monochrome'].join(' · ');
+  }
+  brief._pixelFilled=filled;
+  const btn=$('btnBrief'); if(btn) btn.hidden=false;
+}
 function setBrief(b){
   brief=b; const btn=$('btnBrief'); if(btn) btn.hidden=!b;
   if(b) toast('🎨 Design brief captured');
@@ -2762,7 +2832,7 @@ function renderBrief(){
   const sec=(t)=>`<div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px">${t}</div>`;
   const row=(l,v)=>`<div style="display:flex;gap:12px;padding:5px 0;font-size:13px"><span style="width:96px;color:var(--muted);flex:none">${esc(l)}</span><b style="font-weight:600">${esc(v)}</b></div>`;
   let h='';
-  h+=`<div style="font-size:13px;color:var(--muted)">${esc(brief.vibe||'')}</div>`;
+  h+=`<div style="font-size:13px;color:var(--muted)">${esc(brief.vibe||'')}${brief._pixelFilled||brief._pixels?' · <span title="Some values were read from the image because the page could not be inspected">palette sampled from the image</span>':''}</div>`;
   h+=sec('Palette');
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   for(const [k] of briefRows[0][2]){ const c=brief.palette[k];
