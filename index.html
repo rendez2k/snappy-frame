@@ -1000,6 +1000,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div class="field"><label>Length <span class="val" id="animDurVal">4s</span></label>
             <input type="range" id="animDur" min="2" max="6" step="1" value="4"></div>
           <button class="btn primary" id="btnAnim" style="width:100%;justify-content:center;margin-top:6px" disabled>Export video (WebM)</button>
+          <button class="btn" id="btnAnimWebm" style="width:100%;justify-content:center;margin-top:6px" hidden>Export as WebM instead</button>
           <p class="hint" style="margin-top:8px">Perfectly looped. Uses your browser's video encoder (WebM, or MP4 on Safari). “Reveal” plays once.</p>
         </div>
       </section>
@@ -1236,7 +1237,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.12.0';
+const APP_VERSION='1.13.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2043,6 +2044,48 @@ function drawParticles(g,W,H,p,kind,parts){
 }
 // A motion capture already IS an animation — export the real frames (styled
 // with the current background/frame) rather than faking movement on one still.
+// GIF pastes anywhere and animates in places WebM doesn't (chats, docs, issue
+// trackers), so it's the default for a motion capture. Width is capped because
+// GIF is an indexed-colour format from 1989 and full-res frames get enormous.
+async function exportMotionGif(){
+  const btn=$('btnAnim'); btn.disabled=true;
+  const wasPlaying=!!motionTimer; clearInterval(motionTimer); motionTimer=null;
+  const restore=shot.src;
+  try{
+    const pr=Math.min(2,state.scale);
+    const first=await (async()=>{ shot.src=motion.frames[0];
+      await new Promise(r=>{ if(shot.complete&&shot.naturalWidth) return r(); shot.onload=shot.onerror=r; });
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      return rasterStage('all',pr); })();
+    const MAXW=Math.min(900,first.width);
+    const W=Math.round(MAXW), H=Math.max(1,Math.round(first.height*(MAXW/first.width)));
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const g=c.getContext('2d',{willReadFrequently:true});
+    const datas=[];
+    for(let i=0;i<motion.frames.length;i++){
+      toast('Building GIF… '+(i+1)+'/'+motion.frames.length);
+      let im=first;
+      if(i>0){
+        shot.src=motion.frames[i];
+        await new Promise(r=>{ if(shot.complete&&shot.naturalWidth) return r(); shot.onload=shot.onerror=r; });
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        im=await rasterStage('all',pr);
+      }
+      g.clearRect(0,0,W,H); g.drawImage(im,0,0,W,H);
+      datas.push(g.getImageData(0,0,W,H).data);
+      await new Promise(r=>setTimeout(r,0));       // keep the tab responsive
+    }
+    toast('Encoding GIF…');
+    await new Promise(r=>setTimeout(r,30));
+    const blob=gifEncode(datas,W,H,Math.round(1000/motion.fps));
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.download=`snappy-motion-${ts}.gif`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    toast('GIF exported · '+Math.round(blob.size/1024)+' KB');
+  }catch(e){ console.error(e); toast('GIF export failed',true); }
+  finally{ shot.src=restore; btn.disabled=false; if(wasPlaying) playMotion(); }
+}
+
 async function exportMotionVideo(){
   if(!window.MediaRecorder){ toast('Video export not supported in this browser',true); return; }
   const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(_){return false;}});
@@ -2085,7 +2128,7 @@ async function exportMotionVideo(){
 
 async function exportAnim(){
   if(!state.hasImage) return;
-  if(motion && motion.frames.length>1) return exportMotionVideo();
+  if(motion && motion.frames.length>1) return exportMotionGif();
   if(!window.MediaRecorder){ toast('Video export not supported in this browser',true); return; }
   const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>{try{return MediaRecorder.isTypeSupported(m);}catch(_){return false;}});
   if(!mime){ toast('No supported video format in this browser',true); return; }
@@ -2716,6 +2759,109 @@ const TC_KW=new Set(('and or not in is of to from for use when before without on
   'typeof instanceof public private static void as with pass elif lambda yield').split(' '));
 let textCard={text:'', name:'notes.md', mode:''}, textCardStyled=false;
 
+// ---------- GIF encoder (GIF89a, no dependencies) ----------
+// Browsers encode WebM natively but never GIF, so this does the two things a
+// GIF needs: reduce to a 256-colour table (median cut over the real pixels of
+// all frames, so the palette suits THIS clip) and LZW-compress the indices.
+function gifQuantise(framesData, maxColours){
+  // Collect a sample of pixels across every frame.
+  const pts=[];
+  for(const d of framesData){
+    const step=Math.max(4, Math.floor(d.length/4/24000)*4);
+    for(let i=0;i<d.length;i+=step){ if(d[i+3]>=128) pts.push([d[i],d[i+1],d[i+2]]); }
+  }
+  if(!pts.length) pts.push([0,0,0]);
+  // Median cut: split the box with the widest channel range, at its median.
+  let boxes=[pts];
+  while(boxes.length<maxColours){
+    let bi=-1, bRange=-1, bCh=0;
+    boxes.forEach((bx,i)=>{
+      if(bx.length<2) return;
+      for(let ch=0;ch<3;ch++){
+        let mn=255,mx=0; for(const p of bx){ if(p[ch]<mn)mn=p[ch]; if(p[ch]>mx)mx=p[ch]; }
+        if(mx-mn>bRange){ bRange=mx-mn; bi=i; bCh=ch; }
+      }
+    });
+    if(bi<0||bRange<=0) break;
+    const bx=boxes[bi]; bx.sort((a,b)=>a[bCh]-b[bCh]);
+    const mid=bx.length>>1;
+    boxes.splice(bi,1,bx.slice(0,mid),bx.slice(mid));
+  }
+  const pal=boxes.filter(b=>b.length).map(b=>{
+    let r=0,g=0,bl=0; for(const p of b){ r+=p[0]; g+=p[1]; bl+=p[2]; }
+    return [Math.round(r/b.length),Math.round(g/b.length),Math.round(bl/b.length)];
+  });
+  while(pal.length<2) pal.push([0,0,0]);
+  return pal;
+}
+function gifMapper(pal){
+  const cache=new Map();
+  return (r,g,b)=>{
+    const key=((r>>2)<<12)|((g>>2)<<6)|(b>>2);
+    let idx=cache.get(key);
+    if(idx===undefined){
+      let best=0,bd=Infinity;
+      for(let i=0;i<pal.length;i++){
+        const dr=r-pal[i][0], dg=g-pal[i][1], db=b-pal[i][2];
+        const d=dr*dr*0.299+dg*dg*0.587+db*db*0.114;
+        if(d<bd){ bd=d; best=i; }
+      }
+      idx=best; cache.set(key,idx);
+    }
+    return idx;
+  };
+}
+function gifLZW(indices, minCodeSize){
+  const clear=1<<minCodeSize, eoi=clear+1;
+  let codeSize=minCodeSize+1, next=eoi+1, dict=new Map();
+  const out=[]; let cur=0, bits=0;
+  const emit=(code)=>{ cur|=code<<bits; bits+=codeSize;
+    while(bits>=8){ out.push(cur&255); cur>>=8; bits-=8; } };
+  emit(clear);
+  let prefix=indices[0];
+  for(let i=1;i<indices.length;i++){
+    const k=indices[i], key=(prefix<<12)|k;
+    const got=dict.get(key);
+    if(got!==undefined){ prefix=got; continue; }
+    emit(prefix);
+    if(next<4096){ dict.set(key,next++); if(next>(1<<codeSize) && codeSize<12) codeSize++; }
+    else { emit(clear); dict=new Map(); next=eoi+1; codeSize=minCodeSize+1; }
+    prefix=k;
+  }
+  emit(prefix); emit(eoi);
+  if(bits>0) out.push(cur&255);
+  return out;
+}
+function gifEncode(framesData, W, H, delayMs){
+  const pal=gifQuantise(framesData,256), map=gifMapper(pal);
+  const bytes=[];
+  const push=(...b)=>bytes.push(...b);
+  const short=(v)=>push(v&255,(v>>8)&255);
+  // Header + logical screen descriptor (global colour table, 256 entries)
+  'GIF89a'.split('').forEach(c=>push(c.charCodeAt(0)));
+  short(W); short(H); push(0xF7, 0, 0);
+  for(let i=0;i<256;i++){ const c=pal[i]||[0,0,0]; push(c[0],c[1],c[2]); }
+  // Netscape extension — loop forever
+  push(0x21,0xFF,0x0B); 'NETSCAPE2.0'.split('').forEach(c=>push(c.charCodeAt(0)));
+  push(0x03,0x01,0x00,0x00,0x00);
+  const delayCs=Math.max(2,Math.round(delayMs/10));
+  for(const d of framesData){
+    push(0x21,0xF9,0x04,0x04); short(delayCs); push(0x00,0x00);   // graphic control
+    push(0x2C); short(0); short(0); short(W); short(H); push(0x00); // image descriptor
+    const idx=new Uint8Array(W*H);
+    for(let p=0,i=0;p<idx.length;p++,i+=4) idx[p]=map(d[i],d[i+1],d[i+2]);
+    push(8);                                                        // LZW min code size
+    const lzw=gifLZW(idx,8);
+    for(let o=0;o<lzw.length;o+=255){
+      const chunk=lzw.slice(o,o+255);
+      push(chunk.length,...chunk);
+    }
+    push(0);
+  }
+  push(0x3B);
+  return new Blob([new Uint8Array(bytes)],{type:'image/gif'});
+}
+
 // ---------- Motion captures (a burst of frames, not one still) ----------
 // The extension records a few seconds of the live page so an animated hero
 // keeps its motion. Frames drive the preview and the WebM export; every other
@@ -2725,6 +2871,9 @@ function setMotion(frames, fps){
   clearInterval(motionTimer); motionTimer=null; motionIdx=0;
   motion = frames ? { frames, fps: Math.max(2, Math.min(fps||8, 24)), imgs:[] } : null;
   const badge=$('motionBadge'); if(badge) badge.hidden=!motion;
+  const ab=$('btnAnim'), aw=$('btnAnimWebm');
+  if(ab) ab.textContent = motion ? 'Export animated GIF' : 'Export video (WebM)';
+  if(aw) aw.hidden = !motion;
   if(!motion) return;
   // Decode once so playback doesn't thrash the network/cache.
   let n=motion.frames.length;
@@ -3349,6 +3498,7 @@ $('animPartGrid').addEventListener('click',e=>{ const b=e.target.closest('button
   state.animParticles=b.dataset.v; $('animPartGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
 $('animDur').addEventListener('input',e=>{ state.animDur=+e.target.value; $('animDurVal').textContent=e.target.value+'s'; });
 $('btnAnim').onclick=exportAnim;
+$('btnAnimWebm').onclick=()=>{ if(motion&&motion.frames.length>1) exportMotionVideo(); };
 // Hide the whole Animated-export section where the browser can't record video
 // (notably Apple's WKWebView, i.e. an App-Store wrapper) so nothing looks broken.
 (function(){ const ok = !!window.MediaRecorder &&
