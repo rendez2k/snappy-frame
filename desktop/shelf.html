@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#171a22;--line:#2b3040;--ink:#e7e9ef;--mut:#9aa0b0;--acc:#6d5efc;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none;}
+  #card{height:100%;display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);
+    border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:8px;gap:7px;}
+  .top{display:flex;align-items:center;gap:5px;padding:0 2px;}
+  .top b{font-size:11.5px;flex:1;letter-spacing:.02em;}
+  .ico{width:20px;height:20px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
+    border-radius:6px;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+  .ico:hover{border-color:#48506a;}
+  #list{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:7px;padding:2px;}
+  #list::-webkit-scrollbar{width:0;}
+  .snap{position:relative;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:#0f1219;
+    cursor:grab;line-height:0;flex:none;}
+  .snap:active{cursor:grabbing;}
+  .snap img{width:100%;display:block;pointer-events:none;}
+  .snap .x{position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;border:0;
+    background:rgba(10,12,18,.82);color:#fff;font-size:10px;line-height:1;cursor:pointer;display:none;
+    align-items:center;justify-content:center;padding:0;}
+  .snap:hover .x{display:flex;}
+  .snap .c{position:absolute;left:3px;bottom:3px;border:0;border-radius:5px;padding:2px 5px;font-size:9.5px;
+    font-weight:600;background:rgba(10,12,18,.82);color:#fff;cursor:pointer;display:none;}
+  .snap:hover .c{display:block;}
+  #empty{color:var(--mut);font-size:10.5px;text-align:center;padding:14px 6px;line-height:1.5;margin:auto;}
+  .all{width:100%;border:1px dashed var(--line);background:#20242f;color:var(--ink);border-radius:9px;
+    padding:7px 4px;font:600 10.5px/1.2 inherit;cursor:grab;text-align:center;}
+  .all:hover{border-color:var(--acc);}
+</style>
+</head>
+<body>
+  <div id="card">
+    <div class="top">
+      <b>Shelf</b>
+      <button class="ico" id="clear" title="Clear the shelf">🗑</button>
+      <button class="ico" id="hide" title="Hide (toggle with the shelf hotkey)">▸</button>
+    </div>
+    <button class="all" id="dragAll" draggable="true" hidden>⇗ Drag all</button>
+    <div id="list"><div id="empty">Snaps land here.<br>Drag one straight into Claude.</div></div>
+  </div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let items = [];
+
+  window.snap.shelfOnUpdate(list => { items = list || []; paint(); });
+  window.snap.shelfReady();
+
+  function paint(){
+    const L = $('list');
+    $('dragAll').hidden = items.length < 2;
+    if(!items.length){
+      L.innerHTML = '<div id="empty">Snaps land here.<br>Drag one straight into Claude.</div>';
+      return;
+    }
+    L.innerHTML = '';
+    items.forEach(it => {
+      const d = document.createElement('div');
+      d.className = 'snap'; d.draggable = true; d.title = it.name + ' — drag into Claude, or double-click to open the folder';
+      d.innerHTML = '<img alt="">';
+      d.querySelector('img').src = it.thumb;
+      const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = 'Remove from shelf';
+      x.onclick = e => { e.stopPropagation(); window.snap.shelfRemove(it.i); };
+      const c = document.createElement('button'); c.className = 'c'; c.textContent = 'copy'; c.title = 'Copy to clipboard';
+      c.onclick = e => { e.stopPropagation(); window.snap.shelfCopy(it.i); };
+      // The native drag-out: preventDefault and let the main process take over
+      // with the real file, so the drop target receives a FILE, not a bitmap.
+      d.addEventListener('dragstart', e => { e.preventDefault(); window.snap.shelfDrag(it.i); });
+      d.addEventListener('dblclick', () => window.snap.shelfReveal(it.i));
+      d.appendChild(x); d.appendChild(c);
+      L.appendChild(d);
+    });
+  }
+
+  $('dragAll').addEventListener('dragstart', e => { e.preventDefault(); window.snap.shelfDrag('all'); });
+  $('clear').onclick = () => window.snap.shelfClear();
+  $('hide').onclick = () => window.snap.shelfHide();
+})();
+</script>
+</body>
+</html>

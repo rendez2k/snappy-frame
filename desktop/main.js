@@ -14,6 +14,9 @@ const DEFAULTS = {
   markupHotkey: 'CommandOrControl+Shift+3',        // grab a region then open the mark-up editor
   batchHotkey: 'CommandOrControl+Shift+5',         // collect several region grabs, hand them over together
   termHotkey: 'CommandOrControl+Shift+4',          // grab the focused terminal's whole scrollback as text
+  shelfHotkey: 'CommandOrControl+Shift+S',         // show/hide the session shelf
+  shelf: true,                                     // collect this session's snaps in a draggable shelf
+  shelfAutoShow: true,                             // pop the shelf up on each capture
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
   warnSecrets: true,                               // warn if a snipped terminal held something key-shaped
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
@@ -33,10 +36,12 @@ function loadSettings(){ try{ settings = { ...DEFAULTS, ...JSON.parse(fs.readFil
 function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recursive:true }); fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2)); }catch(e){ console.error(e); } }
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
 
+let shelfWin = null;
 let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null;
 const pending = new Map();                         // webContents.id -> { img (nativeImage), w, h }
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
-const batch = [];                                  // collected region grabs (full-res dataURLs) awaiting hand-off
+const batch = [];
+const shelf = [];                                  // this session's snaps: { file, thumb, name }                                  // collected region grabs (full-res dataURLs) awaiting hand-off
 let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' — what to do after the marquee
 
 // ---- capture flow --------------------------------------------------------
@@ -155,6 +160,21 @@ async function handleResult(image, ctx){
     while(fs.existsSync(p)){ p = path.join(dir, `${base} (${i}).png`); i++; }
     savedPath = p;
     try{ fs.writeFileSync(savedPath, image.toPNG()); }catch(e){ console.error('save failed', e); savedPath = null; }
+  }
+  // Everything captured this session lands on the shelf so it can be dragged
+  // straight into another app. Dragging needs a real file, so a snap that was
+  // not saved to the folder gets written to temp purely to be draggable.
+  if(settings.shelf !== false){
+    let f = savedPath;
+    if(!f){
+      try{
+        const t = path.join(app.getPath('temp'), 'snappy-shelf');
+        fs.mkdirSync(t, { recursive:true });
+        f = path.join(t, 'Snap ' + Date.now() + '.png');
+        fs.writeFileSync(f, image.toPNG());
+      }catch(e){ f = null; }
+    }
+    if(f) addToShelf(f, image);
   }
   if(settings.defaultAction === 'beautify'){ openBeautify(image.toDataURL()); }
   let inboxOk = null;
@@ -325,6 +345,68 @@ ipcMain.on('batch:action', async (e, msg) => {
   }
 });
 
+// ---- session shelf -------------------------------------------------------
+// A slim always-on-top strip holding this session's snaps. Each thumbnail is a
+// NATIVE file drag source (webContents.startDrag), so a snap can be dragged
+// straight into Claude Desktop, Slack, an editor — anything that accepts a
+// dropped file — with no save-locate-attach detour.
+function addToShelf(file, image){
+  let thumb = '';
+  try{ thumb = image.resize({ height: 96, quality: 'good' }).toDataURL(); }catch(e){}
+  shelf.unshift({ file, thumb, name: path.basename(file) });
+  if(shelf.length > 40) shelf.length = 40;
+  if(settings.shelfAutoShow !== false) openShelf(true);
+  sendShelf();
+}
+function sendShelf(){
+  if(shelfWin && !shelfWin.isDestroyed()){
+    shelfWin.webContents.send('shelf:update', shelf.map((s2, i) => ({ i, thumb: s2.thumb, name: s2.name })));
+  }
+}
+function openShelf(quiet){
+  if(shelfWin && !shelfWin.isDestroyed()){
+    if(!shelfWin.isVisible()) quiet ? shelfWin.showInactive() : shelfWin.show();
+    return;
+  }
+  const wa = screen.getPrimaryDisplay().workArea;
+  const W = 128, H = Math.min(560, wa.height - 80);
+  shelfWin = new BrowserWindow({
+    x: wa.x + wa.width - W - 12, y: wa.y + 60, width: W, height: H,
+    frame: false, transparent: true, backgroundColor: '#00000000', resizable: false,
+    alwaysOnTop: true, skipTaskbar: true, hasShadow: false, fullscreenable: false, show: false,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
+  });
+  shelfWin.setAlwaysOnTop(true, 'floating');
+  shelfWin.loadFile('shelf.html');
+  shelfWin.once('ready-to-show', () => { quiet ? shelfWin.showInactive() : shelfWin.show(); sendShelf(); });
+  shelfWin.on('closed', () => { shelfWin = null; });
+}
+function toggleShelf(){
+  if(shelfWin && !shelfWin.isDestroyed() && shelfWin.isVisible()) shelfWin.hide();
+  else openShelf(false);
+}
+
+ipcMain.on('shelf:ready', () => sendShelf());
+ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
+ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); });
+ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); });
+ipcMain.on('shelf:copy', (e, i) => {
+  const it = shelf[i]; if(!it) return;
+  try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
+});
+ipcMain.on('shelf:reveal', (e, i) => { const it = shelf[i]; if(it) shell.showItemInFolder(it.file); });
+// The actual drag-out. Must run from the dragstart the renderer reports.
+ipcMain.on('shelf:drag', (e, i) => {
+  const items = (i === 'all') ? shelf : (shelf[i] ? [shelf[i]] : []);
+  const files = items.map(x => x.file).filter(f => { try{ return fs.existsSync(f); }catch(e2){ return false; } });
+  if(!files.length) return;
+  let icon = nativeImage.createFromPath(files[0]);
+  try{ icon = icon.resize({ height: 64 }); }catch(e2){}
+  if(icon.isEmpty()) icon = trayImage();
+  try{ e.sender.startDrag(files.length > 1 ? { files, icon } : { file: files[0], icon }); }
+  catch(e2){ console.error('drag failed', e2); }
+});
+
 // ---- tray ----------------------------------------------------------------
 function trayImage(){
   const p = path.join(__dirname, 'assets', 'tray.png');
@@ -344,6 +426,7 @@ function refreshTrayMenu(){
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
+    { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -374,7 +457,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch) registerHotkey();
   refreshTrayMenu();
   return settings;
 });
@@ -651,6 +734,10 @@ function registerHotkey(){
   if(settings.batchHotkey){
     try{ globalShortcut.register(settings.batchHotkey, () => startCapture('batch')); }
     catch(e){ console.error('batch hotkey failed', e); }
+  }
+  if(settings.shelfHotkey){
+    try{ globalShortcut.register(settings.shelfHotkey, () => toggleShelf()); }
+    catch(e){ console.error('shelf hotkey failed', e); }
   }
   if(settings.termHotkey){
     try{ globalShortcut.register(settings.termHotkey, () => captureTerminalText().catch(e => console.error(e))); }

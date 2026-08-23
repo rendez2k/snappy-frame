@@ -12,6 +12,15 @@ contextBridge.exposeInMainWorld('snap', {
   annotateDone: (payload) => ipcRenderer.send('annotator:done', payload),
   annotateCancel: () => ipcRenderer.send('annotator:cancel'),
   annotateReport: (msg) => ipcRenderer.send('annotator:report', msg),
+  // session shelf
+  shelfReady: () => ipcRenderer.send('shelf:ready'),
+  shelfOnUpdate: (cb) => ipcRenderer.on('shelf:update', (e, items) => cb(items)),
+  shelfDrag: (i) => ipcRenderer.send('shelf:drag', i),
+  shelfCopy: (i) => ipcRenderer.send('shelf:copy', i),
+  shelfRemove: (i) => ipcRenderer.send('shelf:remove', i),
+  shelfReveal: (i) => ipcRenderer.send('shelf:reveal', i),
+  shelfClear: () => ipcRenderer.send('shelf:clear'),
+  shelfHide: () => ipcRenderer.send('shelf:hide'),
   // batch collector
   batchReady: () => ipcRenderer.send('batch:ready'),
   batchOnUpdate: (cb) => ipcRenderer.on('batch:update', (e, items) => cb(items)),
