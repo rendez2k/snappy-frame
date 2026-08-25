@@ -45,8 +45,20 @@ function extractDesignTokens() {
     const l1 = lum(A), l2 = lum(B); return +(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2)); };
   const top = (map) => [...map.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
 
+  // A frequency-ranked scale beats a numerically-sorted one: sorting every
+  // distinct value gives space.1=1px, space.2=2px… (noise from borders and
+  // one-off nudges). Taking the most-USED values first, then sorting those,
+  // surfaces the actual rhythm the page was built on (4/8/12/16/24…).
+  const scaleOf = (map, keep) => [...map.entries()].sort((a, b) => b[1] - a[1])
+    .slice(0, keep).map((e) => +e[0]).sort((a, b) => a - b);
+  const ms = (v) => { const s = String(v || "").trim(); if (!s) return null;
+    const m = s.match(/^([\d.]+)(ms|s)$/); if (!m) return null;
+    const n = parseFloat(m[1]); return m[2] === "s" ? Math.round(n * 1000) : Math.round(n); };
+
   const vw = innerWidth, vh = innerHeight;
   const bgArea = new Map(), textWeight = new Map(), fontWeightMap = new Map(), headFont = new Map(), radii = new Map();
+  const spaceMap = new Map(), shadowMap = new Map(), durMap = new Map(), easeMap = new Map();
+  const sizeMap = new Map(), borderMap = new Map(), focusMap = new Map();
   // Walk into shadow roots — sites built from web components (Google's own
   // properties especially) keep ALL their content there, so `body *` alone
   // returned almost nothing and the brief came back empty.
@@ -62,13 +74,14 @@ function extractDesignTokens() {
     return out;
   };
   const els = collect(document.body || document.documentElement, []);
-  let scanned = 0;
+  let scanned = 0, visible = 0;
   for (const el of els) {
     if (scanned++ > 24000) break;                           // keep it quick on huge pages
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2 || r.top > vh * 4) continue;
     const s = getComputedStyle(el);
     if (s.visibility === "hidden" || s.display === "none" || +s.opacity === 0) continue;
+    visible++;
     const a = Math.min(r.width, vw) * Math.min(r.height, vh * 2);
     const bg = hex(s.backgroundColor);
     if (bg) bgArea.set(bg, (bgArea.get(bg) || 0) + a);
@@ -78,13 +91,34 @@ function extractDesignTokens() {
       const col = hex(s.color); if (col) textWeight.set(col, (textWeight.get(col) || 0) + txt);
       const fam = (s.fontFamily || "").split(",")[0].replace(/["']/g, "").trim();
       const size = px(s.fontSize);
+      if (size > 0) sizeMap.set(size, (sizeMap.get(size) || 0) + txt);
       if (fam) {
-        const key = fam + "|" + s.fontWeight + "|" + size;
+        // line-height and letter-spacing ride along in the key: a type spec
+        // without line-height isn't implementable, and it was being dropped.
+        const key = [fam, s.fontWeight, size, s.lineHeight, s.letterSpacing].join("|");
         (size >= 24 ? headFont : fontWeightMap).set(key, ((size >= 24 ? headFont : fontWeightMap).get(key) || 0) + txt);
       }
     }
     const rad = px(s.borderTopLeftRadius);
     if (rad > 0 && rad < 80 && r.width > 24) radii.set(rad, (radii.get(rad) || 0) + 1);
+
+    // Spacing rhythm — padding and margin together. Capped at 160px so a hero's
+    // one-off 240px gutter doesn't crowd out the real 4/8/16 step.
+    for (const k of ["paddingTop", "paddingBottom", "paddingLeft", "paddingRight",
+                     "marginTop", "marginBottom", "marginLeft", "marginRight"]) {
+      const n = px(s[k]);
+      if (n > 0 && n <= 160) spaceMap.set(n, (spaceMap.get(n) || 0) + 1);
+    }
+    const sh = (s.boxShadow || "").trim();
+    if (sh && sh !== "none" && sh.length < 200) shadowMap.set(sh, (shadowMap.get(sh) || 0) + 1);
+    const dur = ms(s.transitionDuration) || ms(s.animationDuration);
+    if (dur) durMap.set(dur, (durMap.get(dur) || 0) + 1);
+    const ease = (s.transitionTimingFunction || s.animationTimingFunction || "").trim();
+    // 'ease' is the CSS initial value — it's on everything and means nothing.
+    if (ease && ease !== "ease" && ease.length < 80) easeMap.set(ease, (easeMap.get(ease) || 0) + 1);
+    if (px(s.borderTopWidth) > 0) { const bc = hex(s.borderTopColor); if (bc) borderMap.set(bc, (borderMap.get(bc) || 0) + 1); }
+    const oc = hex(s.outlineColor);
+    if (oc && px(s.outlineWidth) > 0) focusMap.set(oc, (focusMap.get(oc) || 0) + 1);
   }
 
   const pageBg = hex(getComputedStyle(document.body).backgroundColor) || hex(getComputedStyle(document.documentElement).backgroundColor) || "#FFFFFF";
@@ -118,8 +152,11 @@ function extractDesignTokens() {
   const accent = top(accCand)[0] || null;
   const elevated = bgs.find((c) => c !== surface && c !== accent) || surface;
 
-  const parseFont = (key) => { if (!key) return null; const [fam, w, size] = key.split("|");
-    return { family: fam, weight: w, size: +size }; };
+  const parseFont = (key) => { if (!key) return null; const [fam, w, size, lh, ls] = key.split("|");
+    const o = { family: fam, weight: w, size: +size };
+    if (lh && lh !== "normal") o.lineHeight = lh;
+    if (ls && ls !== "normal") o.letterSpacing = ls;
+    return o; };
   const heading = parseFont(top(headFont)[0]);
   const bodyF = parseFont(top(fontWeightMap)[0]);
 
@@ -151,21 +188,41 @@ function extractDesignTokens() {
   const vibe = [dark ? "dark" : "light", hues.size <= 2 ? "monochrome" : "colourful",
     radiusTop >= 16 ? "rounded" : radiusTop <= 4 ? "sharp" : "modern"].join(" · ");
 
+  const typeScale = scaleOf(sizeMap, 8).map((n) => n + "px");
+  const spaceScale = scaleOf(spaceMap, 8).map((n) => n + "px");
+  const motionDur = scaleOf(durMap, 4).map((n) => n + "ms");
+  const shadows = top(shadowMap).slice(0, 3);
+  const easings = top(easeMap).slice(0, 2);
+  const borderCol = top(borderMap)[0] || null;
+  const focusRing = top(focusMap)[0] || null;
+
+  // Say when a value is thin rather than printing a confident-looking blank —
+  // an empty section reads as "this site has no shadows", which is a different
+  // claim from "we couldn't measure any".
+  const diagnostics = [];
+  if (visible < 30) diagnostics.push("Only " + visible + " visible elements were readable — token confidence is low.");
+  if (!heading && !bodyF) diagnostics.push("No font could be read from computed styles.");
+  if (typeScale.length < 3) diagnostics.push("Few distinct text sizes found; the type scale may be incomplete.");
+  if (!spaceScale.length) diagnostics.push("No spacing rhythm could be measured.");
+  if (!shadows.length) diagnostics.push("No box-shadows on the page — elevation is flat or drawn another way.");
+  if (!motionDur.length) diagnostics.push("No CSS transitions or animations found on the sampled elements.");
+
   const score = textWeight.size * 10 + radii.size * 5 + bgArea.size + (accent ? 20 : 0)
     + (heading ? 20 : 0) + (bodyF ? 20 : 0);
   return {
-    score, frameArea: innerWidth * innerHeight,
+    score, frameArea: innerWidth * innerHeight, sampled: visible,
     url: location.href, host: location.host, title: document.title, vibe, dark,
-    palette: { accent, surface, elevated, text: textCol, muted },
-    typography: { heading, body: bodyF },
+    palette: { accent, surface, elevated, text: textCol, muted, border: borderCol, focus: focusRing },
+    typography: { heading, body: bodyF, scale: typeScale },
     tokens: { radius: radiusTop != null ? radiusTop + "px" : null,
-              radii: top(radii).slice(0, 4).map((r) => r + "px") },
+              radii: top(radii).slice(0, 4).map((r) => r + "px"),
+              spacing: spaceScale, shadows, motion: motionDur, easing: easings },
     components: {
       button: sample("button, .btn, a.button, [role='button']", ["fontWeight", "fontSize"]),
       card: sample("[class*='card'], article, section > div", ["borderStyle", "borderColor"]),
       input: sample("input[type='text'], input[type='email'], input:not([type]), textarea", ["borderColor"]),
     },
-    contrast,
+    contrast, diagnostics,
   };
 }
 

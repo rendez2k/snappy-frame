@@ -1069,6 +1069,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
     <div class="modal-foot" style="flex-wrap:wrap;gap:6px">
       <button class="btn sm" data-brief="css">CSS vars</button>
       <button class="btn sm" data-brief="tw">Tailwind</button>
+      <button class="btn sm" data-brief="md" title="Drop into a repo so Claude Code, Cursor or Codex follow the design system">DESIGN.md</button>
       <button class="btn sm" data-brief="json">JSON</button>
       <span style="flex:1"></span>
       <button class="btn sm primary" data-brief="ai">📋 Copy AI brief</button>
@@ -1237,7 +1238,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.13.1';
+const APP_VERSION='1.14.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2374,6 +2375,12 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.14.0', items:[
+    'Design brief now measures spacing rhythm, shadows, transition timings and easing curves — the parts an AI needs to rebuild a look, not just recolour it',
+    'Type spec includes line-height and letter-spacing, plus the full size scale',
+    'New DESIGN.md export — drop it in a repo so Claude Code, Cursor or Codex follow the system on every prompt',
+    'Border and focus-ring colours are picked up, and the brief now tells you when a value was thin rather than showing a confident blank',
+  ]},
   {v:'1.8.0', items:[
     'New: Text cards — paste text, markdown or code (or drop a .md/.txt/code file) and it renders as a beautiful code-window card with syntax colouring, ready to restyle and export like any screenshot',
     'Find it via the 📝 Text button, or just Ctrl/⌘+V some text onto the page',
@@ -2976,7 +2983,7 @@ function setBrief(b){
   if(b) toast('🎨 Design brief captured');
 }
 const briefRows=[
-  ['palette','Palette',[['accent','accent'],['surface','surface'],['elevated','elevated'],['text','text'],['muted','muted']]],
+  ['palette','Palette',[['accent','accent'],['surface','surface'],['elevated','elevated'],['text','text'],['muted','muted'],['border','border'],['focus','focus']]],
 ];
 function renderBrief(){
   if(!brief) return;
@@ -2989,6 +2996,9 @@ function renderBrief(){
   h+=sec('Palette');
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px">';
   for(const [k] of briefRows[0][2]){ const c=brief.palette[k];
+    // border/focus only exist on a DOM read — don't show two dead swatches on
+    // a pixel-derived brief where they can never be filled.
+    if(!c && (k==='border'||k==='focus')) continue;
     h+=`<label style="text-align:center;font-size:10.5px;color:var(--muted)">
       <input type="color" data-pal="${k}" value="${esc(c||'#000000')}" ${c?'':'disabled'}
         style="display:block;width:46px;height:38px;border:1px solid var(--line-2);border-radius:9px;background:none;cursor:pointer;padding:2px">
@@ -2996,16 +3006,22 @@ function renderBrief(){
   }
   h+='</div>';
   const ty=brief.typography||{};
-  if(ty.heading||ty.body){
+  const font=f=>f?[f.family+' '+f.weight, f.size+'px', f.lineHeight&&('line-height '+f.lineHeight), f.letterSpacing&&('tracking '+f.letterSpacing)].filter(Boolean).join(' · '):'';
+  if(ty.heading||ty.body||(ty.scale||[]).length){
     h+=sec('Typography');
-    if(ty.heading) h+=row('heading', ty.heading.family+' '+ty.heading.weight+' · '+ty.heading.size+'px');
-    if(ty.body) h+=row('body', ty.body.family+' '+ty.body.weight+' · '+ty.body.size+'px');
+    if(ty.heading) h+=row('heading', font(ty.heading));
+    if(ty.body) h+=row('body', font(ty.body));
+    if((ty.scale||[]).length>1) h+=row('scale', ty.scale.join(', '));
   }
   const tk=brief.tokens||{};
-  if(tk.radius){
+  if(tk.radius||(tk.spacing||[]).length||(tk.shadows||[]).length||(tk.motion||[]).length){
     h+=sec('Tokens');
-    h+=row('radius', tk.radius);
-    if(tk.radii&&tk.radii.length>1) h+=row('scale', tk.radii.join(', '));
+    if(tk.radius) h+=row('radius', tk.radius);
+    if(tk.radii&&tk.radii.length>1) h+=row('radius scale', tk.radii.join(', '));
+    if((tk.spacing||[]).length) h+=row('spacing', tk.spacing.join(', '));
+    if((tk.motion||[]).length) h+=row('motion', tk.motion.join(', '));
+    if((tk.easing||[]).length) h+=row('easing', tk.easing.join(', '));
+    (tk.shadows||[]).forEach((s,i)=>h+=row(i?'':'shadow', s));
   }
   const C=brief.components||{};
   if(C.button||C.card||C.input){
@@ -3024,6 +3040,11 @@ function renderBrief(){
         <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid ${ok?'#2ea043':'#e5484d'};color:${ok?'#2ea043':'#e5484d'}">${esc(c.level)}</span></div>`;
     }
   }
+  if((brief.diagnostics||[]).length){
+    h+=sec('Confidence');
+    h+='<div style="font-size:12px;color:var(--muted);line-height:1.6">'
+      +brief.diagnostics.map(d=>'· '+esc(d)).join('<br>')+'</div>';
+  }
   const C2=brief.components||{};
   if(!ty.heading&&!ty.body&&!tk.radius&&!C2.button){
     h+=`<div style="margin-top:18px;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;
@@ -3037,6 +3058,64 @@ function renderBrief(){
       const code=e.target.parentElement.querySelector('code'); if(code) code.textContent=e.target.value.toUpperCase(); };
   });
 }
+// DESIGN.md — the artifact that lives IN the repo, so Claude Code / Cursor /
+// Codex follow the system on every prompt instead of only the one you paste.
+// Deliberately short: every line here was measured. Generic design-system
+// boilerplate is what the agent already knows; the values are what it doesn't.
+function briefMarkdown(){
+  if(!brief) return '';
+  const p=brief.palette||{}, ty=brief.typography||{}, tk=brief.tokens||{}, C=brief.components||{};
+  const L=[], name=(brief.host||'Captured page').replace(/^www\./,'');
+  L.push('# Design system — '+name);
+  L.push('');
+  L.push('Measured from '+(brief.url||name)+(brief.sampled?' ('+brief.sampled+' elements sampled)':'')+'.');
+  if(brief.vibe) L.push('Overall character: '+brief.vibe+'.');
+  L.push('');
+  L.push('## Colour');
+  L.push('');
+  const label={accent:'Accent / primary action',surface:'Page surface',elevated:'Raised surface (cards)',
+    text:'Body text',muted:'Secondary text',border:'Borders and dividers',focus:'Focus ring'};
+  L.push('| Token | Value | Role |'); L.push('|---|---|---|');
+  for(const [k,v] of Object.entries(p)) if(v) L.push(`| \`--color-${k}\` | \`${v}\` | ${label[k]||k} |`);
+  if(ty.heading||ty.body||(ty.scale||[]).length){
+    L.push(''); L.push('## Type'); L.push('');
+    const f=(n,o)=>o?L.push(`- **${n}:** ${o.family} ${o.weight} · ${o.size}px`
+      +(o.lineHeight?` · line-height ${o.lineHeight}`:'')+(o.letterSpacing?` · tracking ${o.letterSpacing}`:'')):0;
+    f('Headings',ty.heading); f('Body',ty.body);
+    if((ty.scale||[]).length>1) L.push('- **Scale:** '+ty.scale.join(' · '));
+  }
+  if(tk.radius||(tk.spacing||[]).length||(tk.shadows||[]).length||(tk.motion||[]).length){
+    L.push(''); L.push('## Shape, spacing and motion'); L.push('');
+    if((tk.spacing||[]).length) L.push('- **Spacing scale:** '+tk.spacing.join(' · ')+' — use these steps, do not invent intermediate values.');
+    if(tk.radius) L.push('- **Radius:** '+tk.radius+((tk.radii||[]).length>1?' (also '+tk.radii.filter(r=>r!==tk.radius).join(', ')+')':''));
+    (tk.shadows||[]).forEach((s,i)=>L.push(`- **Shadow ${i+1}:** \`${s}\``));
+    if((tk.motion||[]).length) L.push('- **Transitions:** '+tk.motion.join(' · ')
+      +((tk.easing||[]).length?' with `'+tk.easing[0]+'`':''));
+  }
+  const cd=(n,c)=>c?`- **${n}:** ${[c.bg&&('background '+c.bg),c.fg&&('text '+c.fg),c.radius!=null&&(c.radius+'px radius'),c.padding&&(c.padding+' padding'),c.fontWeight&&('weight '+c.fontWeight)].filter(Boolean).join(', ')}`:null;
+  const comps=[cd('Button',C.button),cd('Card',C.card),cd('Input',C.input)].filter(Boolean);
+  if(comps.length){ L.push(''); L.push('## Components'); L.push(''); L.push(...comps); }
+  if((brief.contrast||[]).length){
+    L.push(''); L.push('## Contrast (measured, WCAG 2.x)'); L.push('');
+    brief.contrast.forEach(c=>L.push(`- ${c.label}: **${c.ratio}:1** — ${c.level}`));
+    const bad=brief.contrast.filter(c=>c.level==='Fail'||c.level==='AA-L');
+    if(bad.length) L.push('', '> Note: '+bad.map(c=>c.label.toLowerCase()).join(' and ')
+      +' fall short of AA for body text. Darken or enlarge rather than reproducing this as-is.');
+  }
+  L.push(''); L.push('## Rules'); L.push('');
+  L.push('- Use the tokens above by name. Do not introduce colours, radii or spacing steps that are not listed.');
+  L.push('- Keep body text at AA (4.5:1) or better against its background.');
+  L.push('- Every interactive element needs visible hover, focus-visible, active and disabled states.');
+  if(p.focus) L.push('- Focus rings use `--color-focus` and must never be removed without a replacement.');
+  if((brief.diagnostics||[]).length){
+    L.push(''); L.push('## Confidence'); L.push('');
+    L.push('These values were measured, but the extraction flagged:');
+    brief.diagnostics.forEach(d=>L.push('- '+d));
+  }
+  if(brief._pixels||brief._pixelFilled) L.push('', '> Part of this palette was sampled from the screenshot because the page could not be inspected directly; treat colours as close approximations.');
+  L.push('');
+  return L.join('\n');
+}
 function briefExport(kind){
   if(!brief) return '';
   const p=brief.palette||{}, ty=brief.typography||{}, tk=brief.tokens||{};
@@ -3049,6 +3128,7 @@ function briefExport(kind){
     +pal.map(([k,v])=>`      ${k}: '${v}',`).join('\n')+'\n    },\n'
     +(ty.body?`    fontFamily: { sans: ['${ty.body.family}'] },\n`:'')
     +(tk.radius?`    borderRadius: { DEFAULT: '${tk.radius}' },\n`:'')+'  } },\n};';
+  if(kind==='md') return briefMarkdown();
   // AI brief — the prompt you paste next to the screenshot
   const L=[];
   L.push(`Design brief — ${brief.host||'captured page'}`);
@@ -3056,9 +3136,16 @@ function briefExport(kind){
   L.push('', 'Palette:');
   pal.forEach(([k,v])=>L.push(`- ${k}: ${v}`));
   if(ty.heading||ty.body){ L.push('', 'Typography:');
-    if(ty.heading) L.push(`- headings: ${ty.heading.family} ${ty.heading.weight}, ${ty.heading.size}px`);
-    if(ty.body) L.push(`- body: ${ty.body.family} ${ty.body.weight}, ${ty.body.size}px`); }
+    const tf=(n,o)=>L.push(`- ${n}: ${o.family} ${o.weight}, ${o.size}px`
+      +(o.lineHeight?`, line-height ${o.lineHeight}`:'')+(o.letterSpacing?`, tracking ${o.letterSpacing}`:''));
+    if(ty.heading) tf('headings',ty.heading);
+    if(ty.body) tf('body',ty.body);
+    if((ty.scale||[]).length>1) L.push(`- type scale: ${ty.scale.join(', ')}`); }
   if(tk.radius) L.push('', `Corner radius: ${tk.radius}`);
+  if((tk.spacing||[]).length) L.push(`Spacing scale: ${tk.spacing.join(', ')}`);
+  if((tk.shadows||[]).length) L.push('', 'Shadows:', ...tk.shadows.map(s=>`- ${s}`));
+  if((tk.motion||[]).length) L.push('', `Transitions: ${tk.motion.join(', ')}`
+    +((tk.easing||[]).length?` with ${tk.easing[0]}`:''));
   const C=brief.components||{};
   const cd=(n,c)=>c?`- ${n}: ${[c.bg&&('bg '+c.bg),c.fg&&('text '+c.fg),c.radius!=null&&(c.radius+'px radius'),c.padding&&(c.padding+' padding')].filter(Boolean).join(', ')}`:null;
   const comps=[cd('button',C.button),cd('card',C.card),cd('input',C.input)].filter(Boolean);
