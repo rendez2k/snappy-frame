@@ -15,6 +15,8 @@ const DEFAULTS = {
   batchHotkey: 'CommandOrControl+Shift+5',         // collect several region grabs, hand them over together
   termHotkey: 'CommandOrControl+Shift+4',          // grab the focused terminal's whole scrollback as text
   shelfHotkey: 'CommandOrControl+Shift+S',         // show/hide the session shelf
+  barHotkey: 'CommandOrControl+Shift+Space',       // show/hide the floating capture bar
+  barTimer: 0,                                     // 0 | 3 | 5 | 10 seconds before the bar captures
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
@@ -37,7 +39,7 @@ function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recu
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
 
 let shelfWin = null;
-let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null;
+let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null, barWin = null;
 const pending = new Map();                         // webContents.id -> { img (nativeImage), w, h }
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
 const batch = [];
@@ -386,6 +388,61 @@ function toggleShelf(){
   else openShelf(false);
 }
 
+// ---- floating capture bar ------------------------------------------------
+// The modes only existed as hotkeys and tray items, so nothing about them was
+// visible. This is the macOS Cmd+Shift+5 shape: a pill of mode buttons, an
+// Options menu, and a Capture button.
+const BAR_W = 660, BAR_H = 72, BAR_POP = 300;      // popup height added when Options opens
+function barBounds(pop){
+  const cur = screen.getCursorScreenPoint();
+  const wa = (screen.getDisplayNearestPoint(cur) || screen.getPrimaryDisplay()).workArea;
+  return { x: Math.round(wa.x + (wa.width - BAR_W) / 2),
+           y: Math.round(wa.y + wa.height - BAR_H - 28) - (pop ? BAR_POP : 0),
+           width: BAR_W, height: BAR_H + (pop ? BAR_POP : 0) };
+}
+function openBar(){
+  if(barWin && !barWin.isDestroyed()){ barWin.setBounds(barBounds(false)); barWin.show(); barWin.focus(); return; }
+  barWin = new BrowserWindow({
+    ...barBounds(false),
+    frame:false, transparent:true, backgroundColor:'#00000000', resizable:false, movable:true,
+    alwaysOnTop:true, skipTaskbar:true, hasShadow:false, fullscreenable:false, show:false,
+    webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true },
+  });
+  barWin.setAlwaysOnTop(true, 'screen-saver');
+  barWin.loadFile('bar.html');
+  barWin.once('ready-to-show', () => { barWin.show(); barWin.focus(); });
+  barWin.on('closed', () => { barWin = null; });
+}
+function hideBar(){ if(barWin && !barWin.isDestroyed()) barWin.hide(); }
+function toggleBar(){
+  if(barWin && !barWin.isDestroyed() && barWin.isVisible()) hideBar();
+  else openBar();
+}
+ipcMain.on('bar:ready', (e) => e.sender.send('bar:state', settings));
+ipcMain.on('bar:close', () => hideBar());
+// Grow the window upward so the Options menu has somewhere to draw; a
+// permanently tall transparent window would swallow clicks meant for whatever
+// is underneath it.
+ipcMain.on('bar:popup', (e, open) => { if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds(!!open)); });
+ipcMain.on('bar:option', (e, patch) => {
+  Object.assign(settings, patch || {}); saveSettings(); refreshTrayMenu();
+  if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:state', settings);
+});
+ipcMain.on('bar:run', async (e, mode) => {
+  // The bar must be gone BEFORE the capture runs: any window under the cursor
+  // dismisses hover UI and menus, which is the whole v0.10.0 lesson. The timer
+  // is the deliberate way to catch a menu — open it while the clock runs.
+  if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds(false));
+  hideBar();
+  const wait = Math.max(0, (+settings.barTimer || 0) * 1000) + 140;
+  await new Promise(r => setTimeout(r, wait));
+  try{
+    if(mode === 'window') await captureActiveWindow();
+    else if(mode === 'terminal') await captureTerminalText();
+    else startCapture(mode === 'markup' || mode === 'batch' ? mode : 'normal');
+  }catch(err){ console.error('bar capture failed', err); }
+});
+
 ipcMain.on('shelf:ready', () => sendShelf());
 ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
 ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); });
@@ -426,6 +483,7 @@ function refreshTrayMenu(){
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
+    { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
@@ -457,7 +515,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch) registerHotkey();
   refreshTrayMenu();
   return settings;
 });
@@ -742,6 +800,10 @@ function registerHotkey(){
   if(settings.termHotkey){
     try{ globalShortcut.register(settings.termHotkey, () => captureTerminalText().catch(e => console.error(e))); }
     catch(e){ console.error('terminal hotkey failed', e); }
+  }
+  if(settings.barHotkey){
+    try{ globalShortcut.register(settings.barHotkey, () => toggleBar()); }
+    catch(e){ console.error('bar hotkey failed', e); }
   }
 }
 

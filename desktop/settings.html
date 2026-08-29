@@ -38,6 +38,8 @@
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
     <input type="text" id="batchHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Capture bar</b> — a floating bar with every mode as a button, an Options menu and a self-timer. Use it when you'd rather see the choices than remember a hotkey.</p>
+    <input type="text" id="barHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Session shelf</b> — a slim strip of this session's snaps you can drag straight into Claude Desktop, Slack or an editor.</p>
     <input type="text" id="shelfHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Terminal text</b> — grab the focused PowerShell / cmd / Windows Terminal window's <i>entire scrollback</i> as text and open it in Snappy Frame as a crisp code card.</p>
@@ -103,6 +105,7 @@
     $('batchHotkey').value = s.batchHotkey || '';
     $('termHotkey').value = s.termHotkey || '';
     $('shelfHotkey').value = s.shelfHotkey || '';
+    $('barHotkey').value = s.barHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -118,6 +121,7 @@
   $('batchHotkey').addEventListener('change', e => set({ batchHotkey: e.target.value.trim() }));
   $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
   $('shelfHotkey').addEventListener('change', e => set({ shelfHotkey: e.target.value.trim() }));
+  $('barHotkey').addEventListener('change', e => set({ barHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));

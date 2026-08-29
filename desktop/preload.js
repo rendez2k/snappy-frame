@@ -12,6 +12,13 @@ contextBridge.exposeInMainWorld('snap', {
   annotateDone: (payload) => ipcRenderer.send('annotator:done', payload),
   annotateCancel: () => ipcRenderer.send('annotator:cancel'),
   annotateReport: (msg) => ipcRenderer.send('annotator:report', msg),
+  // floating capture bar
+  barReady: () => ipcRenderer.send('bar:ready'),
+  barOnState: (cb) => ipcRenderer.on('bar:state', (e, s) => cb(s)),
+  barRun: (mode) => ipcRenderer.send('bar:run', mode),
+  barOption: (patch) => ipcRenderer.send('bar:option', patch),
+  barPopup: (open) => ipcRenderer.send('bar:popup', open),
+  barClose: () => ipcRenderer.send('bar:close'),
   // session shelf
   shelfReady: () => ipcRenderer.send('shelf:ready'),
   shelfOnUpdate: (cb) => ipcRenderer.on('shelf:update', (e, items) => cb(items)),

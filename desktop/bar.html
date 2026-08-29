@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#1b1e26;--line:#333a4a;--ink:#e9ebf2;--mut:#98a0b4;--acc:#6d5efc;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none;}
+  body{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;}
+
+  /* The pill itself */
+  #bar{display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--line);
+    border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:9px 10px;
+    -webkit-app-region:drag;}
+  #bar > *{-webkit-app-region:no-drag;}
+  .sep{width:1px;height:26px;background:var(--line);margin:0 4px;flex:none;}
+
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0;}
+  .mode{width:42px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    border:1px solid transparent;}
+  .mode:hover{background:#252a36;}
+  .mode.on{background:#2f2740;border-color:var(--acc);}
+  .mode svg{width:22px;height:22px;display:block;}
+  .x{width:26px;height:26px;border-radius:50%;background:#2b3040;color:var(--ink);font-size:12px;
+    display:flex;align-items:center;justify-content:center;margin-right:3px;}
+  .x:hover{background:#3a4056;}
+  #opts{padding:0 12px;height:38px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:6px;}
+  #opts:hover{background:#252a36;}
+  #go{padding:0 18px;height:38px;border-radius:10px;background:var(--acc);color:#fff;font-weight:650;
+    font-size:13.5px;margin-left:3px;}
+  #go:hover{filter:brightness(1.08);}
+  #label{font-size:11.5px;color:var(--mut);margin-top:7px;height:14px;letter-spacing:.01em;}
+
+  /* Options menu, drawn above the pill */
+  #menu{display:none;width:280px;background:var(--bg);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 18px 50px rgba(0,0,0,.55);padding:8px;margin-bottom:9px;}
+  #menu.open{display:block;}
+  .grp{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut);padding:8px 9px 4px;}
+  .item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:7px 9px;border-radius:8px;font-size:13px;}
+  .item:hover{background:#252a36;}
+  .tick{width:14px;flex:none;color:var(--acc);font-size:12px;}
+  .row{display:flex;gap:6px;padding:2px 9px 6px;}
+  .row button{flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 0;font-size:12px;color:var(--mut);}
+  .row button.on{border-color:var(--acc);color:var(--ink);background:#2f2740;}
+</style>
+</head>
+<body>
+  <div id="menu"></div>
+  <div id="bar">
+    <button class="x" id="close" title="Close (Esc)">✕</button>
+    <button class="mode" data-m="region" title="Capture a region — drag a rectangle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" stroke-dasharray="0 0"/>
+      </svg></button>
+    <button class="mode" data-m="window" title="Capture the window you were last using">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>
+      </svg></button>
+    <button class="mode" data-m="markup" title="Capture a region, then draw on it">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+      </svg></button>
+    <div class="sep"></div>
+    <button class="mode" data-m="terminal" title="Capture a terminal's whole scrollback as text, with keys masked">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>
+      </svg></button>
+    <button class="mode" data-m="batch" title="Add this grab to a batch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="8" y="3" width="13" height="13" rx="2"/><path d="M16 19v0a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h0"/>
+      </svg></button>
+    <div class="sep"></div>
+    <button id="opts">Options <span style="font-size:9px">▾</span></button>
+    <button id="go">Capture</button>
+  </div>
+  <div id="label"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const NAMES = { region:'Capture a region', window:'Capture the active window',
+                  markup:'Capture and mark up', terminal:'Capture terminal text', batch:'Add to batch' };
+  let mode = 'region', s = {};
+
+  window.snap.barOnState(v => { s = v || {}; paintMenu(); });
+  window.snap.barReady();
+
+  function setMode(m){
+    mode = m;
+    document.querySelectorAll('.mode').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+    $('label').textContent = NAMES[m] || '';
+  }
+  document.querySelectorAll('.mode').forEach(b => {
+    b.onclick = () => { setMode(b.dataset.m); closeMenu(); };
+    b.ondblclick = () => { setMode(b.dataset.m); go(); };
+  });
+  setMode('region');
+
+  function go(){ closeMenu(); window.snap.barRun(mode); }
+  $('go').onclick = go;
+  $('close').onclick = () => window.snap.barClose();
+
+  // --- Options menu ---
+  let open = false;
+  function closeMenu(){ if(!open) return; open = false; $('menu').classList.remove('open'); window.snap.barPopup(false); }
+  $('opts').onclick = () => {
+    open = !open;
+    // Ask the main process to grow the window FIRST, or the menu has no room to
+    // draw and gets clipped by the window edge.
+    window.snap.barPopup(open);
+    $('menu').classList.toggle('open', open);
+    if(open) paintMenu();
+  };
+
+  function paintMenu(){
+    const m = $('menu'); if(!m.classList.contains('open')) return;
+    const tick = on => '<span class="tick">' + (on ? '✓' : '') + '</span>';
+    const T = [0,3,5,10];
+    m.innerHTML =
+      '<div class="grp">After capture</div>' +
+      '<button class="item" data-set=\'{"defaultAction":"save"}\'>' + tick(s.defaultAction==='save') + 'Raw — no frame</button>' +
+      '<button class="item" data-set=\'{"defaultAction":"beautify"}\'>' + tick(s.defaultAction==='beautify') + 'Beautify in Snappy Frame</button>' +
+      '<div class="grp">Save to</div>' +
+      '<button class="item" data-tog="saveToFolder">' + tick(s.saveToFolder) + 'Folder</button>' +
+      '<button class="item" data-tog="copyToClipboard">' + tick(s.copyToClipboard) + 'Clipboard</button>' +
+      '<button class="item" data-tog="shelf">' + tick(s.shelf !== false) + 'Session shelf</button>' +
+      '<div class="grp">Timer</div>' +
+      '<div class="row">' + T.map(t =>
+        '<button data-timer="' + t + '" class="' + ((+s.barTimer||0)===t ? 'on' : '') + '">' +
+        (t ? t + 's' : 'None') + '</button>').join('') + '</div>';
+    m.querySelectorAll('[data-set]').forEach(b => b.onclick = () => window.snap.barOption(JSON.parse(b.dataset.set)));
+    m.querySelectorAll('[data-tog]').forEach(b => b.onclick = () => {
+      const k = b.dataset.tog; window.snap.barOption({ [k]: !(k === 'shelf' ? s.shelf !== false : s[k]) }); });
+    m.querySelectorAll('[data-timer]').forEach(b => b.onclick = () => window.snap.barOption({ barTimer: +b.dataset.timer }));
+  }
+
+  addEventListener('keydown', e => {
+    if(e.key === 'Escape'){ open ? closeMenu() : window.snap.barClose(); }
+    else if(e.key === 'Enter'){ go(); }
+    else if(e.key >= '1' && e.key <= '5'){
+      const b = document.querySelectorAll('.mode')[+e.key - 1]; if(b) setMode(b.dataset.m);
+    }
+  });
+})();
+</script>
+</body>
+</html>
