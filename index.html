@@ -612,7 +612,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
       <div class="empty" id="empty">
         <div class="box">
           <h2 id="emptyTitle">Drop a screenshot to begin</h2>
-          <p id="emptyHint">Drag &amp; drop an image, <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste a screenshot <em>or text</em>, upload, or capture your screen.</p>
+          <p id="emptyHint">Drag &amp; drop an image — or <b>several at once</b> to frame them together — <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste a screenshot <em>or text</em>, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
           <button class="btn" id="btnText2" style="margin-left:8px">📝 Text card</button>
           <div class="urlgrab grab-only">
@@ -657,6 +657,29 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         </div>
       </section>
       <!-- Presets -->
+      <!-- Batch -->
+      <section class="sec collapsed" data-sec="batch">
+        <button class="head"><span class="ico">🗂️</span> Multiple screenshots <span class="chev">▾</span></button>
+        <div class="body">
+          <p class="hint" style="margin-top:6px">Frame several screenshots at once — as separate images, or
+            composed together into one. You can also just drag several files onto the canvas.</p>
+          <button class="btn sm" id="btnBatchAdd" style="width:100%;justify-content:center;margin-top:10px">Add images…</button>
+          <div id="batchTray" style="display:none"></div>
+          <div class="field" style="margin-top:10px"><label>Layout <span class="val" id="multiVal">Separate</span></label>
+            <div class="seg" id="multiSeg">
+              <button data-v="off" class="on" title="One image per screenshot">Separate</button>
+              <button data-v="row" title="Side by side in one image">Row</button>
+              <button data-v="col" title="Stacked vertically in one image">Column</button>
+              <button data-v="grid" title="Tiled in one image">Grid</button>
+              <button data-v="stack" title="Overlapping cascade in one image">Stack</button>
+            </div></div>
+          <div class="field" id="multiGapField" style="display:none"><label>Gap <span class="val" id="multiGapVal">28px</span></label>
+            <input type="range" id="multiGap" min="0" max="120" value="28"></div>
+          <p class="hint" id="multiHint" style="display:none"></p>
+          <button class="btn primary" id="btnBatchExport" style="width:100%;justify-content:center;margin-top:4px" disabled>Export all (<span id="batchCount">0</span>) as zip</button>
+          <div class="progbar" style="display:none"><i id="bxProg"></i></div>
+        </div>
+      </section>
       <section class="sec" data-sec="presets">
         <button class="head"><span class="ico">✨</span> Presets <span class="chev">▾</span></button>
         <div class="body">
@@ -1029,28 +1052,6 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         </div>
       </section>
 
-      <!-- Batch -->
-      <section class="sec collapsed" data-sec="batch">
-        <button class="head"><span class="ico">🗂️</span> Batch <span class="chev">▾</span></button>
-        <div class="body">
-          <p class="hint" style="margin-top:6px">Apply this exact look to many screenshots at once.</p>
-          <button class="btn sm" id="btnBatchAdd" style="width:100%;justify-content:center;margin-top:10px">Add images…</button>
-          <div id="batchTray" style="display:none"></div>
-          <div class="field" style="margin-top:10px"><label>Layout <span class="val" id="multiVal">Separate</span></label>
-            <div class="seg" id="multiSeg">
-              <button data-v="off" class="on" title="One image per screenshot">Separate</button>
-              <button data-v="row" title="Side by side in one image">Row</button>
-              <button data-v="col" title="Stacked vertically in one image">Column</button>
-              <button data-v="grid" title="Tiled in one image">Grid</button>
-              <button data-v="stack" title="Overlapping cascade in one image">Stack</button>
-            </div></div>
-          <div class="field" id="multiGapField" style="display:none"><label>Gap <span class="val" id="multiGapVal">28px</span></label>
-            <input type="range" id="multiGap" min="0" max="120" value="28"></div>
-          <p class="hint" id="multiHint" style="display:none"></p>
-          <button class="btn primary" id="btnBatchExport" style="width:100%;justify-content:center;margin-top:4px" disabled>Export all (<span id="batchCount">0</span>) as zip</button>
-          <div class="progbar" style="display:none"><i id="bxProg"></i></div>
-        </div>
-      </section>
     </aside>
   </div>
 </div>
@@ -1256,7 +1257,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.15.0';
+const APP_VERSION='1.15.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2479,6 +2480,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.15.1', items:[
+    'The Batch panel is now “Multiple screenshots” and sits near the top of the sidebar — it was the last of 14 panels, and collapsed, so the new layouts were unfindable',
+    'Dropping several images on the canvas now frames them all; it used to keep the first and silently discard the rest',
+  ]},
   {v:'1.15.0', items:[
     'New: compose several screenshots into ONE image — Row, Column, Grid or a Stack cascade, in the 🗂️ Batch panel',
     'Every frame keeps the exact look you set: window bar, radius, border, shadow and device mockup',
@@ -2831,7 +2836,22 @@ $('installHelp').addEventListener('click',e=>{ if(e.target===$('installHelp')) $
 // drag & drop
 ;['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault(); wrap.classList.add('dragover');}));
 ;['dragleave','drop'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault(); if(ev!=='dragleave'||e.target===wrap) wrap.classList.remove('dragover');}));
-wrap.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+wrap.addEventListener('drop',e=>{
+  const fs=[...(e.dataTransfer.files||[])];
+  const imgs=fs.filter(f=>f.type.startsWith('image/'));
+  // Dropping several screenshots at once used to keep the first and silently
+  // bin the rest — which is exactly the gesture you'd reach for to frame a set.
+  if(imgs.length>1){ addBatchFiles(imgs); revealBatch(); return; }
+  const f=fs[0]; if(f) handleFile(f);
+});
+// Bring the Batch panel into view and open it — it lives at the bottom of a long
+// sidebar, so landing images in it silently looked like nothing had happened.
+function revealBatch(){
+  const s=document.querySelector('section[data-sec="batch"]');
+  if(!s) return;
+  s.classList.remove('collapsed');
+  try{ s.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){ s.scrollIntoView(); }
+}
 // paste
 window.addEventListener('paste',e=>{
   const items=e.clipboardData && e.clipboardData.items; if(!items) return;
