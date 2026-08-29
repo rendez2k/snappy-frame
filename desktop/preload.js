@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('snap', {
   // floating capture bar
   barReady: () => ipcRenderer.send('bar:ready'),
   barOnState: (cb) => ipcRenderer.on('bar:state', (e, s) => cb(s)),
+  barOnMode: (cb) => ipcRenderer.on('bar:mode', (e, m) => cb(m)),
   barRun: (mode) => ipcRenderer.send('bar:run', mode),
   barOption: (patch) => ipcRenderer.send('bar:option', patch),
   barPopup: (open) => ipcRenderer.send('bar:popup', open),

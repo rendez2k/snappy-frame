@@ -43,6 +43,7 @@
   .row{display:flex;gap:6px;padding:2px 9px 6px;}
   .row button{flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 0;font-size:12px;color:var(--mut);}
   .row button.on{border-color:var(--acc);color:var(--ink);background:#2f2740;}
+  .grp2{font-size:11px;color:var(--mut);padding:2px 9px 6px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -84,6 +85,9 @@
   let mode = 'region', s = {};
 
   window.snap.barOnState(v => { s = v || {}; paintMenu(); });
+  // Coming back after a grab, resume the mode you were using — resetting to
+  // region every time defeats the point of keeping it open.
+  window.snap.barOnMode(m => { if(m) setMode(m); });
   window.snap.barReady();
 
   function setMode(m){
@@ -128,10 +132,14 @@
       '<div class="grp">Timer</div>' +
       '<div class="row">' + T.map(t =>
         '<button data-timer="' + t + '" class="' + ((+s.barTimer||0)===t ? 'on' : '') + '">' +
-        (t ? t + 's' : 'None') + '</button>').join('') + '</div>';
+        (t ? t + 's' : 'None') + '</button>').join('') + '</div>' +
+      '<div class="grp">Bar</div>' +
+      '<button class="item" data-tog="barKeep">' + tick(s.barKeep) +
+        'Keep open after a capture</button>' +
+      '<div class="grp2">Add to batch always keeps it open.</div>';
     m.querySelectorAll('[data-set]').forEach(b => b.onclick = () => window.snap.barOption(JSON.parse(b.dataset.set)));
     m.querySelectorAll('[data-tog]').forEach(b => b.onclick = () => {
-      const k = b.dataset.tog; window.snap.barOption({ [k]: !(k === 'shelf' ? s.shelf !== false : s[k]) }); });
+      const k = b.dataset.tog; window.snap.barOption({ [k]: !(k === 'shelf' ? s.shelf !== false : !!s[k]) }); });
     m.querySelectorAll('[data-timer]').forEach(b => b.onclick = () => window.snap.barOption({ barTimer: +b.dataset.timer }));
   }
 

@@ -17,6 +17,7 @@ const DEFAULTS = {
   shelfHotkey: 'CommandOrControl+Shift+S',         // show/hide the session shelf
   barHotkey: 'CommandOrControl+Shift+Space',       // show/hide the floating capture bar
   barTimer: 0,                                     // 0 | 3 | 5 | 10 seconds before the bar captures
+  barKeep: false,                                  // bring the capture bar back after each grab
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
@@ -40,6 +41,7 @@ function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true
 
 let shelfWin = null;
 let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null, barWin = null;
+let barLaunched = false, barMode = 'region';       // was this grab started from the bar, and in which mode
 const pending = new Map();                         // webContents.id -> { img (nativeImage), w, h }
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
 const batch = [];
@@ -120,7 +122,7 @@ async function startCapture(mode){
   }catch(e){ console.error('startCapture failed', e); overlayBusy = false; }
 }
 
-ipcMain.on('overlay:cancel', (e) => { pending.delete(e.sender.id); hideOverlay(); });
+ipcMain.on('overlay:cancel', (e) => { pending.delete(e.sender.id); hideOverlay(); returnBar(); });
 ipcMain.on('overlay:commit', async (e, rect) => {
   hideOverlay();                                     // overlay vanishes the instant the drag ends
   const data = pending.get(e.sender.id);             // guaranteed set — the frame lands before the overlay is ever shown
@@ -133,9 +135,10 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   cx = Math.max(0, Math.min(cx, iw - 1)); cy = Math.max(0, Math.min(cy, ih - 1));
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
-  if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); return; }
-  if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }
+  if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); returnBar(); return; }
+  if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }   // returns when the editor closes
   await handleResult(crop);
+  returnBar();
   if(settings.warnSecrets !== false) warnIfSecretsOnScreen();   // async, never blocks the grab
 });
 
@@ -254,7 +257,7 @@ function openAnnotator(dataUrl){
 }
 
 ipcMain.handle('annotator:data', (e) => annPending.get(e.sender.id) || null);
-ipcMain.on('annotator:cancel', (e) => { const w = BrowserWindow.fromWebContents(e.sender); annPending.delete(e.sender.id); if(w) w.close(); });
+ipcMain.on('annotator:cancel', (e) => { const w = BrowserWindow.fromWebContents(e.sender); annPending.delete(e.sender.id); if(w) w.close(); returnBar(); });
 ipcMain.on('annotator:report', (e, msg) => {
   console.error('annotator report:', msg);
   try{ new Notification({ title:'Snappy Snap — Mark up', body: String(msg).slice(0, 200) }).show(); }catch(e2){}
@@ -267,8 +270,9 @@ ipcMain.on('annotator:done', async (e, payload) => {
   try{
     const img = payload.bytes ? nativeImage.createFromBuffer(Buffer.from(payload.bytes))
                               : nativeImage.createFromDataURL(payload.dataUrl);
-    if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); return; }
+    if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); returnBar(); return; }
     await handleResult(img, { markup: true, forceCopy: true });
+    returnBar();
   }catch(err){
     console.error('annotator done failed', err);
     try{ new Notification({ title:'Snappy Snap — Mark up', body:'Copy failed: ' + String(err && err.message || err).slice(0, 160) }).show(); }catch(e2){}
@@ -392,7 +396,7 @@ function toggleShelf(){
 // The modes only existed as hotkeys and tray items, so nothing about them was
 // visible. This is the macOS Cmd+Shift+5 shape: a pill of mode buttons, an
 // Options menu, and a Capture button.
-const BAR_W = 660, BAR_H = 72, BAR_POP = 300;      // popup height added when Options opens
+const BAR_W = 660, BAR_H = 72, BAR_POP = 360;      // popup height added when Options opens (menu measures ~344)
 function barBounds(pop){
   const cur = screen.getCursorScreenPoint();
   const wa = (screen.getDisplayNearestPoint(cur) || screen.getPrimaryDisplay()).workArea;
@@ -434,14 +438,32 @@ ipcMain.on('bar:run', async (e, mode) => {
   // is the deliberate way to catch a menu — open it while the clock runs.
   if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds(false));
   hideBar();
+  barLaunched = true; barMode = mode;
   const wait = Math.max(0, (+settings.barTimer || 0) * 1000) + 140;
   await new Promise(r => setTimeout(r, wait));
   try{
-    if(mode === 'window') await captureActiveWindow();
-    else if(mode === 'terminal') await captureTerminalText();
+    // window/terminal finish when they resolve; the marquee modes finish later,
+    // at commit/cancel, so those call returnBar() from their own end points.
+    if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
+    else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
     else startCapture(mode === 'markup' || mode === 'batch' ? mode : 'normal');
-  }catch(err){ console.error('bar capture failed', err); }
+  }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
 });
+// Dismissing after a grab is right for a one-off — it's what the platform tools
+// do, and you rarely want a bar sitting over the thing you just captured. It is
+// wrong for repeated work, so batch (whose whole point is collecting several)
+// always brings the bar back, and 'Keep bar open' does it for any mode.
+function returnBar(){
+  if(!barLaunched) return;
+  barLaunched = false;
+  if(!(barMode === 'batch' || settings.barKeep)) return;
+  // Let the save, notification and shelf settle before it reappears, or it
+  // pops up over its own toast.
+  setTimeout(() => {
+    openBar();
+    if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:mode', barMode);
+  }, 260);
+}
 
 ipcMain.on('shelf:ready', () => sendShelf());
 ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
