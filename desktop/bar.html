@@ -107,15 +107,34 @@
 
   // --- Options menu ---
   let open = false;
-  function closeMenu(){ if(!open) return; open = false; $('menu').classList.remove('open'); window.snap.barPopup(false); }
+  // Report the height the page actually needs. Guessing a constant clipped the
+  // top of the menu on machines whose fonts render it taller than mine did.
+  function reportSize(){
+    const px = el => { const r = el.getBoundingClientRect(); const c = getComputedStyle(el);
+      return r.height + parseFloat(c.marginTop || 0) + parseFloat(c.marginBottom || 0); };
+    const m = $('menu');
+    const h = px($('bar')) + px($('label')) + (m.classList.contains('open') ? px(m) : 0);
+    window.snap.barSize(Math.ceil(h) + 10);          // a little breathing room for shadow/rounding
+  }
+  function closeMenu(){
+    if(!open) return;
+    open = false; $('menu').classList.remove('open'); reportSize();
+  }
   $('opts').onclick = () => {
     open = !open;
-    // Ask the main process to grow the window FIRST, or the menu has no room to
-    // draw and gets clipped by the window edge.
-    window.snap.barPopup(open);
-    $('menu').classList.toggle('open', open);
-    if(open) paintMenu();
+    if(!open){ closeMenu(); return; }
+    const m = $('menu');
+    // Lay the menu out and measure it BEFORE it can be seen, so the window is
+    // already the right size by the time it appears — no clipped first frame.
+    m.classList.add('open'); m.style.visibility = 'hidden';
+    paintMenu();
+    requestAnimationFrame(() => {
+      reportSize();
+      requestAnimationFrame(() => { m.style.visibility = ''; });
+    });
   };
+  addEventListener('load', reportSize);
+  addEventListener('resize', () => { if(open) reportSize(); });
 
   function paintMenu(){
     const m = $('menu'); if(!m.classList.contains('open')) return;
@@ -141,6 +160,7 @@
     m.querySelectorAll('[data-tog]').forEach(b => b.onclick = () => {
       const k = b.dataset.tog; window.snap.barOption({ [k]: !(k === 'shelf' ? s.shelf !== false : !!s[k]) }); });
     m.querySelectorAll('[data-timer]').forEach(b => b.onclick = () => window.snap.barOption({ barTimer: +b.dataset.timer }));
+    if(open) requestAnimationFrame(reportSize);
   }
 
   addEventListener('keydown', e => {

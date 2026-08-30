@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('snap', {
   barOnMode: (cb) => ipcRenderer.on('bar:mode', (e, m) => cb(m)),
   barRun: (mode) => ipcRenderer.send('bar:run', mode),
   barOption: (patch) => ipcRenderer.send('bar:option', patch),
-  barPopup: (open) => ipcRenderer.send('bar:popup', open),
+  barSize: (px) => ipcRenderer.send('bar:size', px),
   barClose: () => ipcRenderer.send('bar:close'),
   // session shelf
   shelfReady: () => ipcRenderer.send('shelf:ready'),

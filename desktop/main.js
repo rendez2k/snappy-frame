@@ -396,18 +396,24 @@ function toggleShelf(){
 // The modes only existed as hotkeys and tray items, so nothing about them was
 // visible. This is the macOS Cmd+Shift+5 shape: a pill of mode buttons, an
 // Options menu, and a Capture button.
-const BAR_W = 660, BAR_H = 72, BAR_POP = 360;      // popup height added when Options opens (menu measures ~344)
-function barBounds(pop){
+// The window is sized from what the page ACTUALLY measures, not a constant:
+// a hardcoded height was measured against one machine's fonts and clipped the
+// top of the Options menu everywhere Segoe UI renders it taller.
+const BAR_W = 660, BAR_H_MIN = 84;
+let barH = BAR_H_MIN;                              // current content height, reported by the renderer
+function barBounds(){
   const cur = screen.getCursorScreenPoint();
   const wa = (screen.getDisplayNearestPoint(cur) || screen.getPrimaryDisplay()).workArea;
+  // Never taller than the work area, and never pushed off the top of it.
+  const h = Math.max(BAR_H_MIN, Math.min(barH, wa.height - 16));
   return { x: Math.round(wa.x + (wa.width - BAR_W) / 2),
-           y: Math.round(wa.y + wa.height - BAR_H - 28) - (pop ? BAR_POP : 0),
-           width: BAR_W, height: BAR_H + (pop ? BAR_POP : 0) };
+           y: Math.max(wa.y + 8, Math.round(wa.y + wa.height - h - 28)),
+           width: BAR_W, height: h };
 }
 function openBar(){
-  if(barWin && !barWin.isDestroyed()){ barWin.setBounds(barBounds(false)); barWin.show(); barWin.focus(); return; }
+  if(barWin && !barWin.isDestroyed()){ barWin.setBounds(barBounds()); barWin.show(); barWin.focus(); return; }
   barWin = new BrowserWindow({
-    ...barBounds(false),
+    ...barBounds(),
     frame:false, transparent:true, backgroundColor:'#00000000', resizable:false, movable:true,
     alwaysOnTop:true, skipTaskbar:true, hasShadow:false, fullscreenable:false, show:false,
     webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true },
@@ -424,10 +430,13 @@ function toggleBar(){
 }
 ipcMain.on('bar:ready', (e) => e.sender.send('bar:state', settings));
 ipcMain.on('bar:close', () => hideBar());
-// Grow the window upward so the Options menu has somewhere to draw; a
-// permanently tall transparent window would swallow clicks meant for whatever
-// is underneath it.
-ipcMain.on('bar:popup', (e, open) => { if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds(!!open)); });
+// The renderer measures itself and reports the height it needs; the window
+// grows upward to match and shrinks back when the menu closes. A permanently
+// tall transparent window would swallow clicks meant for whatever is beneath it.
+ipcMain.on('bar:size', (e, px) => {
+  barH = Math.max(BAR_H_MIN, Math.min(1200, Math.round(+px) || BAR_H_MIN));
+  if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds());
+});
 ipcMain.on('bar:option', (e, patch) => {
   Object.assign(settings, patch || {}); saveSettings(); refreshTrayMenu();
   if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:state', settings);
@@ -436,7 +445,8 @@ ipcMain.on('bar:run', async (e, mode) => {
   // The bar must be gone BEFORE the capture runs: any window under the cursor
   // dismisses hover UI and menus, which is the whole v0.10.0 lesson. The timer
   // is the deliberate way to catch a menu — open it while the clock runs.
-  if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds(false));
+  barH = BAR_H_MIN;
+  if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds());
   hideBar();
   barLaunched = true; barMode = mode;
   const wait = Math.max(0, (+settings.barTimer || 0) * 1000) + 140;
