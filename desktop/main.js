@@ -20,6 +20,7 @@ const DEFAULTS = {
   barKeep: false,                                  // bring the capture bar back after each grab
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
+  shelfPos: null,                                  // {x,y} the shelf was last dragged to
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
   warnSecrets: true,                               // warn if a snipped terminal held something key-shaped
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
@@ -369,6 +370,19 @@ function sendShelf(){
     shelfWin.webContents.send('shelf:update', shelf.map((s2, i) => ({ i, thumb: s2.thumb, name: s2.name })));
   }
 }
+// A saved position is only usable if a display still covers it — unplug the
+// monitor it was parked on and the restored window would be stranded off-screen
+// with no way to drag it back.
+function validShelfPos(W, H){
+  const p = settings.shelfPos;
+  if(!p || typeof p.x !== 'number' || typeof p.y !== 'number') return null;
+  const fits = screen.getAllDisplays().some(d => {
+    const a = d.workArea;
+    return p.x + W > a.x + 24 && p.x < a.x + a.width - 24 &&
+           p.y + 40 > a.y && p.y < a.y + a.height - 24;
+  });
+  return fits ? p : null;
+}
 function openShelf(quiet){
   if(shelfWin && !shelfWin.isDestroyed()){
     if(!shelfWin.isVisible()) quiet ? shelfWin.showInactive() : shelfWin.show();
@@ -376,14 +390,28 @@ function openShelf(quiet){
   }
   const wa = screen.getPrimaryDisplay().workArea;
   const W = 128, H = Math.min(560, wa.height - 80);
+  const pos = validShelfPos(W, H) || { x: wa.x + wa.width - W - 12, y: wa.y + 60 };
   shelfWin = new BrowserWindow({
-    x: wa.x + wa.width - W - 12, y: wa.y + 60, width: W, height: H,
+    x: pos.x, y: pos.y, width: W, height: H,
     frame: false, transparent: true, backgroundColor: '#00000000', resizable: false,
+    movable: true,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false, fullscreenable: false, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   });
   shelfWin.setAlwaysOnTop(true, 'floating');
   shelfWin.loadFile('shelf.html');
+  // Remember where it was put — including which monitor — so it doesn't snap
+  // back to the primary display on the next capture.
+  let posT = null;
+  shelfWin.on('moved', () => {
+    clearTimeout(posT);
+    posT = setTimeout(() => {
+      if(!shelfWin || shelfWin.isDestroyed()) return;
+      const b = shelfWin.getBounds();
+      settings.shelfPos = { x: b.x, y: b.y };
+      saveSettings();
+    }, 400);
+  });
   shelfWin.once('ready-to-show', () => { quiet ? shelfWin.showInactive() : shelfWin.show(); sendShelf(); });
   shelfWin.on('closed', () => { shelfWin = null; });
 }

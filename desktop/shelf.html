@@ -9,8 +9,15 @@
     font-family:-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none;}
   #card{height:100%;display:flex;flex-direction:column;background:var(--bg);border:1px solid var(--line);
     border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:8px;gap:7px;}
-  .top{display:flex;align-items:center;gap:5px;padding:0 2px;}
+  /* The header is the move handle. It must NOT be the whole card: a drag
+     region swallows mouse events, which would kill the thumbnails' own
+     dragstart — and that file drag-out is the point of the shelf. */
+  .top{display:flex;align-items:center;gap:5px;padding:2px;cursor:move;
+    -webkit-app-region:drag;}
+  .top .ico{-webkit-app-region:no-drag;}
   .top b{font-size:11.5px;flex:1;letter-spacing:.02em;}
+  .grip{display:flex;gap:2px;padding-right:3px;opacity:.5;}
+  .grip i{width:2px;height:2px;border-radius:50%;background:var(--ink);box-shadow:0 4px 0 var(--ink),0 8px 0 var(--ink);}
   .ico{width:20px;height:20px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
     border-radius:6px;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
   .ico:hover{border-color:#48506a;}
@@ -35,7 +42,8 @@
 </head>
 <body>
   <div id="card">
-    <div class="top">
+    <div class="top" title="Drag to move — including onto another monitor">
+      <span class="grip"><i></i><i></i></span>
       <b>Shelf</b>
       <button class="ico" id="clear" title="Clear the shelf">🗑</button>
       <button class="ico" id="hide" title="Hide (toggle with the shelf hotkey)">▸</button>

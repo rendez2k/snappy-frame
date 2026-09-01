@@ -9,7 +9,9 @@
     font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);user-select:none;-webkit-user-select:none;}
   #card{height:100%;background:var(--bg);border:1px solid var(--line);border-radius:14px;
     box-shadow:0 14px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;padding:12px;gap:10px;}
-  .top{display:flex;align-items:center;gap:8px;}
+  /* Header doubles as the move handle for this frameless window. */
+  .top{display:flex;align-items:center;gap:8px;cursor:move;-webkit-app-region:drag;}
+  .top .x{-webkit-app-region:no-drag;}
   .top h1{font-size:13.5px;margin:0;font-weight:700;flex:1;}
   .count{background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 9px;}
   .x{width:24px;height:24px;border:1px solid var(--line);background:#2b3040;color:var(--ink);border-radius:7px;
@@ -29,7 +31,7 @@
 </head>
 <body>
   <div id="card">
-    <div class="top">
+    <div class="top" title="Drag to move">
       <h1>Batch</h1><span class="count" id="count">0</span>
       <button class="x" id="clear" title="Discard batch">✕</button>
     </div>
