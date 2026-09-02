@@ -15,12 +15,20 @@
   .top{display:flex;align-items:center;gap:5px;padding:2px;cursor:move;
     -webkit-app-region:drag;}
   .top .ico{-webkit-app-region:no-drag;}
-  .top b{font-size:11.5px;flex:1;letter-spacing:.02em;}
+  .top b{font-size:10.5px;flex:1;min-width:0;letter-spacing:.02em;overflow:hidden;white-space:nowrap;}
+  /* At the smallest width the controls need the whole header — a clipped
+     "Sh" colliding with the buttons reads as broken. The grip still says
+     the header is the handle. */
+  @media (max-width:170px){ .top b{display:none;} }
+  .top.locked{-webkit-app-region:none;cursor:default;}
+  .top.locked .grip{opacity:.18;}
   .grip{display:flex;gap:2px;padding-right:3px;opacity:.5;}
   .grip i{width:2px;height:2px;border-radius:50%;background:var(--ink);box-shadow:0 4px 0 var(--ink),0 8px 0 var(--ink);}
-  .ico{width:20px;height:20px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
-    border-radius:6px;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}
+  .ico{width:18px;height:18px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
+    border-radius:6px;cursor:pointer;font-size:9.5px;line-height:1;display:flex;align-items:center;justify-content:center;
+    padding:0;flex:none;font-weight:600;}
   .ico:hover{border-color:#48506a;}
+  .ico.on{border-color:var(--acc);color:#fff;background:#2f2740;}
   #list{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:7px;padding:2px;}
   #list::-webkit-scrollbar{width:0;}
   .snap{position:relative;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:#0f1219;
@@ -45,6 +53,8 @@
     <div class="top" title="Drag to move — including onto another monitor">
       <span class="grip"><i></i><i></i></span>
       <b>Shelf</b>
+      <button class="ico" id="size" title="Thumbnail size — click to cycle">S</button>
+      <button class="ico" id="lock" title="Lock the shelf in place">🔓</button>
       <button class="ico" id="clear" title="Clear the shelf">🗑</button>
       <button class="ico" id="hide" title="Hide (toggle with the shelf hotkey)">▸</button>
     </div>
@@ -58,6 +68,24 @@
   let items = [];
 
   window.snap.shelfOnUpdate(list => { items = list || []; paint(); });
+
+  const SIZES = ['sm','md','lg'], SIZE_LABEL = { sm:'S', md:'M', lg:'L' };
+  let size = 'sm', locked = false;
+  window.snap.shelfOnState(st => {
+    size = (st && st.size) || 'sm';
+    locked = !!(st && st.locked);
+    $('size').textContent = SIZE_LABEL[size] || 'S';
+    $('lock').textContent = locked ? '🔒' : '🔓';
+    $('lock').classList.toggle('on', locked);
+    $('lock').title = locked ? 'Unlock — let the shelf be dragged' : 'Lock the shelf in place';
+    document.querySelector('.top').classList.toggle('locked', locked);
+    document.querySelector('.top').title = locked
+      ? 'Locked in place — click the padlock to move it again'
+      : 'Drag to move — including onto another monitor';
+  });
+  $('size').onclick = () => window.snap.shelfSize(SIZES[(SIZES.indexOf(size) + 1) % SIZES.length]);
+  $('lock').onclick = () => window.snap.shelfLock(!locked);
+
   window.snap.shelfReady();
 
   function paint(){

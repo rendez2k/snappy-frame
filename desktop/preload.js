@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('snap', {
   // session shelf
   shelfReady: () => ipcRenderer.send('shelf:ready'),
   shelfOnUpdate: (cb) => ipcRenderer.on('shelf:update', (e, items) => cb(items)),
+  shelfOnState: (cb) => ipcRenderer.on('shelf:state', (e, st) => cb(st)),
+  shelfSize: (size) => ipcRenderer.send('shelf:size', size),
+  shelfLock: (on) => ipcRenderer.send('shelf:lock', on),
   shelfDrag: (i) => ipcRenderer.send('shelf:drag', i),
   shelfCopy: (i) => ipcRenderer.send('shelf:copy', i),
   shelfRemove: (i) => ipcRenderer.send('shelf:remove', i),

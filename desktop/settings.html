@@ -74,6 +74,10 @@
       any app that accepts a dropped file — no saving, locating and attaching.</p>
     <label class="sw" style="margin-top:8px"><input type="checkbox" id="shelf"> Keep a session shelf</label>
     <label class="sw"><input type="checkbox" id="shelfAutoShow"> Show it automatically on each capture</label>
+    <label class="sw"><input type="checkbox" id="shelfLock"> Lock it in place <span style="color:var(--mut)">(stops it being dragged)</span></label>
+    <p style="margin-top:8px">Drag the shelf by its header to move it — including onto another
+      monitor. The <b>S / M / L</b> button on the header makes the thumbnails bigger when several
+      snaps look alike.</p>
   </div>
 
   <div class="row">
@@ -107,7 +111,7 @@
     $('shelfHotkey').value = s.shelfHotkey || '';
     $('barHotkey').value = s.barHotkey || '';
     $('folder').textContent = s.saveFolder;
-    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow'].forEach(k => $(k).checked = !!s[k]);
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
@@ -124,7 +128,7 @@
   $('barHotkey').addEventListener('change', e => set({ barHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
-  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
   $('open').onclick = () => window.snap.openFolder();

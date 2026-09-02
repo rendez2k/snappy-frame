@@ -21,6 +21,8 @@ const DEFAULTS = {
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   shelfPos: null,                                  // {x,y} the shelf was last dragged to
+  shelfSize: 'sm',                                 // 'sm' | 'md' | 'lg' thumbnail size
+  shelfLock: false,                                // pin it in place so it can't be dragged
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
   warnSecrets: true,                               // warn if a snipped terminal held something key-shaped
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
@@ -359,7 +361,9 @@ ipcMain.on('batch:action', async (e, msg) => {
 // dropped file — with no save-locate-attach detour.
 function addToShelf(file, image){
   let thumb = '';
-  try{ thumb = image.resize({ height: 96, quality: 'good' }).toDataURL(); }catch(e){}
+  // Stored big enough for the largest shelf size — resizing UP a 96px thumb
+  // just gave a blurry one, which defeats the point of making them larger.
+  try{ thumb = image.resize({ height: 168, quality: 'good' }).toDataURL(); }catch(e){}
   shelf.unshift({ file, thumb, name: path.basename(file) });
   if(shelf.length > 40) shelf.length = 40;
   if(settings.shelfAutoShow !== false) openShelf(true);
@@ -369,6 +373,21 @@ function sendShelf(){
   if(shelfWin && !shelfWin.isDestroyed()){
     shelfWin.webContents.send('shelf:update', shelf.map((s2, i) => ({ i, thumb: s2.thumb, name: s2.name })));
   }
+}
+const SHELF_W = { sm: 140, md: 200, lg: 272 };
+function shelfWidth(){ return SHELF_W[settings.shelfSize] || SHELF_W.sm; }
+function sendShelfState(){
+  if(shelfWin && !shelfWin.isDestroyed()){
+    shelfWin.webContents.send('shelf:state', { size: settings.shelfSize || 'sm', locked: !!settings.shelfLock });
+  }
+}
+function applyShelfLock(){
+  // Belt and braces: the CSS drag region is what the user grabs, but
+  // setMovable(false) also blocks any OS-level move.
+  if(shelfWin && !shelfWin.isDestroyed()){
+    try{ shelfWin.setMovable(!settings.shelfLock); }catch(e){}
+  }
+  sendShelfState();
 }
 // A saved position is only usable if a display still covers it — unplug the
 // monitor it was parked on and the restored window would be stranded off-screen
@@ -389,7 +408,7 @@ function openShelf(quiet){
     return;
   }
   const wa = screen.getPrimaryDisplay().workArea;
-  const W = 128, H = Math.min(560, wa.height - 80);
+  const W = shelfWidth(), H = Math.min(560, wa.height - 80);
   const pos = validShelfPos(W, H) || { x: wa.x + wa.width - W - 12, y: wa.y + 60 };
   shelfWin = new BrowserWindow({
     x: pos.x, y: pos.y, width: W, height: H,
@@ -399,6 +418,7 @@ function openShelf(quiet){
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   });
   shelfWin.setAlwaysOnTop(true, 'floating');
+  try{ shelfWin.setMovable(!settings.shelfLock); }catch(e){}
   shelfWin.loadFile('shelf.html');
   // Remember where it was put — including which monitor — so it doesn't snap
   // back to the primary display on the next capture.
@@ -412,7 +432,7 @@ function openShelf(quiet){
       saveSettings();
     }, 400);
   });
-  shelfWin.once('ready-to-show', () => { quiet ? shelfWin.showInactive() : shelfWin.show(); sendShelf(); });
+  shelfWin.once('ready-to-show', () => { quiet ? shelfWin.showInactive() : shelfWin.show(); sendShelf(); sendShelfState(); });
   shelfWin.on('closed', () => { shelfWin = null; });
 }
 function toggleShelf(){
@@ -503,7 +523,25 @@ function returnBar(){
   }, 260);
 }
 
-ipcMain.on('shelf:ready', () => sendShelf());
+ipcMain.on('shelf:ready', () => { sendShelf(); sendShelfState(); });
+ipcMain.on('shelf:size', (e, size) => {
+  if(!SHELF_W[size]) return;
+  settings.shelfSize = size; saveSettings();
+  if(shelfWin && !shelfWin.isDestroyed()){
+    const b = shelfWin.getBounds(), W = shelfWidth();
+    const wa = (screen.getDisplayNearestPoint({ x: b.x, y: b.y }) || screen.getPrimaryDisplay()).workArea;
+    // Growing a shelf parked against the right edge would push it off
+    // screen, so pull it back inside the display it is actually on.
+    const x = Math.max(wa.x + 4, Math.min(b.x, wa.x + wa.width - W - 4));
+    const locked = !!settings.shelfLock;
+    if(locked){ try{ shelfWin.setMovable(true); }catch(e2){} }   // setBounds is a move
+    shelfWin.setBounds({ x, y: b.y, width: W, height: b.height });
+    if(locked){ try{ shelfWin.setMovable(false); }catch(e2){} }
+    settings.shelfPos = { x, y: b.y }; saveSettings();
+  }
+  sendShelfState();
+});
+ipcMain.on('shelf:lock', (e, on) => { settings.shelfLock = !!on; saveSettings(); applyShelfLock(); });
 ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
 ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); });
 ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); });
@@ -576,6 +614,7 @@ ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
   if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch) registerHotkey();
+  if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   refreshTrayMenu();
   return settings;
 });
