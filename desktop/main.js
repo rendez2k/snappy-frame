@@ -666,6 +666,14 @@ ipcMain.on('shelf:copy', (e, i) => {
   try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
 });
 ipcMain.on('shelf:reveal', (e, i) => { const it = shelf[i]; if(it) shell.showItemInFolder(it.file); });
+// Put a shot from history back on screen as a floating reference.
+ipcMain.on('shelf:pin', (e, i) => {
+  const it = shelf[i]; if(!it) return;
+  try{
+    const im = nativeImage.createFromPath(it.file);
+    if(!im.isEmpty()) openPin(im);
+  }catch(e2){ console.error('pin from shelf failed', e2); }
+});
 // The actual drag-out. Must run from the dragstart the renderer reports.
 ipcMain.on('shelf:drag', (e, i) => {
   const items = (i === 'all') ? shelf : (shelf[i] ? [shelf[i]] : []);

@@ -44,7 +44,9 @@
   .snap:hover .x{display:flex;}
   .snap .c{position:absolute;left:3px;bottom:3px;border:0;border-radius:5px;padding:2px 5px;font-size:9.5px;
     font-weight:600;background:rgba(10,12,18,.82);color:#fff;cursor:pointer;display:none;}
-  .snap:hover .c{display:block;}
+  .snap .pn{position:absolute;right:3px;bottom:3px;border:0;border-radius:5px;padding:2px 5px;font-size:9.5px;
+    font-weight:600;background:rgba(10,12,18,.82);color:#fff;cursor:pointer;display:none;}
+  .snap:hover .c,.snap:hover .pn{display:block;}
   #empty{color:var(--mut);font-size:10.5px;text-align:center;padding:14px 6px;line-height:1.5;margin:auto;}
   .all{width:100%;border:1px dashed var(--line);background:#20242f;color:var(--ink);border-radius:9px;
     padding:7px 4px;font:600 10.5px/1.2 inherit;cursor:grab;text-align:center;}
@@ -109,13 +111,15 @@
       x.onclick = e => { e.stopPropagation(); window.snap.shelfRemove(it.i); };
       const c = document.createElement('button'); c.className = 'c'; c.textContent = 'copy'; c.title = 'Copy to clipboard';
       c.onclick = e => { e.stopPropagation(); window.snap.shelfCopy(it.i); };
+      const pn = document.createElement('button'); pn.className = 'pn'; pn.textContent = 'pin'; pn.title = 'Float this on top as a reference';
+      pn.onclick = e => { e.stopPropagation(); window.snap.shelfPin(it.i); };
       // The native drag-out: preventDefault and let the main process take over
       // with the real file, so the drop target receives a FILE, not a bitmap.
       d.addEventListener('dragstart', e => { e.preventDefault(); window.snap.shelfDrag(it.i); });
       d.addEventListener('dblclick', () => window.snap.shelfReveal(it.i));
       // Middle-click removes, as it does on a browser tab.
       d.addEventListener('auxclick', e => { if(e.button === 1){ e.preventDefault(); window.snap.shelfRemove(it.i); } });
-      d.appendChild(x); d.appendChild(c);
+      d.appendChild(x); d.appendChild(c); d.appendChild(pn);
       L.appendChild(d);
     });
   }

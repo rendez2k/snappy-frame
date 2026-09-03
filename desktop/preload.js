@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('snap', {
   shelfCopy: (i) => ipcRenderer.send('shelf:copy', i),
   shelfRemove: (i) => ipcRenderer.send('shelf:remove', i),
   shelfReveal: (i) => ipcRenderer.send('shelf:reveal', i),
+  shelfPin: (i) => ipcRenderer.send('shelf:pin', i),
   shelfClear: () => ipcRenderer.send('shelf:clear'),
   shelfHide: () => ipcRenderer.send('shelf:hide'),
   // batch collector
