@@ -20,6 +20,7 @@ const DEFAULTS = {
   barKeep: false,                                  // bring the capture bar back after each grab
   ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
   pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
+  hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   shelfPos: null,                                  // {x,y} the shelf was last dragged to
@@ -74,10 +75,30 @@ function ensureOverlay(){
 }
 function hideOverlay(){
   overlayBusy = false;
+  restoreOwnWindows();
   if(overlayWin && !overlayWin.isDestroyed()){
     overlayWin.webContents.send('overlay:clear');    // wipe the frozen shot while hidden, so it can never flash on the next grab
     overlayWin.hide();
   }
+}
+
+// Our own floating windows sit ON TOP of everything, so the shelf, the batch
+// HUD and any pins were being captured INTO the next grab — a pinned reference
+// baked into the screenshot you take next is never what you wanted. Hide them
+// before the frame is taken and put them back when the grab is over. Hiding is
+// hover-safe; it is SHOWING a window that dismisses tooltips and menus.
+let stashed = [];
+async function hideOwnWindows(){
+  if(settings.hideOwn === false) return;
+  const wins = [shelfWin, batchWin, ...[...pins.values()].map(p => p.win)];
+  stashed = wins.filter(w => w && !w.isDestroyed() && w.isVisible());
+  if(!stashed.length) return;                       // nothing on screen — don't pay the delay
+  stashed.forEach(w => { try{ w.hide(); }catch(e){} });
+  await new Promise(r => setTimeout(r, 110));       // let the compositor repaint without them
+}
+function restoreOwnWindows(){
+  const list = stashed; stashed = [];
+  list.forEach(w => { try{ if(!w.isDestroyed()) w.showInactive(); }catch(e){} });
 }
 
 let grabSeq = 0;
@@ -101,6 +122,7 @@ async function startCapture(mode){
     // may be shown until the frame is safely in hand. This puts the capture
     // latency back on the critical path (~100–300ms before the marquee shows),
     // which is the accepted trade for hover-safe grabs.
+    await hideOwnWindows();
     const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
     if(seq !== grabSeq){ return; }
     const displays = screen.getAllDisplays();
@@ -389,10 +411,13 @@ function openPin(image){
   win.setAlwaysOnTop(true, 'floating');
   win.loadFile('pin.html');
   win.once('ready-to-show', () => win.show());
-  win.on('closed', () => { for(const [k, v] of pins) if(v.win === win) pins.delete(k); });
+  win.on('closed', () => { for(const [k, v] of pins) if(v.win === win) pins.delete(k); refreshTrayMenu(); });
   pins.set(win.webContents.id, { win, image, pct, w: size.width, h: size.height });
+  refreshTrayMenu();
 }
 function pinOf(e){ return pins.get(e.sender.id); }
+// Pins accumulate — CleanShot learned to add this too.
+function closeAllPins(){ for(const p of [...pins.values()]) { try{ if(!p.win.isDestroyed()) p.win.close(); }catch(e){} } }
 ipcMain.on('pin:ready', (e) => {
   const p = pinOf(e); if(!p) return;
   e.sender.send('pin:data', { dataUrl: p.image.toDataURL(), w: p.w, h: p.h, pct: p.pct });
@@ -673,6 +698,7 @@ function refreshTrayMenu(){
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
+    ...(pins.size ? [{ label: 'Close all pins (' + pins.size + ')', click: () => { closeAllPins(); refreshTrayMenu(); } }] : []),
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
@@ -884,15 +910,19 @@ async function captureActiveWindow(){
     if(r && r.ok && r.text && r.text.trim()){ await deliverTerminalText(r); return; }
   }
   let sources;
+  // Same reason as the marquee path: a pin or the shelf overlapping the target
+  // window can end up composited into its thumbnail.
+  await hideOwnWindows();
   try{ sources = await desktopCapturer.getSources({ types:['window'], thumbnailSize:{ width:3840, height:2160 } }); }
-  catch(e){ console.error('window sources failed', e); return; }
+  catch(e){ console.error('window sources failed', e); restoreOwnWindows(); return; }
   const mine = ['Snappy Snap', 'Snappy Snap — Settings', 'Snappy Frame'];
   let src = (title && sources.find(s => s.name === title))
     || (title && sources.find(s => s.name && (s.name.includes(title) || title.includes(s.name))))
     || sources.find(s => s.name && !mine.includes(s.name));
-  if(!src){ try{ new Notification({ title:'Snappy Snap', body:'Couldn’t find the active window' }).show(); }catch(e){} return; }
+  if(!src){ restoreOwnWindows(); try{ new Notification({ title:'Snappy Snap', body:'Couldn’t find the active window' }).show(); }catch(e){} return; }
   const img = src.thumbnail;
-  if(!img || img.isEmpty()){ try{ new Notification({ title:'Snappy Snap', body:'That window can’t be captured — try the marquee (Ctrl+Shift+1)' }).show(); }catch(e){} return; }
+  if(!img || img.isEmpty()){ restoreOwnWindows(); try{ new Notification({ title:'Snappy Snap', body:'That window can’t be captured — try the marquee (Ctrl+Shift+1)' }).show(); }catch(e){} return; }
+  restoreOwnWindows();                                // frame is taken; put them back
   await handleResult(img, { appName: appName || src.name });
 }
 
