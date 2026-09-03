@@ -35,6 +35,9 @@
     cursor:grab;line-height:0;flex:none;}
   .snap:active{cursor:grabbing;}
   .snap img{width:100%;display:block;pointer-events:none;}
+  .snap.new{border-color:var(--acc);}
+  .snap.new::after{content:'';position:absolute;top:4px;left:4px;width:6px;height:6px;border-radius:50%;
+    background:var(--acc);box-shadow:0 0 0 2px rgba(10,12,18,.75);}
   .snap .x{position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;border:0;
     background:rgba(10,12,18,.82);color:#fff;font-size:10px;line-height:1;cursor:pointer;display:none;
     align-items:center;justify-content:center;padding:0;}
@@ -98,7 +101,8 @@
     L.innerHTML = '';
     items.forEach(it => {
       const d = document.createElement('div');
-      d.className = 'snap'; d.draggable = true; d.title = it.name + ' — drag into Claude, or double-click to open the folder';
+      d.className = 'snap' + (it.i === 0 ? ' new' : '');   // newest first — mark it
+      d.draggable = true; d.title = it.name + ' — drag into Claude, or double-click to open the folder';
       d.innerHTML = '<img alt="">';
       d.querySelector('img').src = it.thumb;
       const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = 'Remove from shelf';
@@ -109,6 +113,8 @@
       // with the real file, so the drop target receives a FILE, not a bitmap.
       d.addEventListener('dragstart', e => { e.preventDefault(); window.snap.shelfDrag(it.i); });
       d.addEventListener('dblclick', () => window.snap.shelfReveal(it.i));
+      // Middle-click removes, as it does on a browser tab.
+      d.addEventListener('auxclick', e => { if(e.button === 1){ e.preventDefault(); window.snap.shelfRemove(it.i); } });
       d.appendChild(x); d.appendChild(c);
       L.appendChild(d);
     });

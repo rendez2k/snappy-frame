@@ -18,6 +18,7 @@ const DEFAULTS = {
   barHotkey: 'CommandOrControl+Shift+Space',       // show/hide the floating capture bar
   barTimer: 0,                                     // 0 | 3 | 5 | 10 seconds before the bar captures
   barKeep: false,                                  // bring the capture bar back after each grab
+  ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   shelfPos: null,                                  // {x,y} the shelf was last dragged to
@@ -49,7 +50,7 @@ const pending = new Map();                         // webContents.id -> { img (n
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
 const batch = [];
 const shelf = [];                                  // this session's snaps: { file, thumb, name }                                  // collected region grabs (full-res dataURLs) awaiting hand-off
-let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' — what to do after the marquee
+let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' | 'ocr' — what to do after the marquee
 
 // ---- capture flow --------------------------------------------------------
 // The marquee overlay is built once and kept hidden between grabs, so a
@@ -84,7 +85,7 @@ async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
   const seq = ++grabSeq;
-  captureMode = (mode === 'markup' || mode === 'batch') ? mode : 'normal';
+  captureMode = (mode === 'markup' || mode === 'batch' || mode === 'ocr') ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
@@ -138,6 +139,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   cx = Math.max(0, Math.min(cx, iw - 1)); cy = Math.max(0, Math.min(cy, ih - 1));
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
+  if(captureMode === 'ocr'){ await deliverOcr(crop); returnBar(); return; }
   if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); returnBar(); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }   // returns when the editor closes
   await handleResult(crop);
@@ -504,7 +506,7 @@ ipcMain.on('bar:run', async (e, mode) => {
     // at commit/cancel, so those call returnBar() from their own end points.
     if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
     else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
-    else startCapture(mode === 'markup' || mode === 'batch' ? mode : 'normal');
+    else startCapture(['markup','batch','ocr'].includes(mode) ? mode : 'normal');
   }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
 });
 // Dismissing after a grab is right for a one-off — it's what the platform tools
@@ -580,6 +582,7 @@ function refreshTrayMenu(){
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
+    { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
@@ -613,7 +616,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   refreshTrayMenu();
   return settings;
@@ -686,6 +689,81 @@ const SECRET_RE = [
   /\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*\S{4,}/,
 ];
 const hasSecrets = (t) => !!t && SECRET_RE.some(re => re.test(t));
+// Same rules, used to REMOVE the secret rather than just warn about it — text
+// on the clipboard is one paste away from a chat window.
+function maskSecrets(t){
+  let out = String(t || ''), n = 0;
+  for(const re of SECRET_RE){
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    out = out.replace(g, (m) => { n++; return m.length > 12 ? m.slice(0, 4) + '…[redacted]…' : '[redacted]'; });
+  }
+  return { text: out, masked: n };
+}
+
+// ---- OCR: pull the TEXT out of a grab ------------------------------------
+// Windows ships an OCR engine (Windows.Media.Ocr); Windows PowerShell 5.1 can
+// reach it through the WinRT projection, which is the same one-shot shape the
+// terminal capture already uses. Text beats a picture of text for anything you
+// are going to paste into a chat: it is searchable, diffable, costs less, and
+// can have its secrets stripped — a screenshot cannot.
+function ocrImage(image){
+  return new Promise((resolve, reject) => {
+    let tmp = '';
+    try{
+      const dir = path.join(app.getPath('temp'), 'snappy-ocr');
+      fs.mkdirSync(dir, { recursive: true });
+      tmp = path.join(dir, 'ocr-' + Date.now() + '.png');
+      fs.writeFileSync(tmp, image.toPNG());
+    }catch(e){ return reject(e); }
+    const q = tmp.replace(/'/g, "''");
+    const ps = [
+      "$ErrorActionPreference='Stop'",
+      "Add-Type -AssemblyName System.Runtime.WindowsRuntime",
+      "$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } | Select-Object -First 1",
+      "function Await($op,$t){ $x=$asTask.MakeGenericMethod($t).Invoke($null,@($op)); $x.Wait(-1)|Out-Null; $x.Result }",
+      "[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]|Out-Null",
+      "[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics,ContentType=WindowsRuntime]|Out-Null",
+      "[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]|Out-Null",
+      "$eng=[Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()",
+      "if(-not $eng){ throw 'Windows has no OCR language pack for your display language.' }",
+      "$f=Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync('" + q + "')) ([Windows.Storage.StorageFile])",
+      "$st=Await ($f.OpenAsync(0)) ([Windows.Storage.Streams.IRandomAccessStream])",
+      "$dec=Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($st)) ([Windows.Graphics.Imaging.BitmapDecoder])",
+      "$bmp=Await ($dec.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])",
+      "$res=Await ($eng.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])",
+      // Lines, not .Text — joining the lines ourselves keeps the layout readable.
+      "($res.Lines | ForEach-Object { $_.Text }) -join \"`n\"",
+    ].join('; ');
+    const b64 = Buffer.from(ps, 'utf16le').toString('base64');
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', b64],
+      { maxBuffer: 8 * 1024 * 1024, windowsHide: true, timeout: 25000 },
+      (err, stdout, stderr) => {
+        try{ fs.unlinkSync(tmp); }catch(e2){}
+        if(err) return reject(new Error(String(stderr || err.message || 'OCR failed').trim().slice(0, 300)));
+        resolve(String(stdout || '').replace(/\r/g, '').trim());
+      });
+  });
+}
+async function deliverOcr(image){
+  try{
+    const raw = await ocrImage(image);
+    if(!raw){
+      new Notification({ title:'Snappy Snap — Copy text', body:'No text was found in that selection.' }).show();
+      return;
+    }
+    const { text, masked } = settings.warnSecrets !== false ? maskSecrets(raw) : { text: raw, masked: 0 };
+    clipboard.writeText(text);
+    const lines = text.split('\n').length;
+    new Notification({
+      title: 'Snappy Snap — Text copied',
+      body: lines + (lines === 1 ? ' line' : ' lines') + ' on the clipboard' +
+            (masked ? ' · ' + masked + ' secret' + (masked === 1 ? '' : 's') + ' redacted' : ''),
+    }).show();
+  }catch(e){
+    console.error('ocr failed', e);
+    try{ new Notification({ title:'Snappy Snap — Copy text failed', body:String(e && e.message || e).slice(0, 200) }).show(); }catch(e2){}
+  }
+}
 const isTerminalApp = (a) => /powershell|pwsh|cmd|conhost|windowsterminal|wt|terminal/i.test(a || '');
 
 // Fired AFTER an image grab (never blocks it): if the shot was of a terminal
@@ -903,6 +981,10 @@ function registerHotkey(){
   if(settings.barHotkey){
     try{ globalShortcut.register(settings.barHotkey, () => toggleBar()); }
     catch(e){ console.error('bar hotkey failed', e); }
+  }
+  if(settings.ocrHotkey){
+    try{ globalShortcut.register(settings.ocrHotkey, () => startCapture('ocr')); }
+    catch(e){ console.error('ocr hotkey failed', e); }
   }
 }
 

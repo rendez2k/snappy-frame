@@ -42,6 +42,8 @@
     <input type="text" id="barHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Session shelf</b> — a slim strip of this session's snaps you can drag straight into Claude Desktop, Slack or an editor.</p>
     <input type="text" id="shelfHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Copy text</b> — drag a rectangle over anything on screen and its <i>text</i> lands on the clipboard instead of a picture, with API keys redacted. Uses the OCR engine built into Windows.</p>
+    <input type="text" id="ocrHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Terminal text</b> — grab the focused PowerShell / cmd / Windows Terminal window's <i>entire scrollback</i> as text and open it in Snappy Frame as a crisp code card.</p>
     <input type="text" id="termHotkey" spellcheck="false" style="margin-top:6px">
   </div>
@@ -110,6 +112,7 @@
     $('termHotkey').value = s.termHotkey || '';
     $('shelfHotkey').value = s.shelfHotkey || '';
     $('barHotkey').value = s.barHotkey || '';
+    $('ocrHotkey').value = s.ocrHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -126,6 +129,7 @@
   $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
   $('shelfHotkey').addEventListener('change', e => set({ shelfHotkey: e.target.value.trim() }));
   $('barHotkey').addEventListener('change', e => set({ barHotkey: e.target.value.trim() }));
+  $('ocrHotkey').addEventListener('change', e => set({ ocrHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
