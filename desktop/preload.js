@@ -20,6 +20,14 @@ contextBridge.exposeInMainWorld('snap', {
   barOption: (patch) => ipcRenderer.send('bar:option', patch),
   barSize: (px) => ipcRenderer.send('bar:size', px),
   barClose: () => ipcRenderer.send('bar:close'),
+  // pinned shots
+  pinReady: () => ipcRenderer.send('pin:ready'),
+  pinOnData: (cb) => ipcRenderer.on('pin:data', (e, d) => cb(d)),
+  pinOnScale: (cb) => ipcRenderer.on('pin:scale', (e, p) => cb(p)),
+  pinClose: () => ipcRenderer.send('pin:close'),
+  pinCopy: () => ipcRenderer.send('pin:copy'),
+  pinSave: () => ipcRenderer.send('pin:save'),
+  pinScale: (d) => ipcRenderer.send('pin:scale', d),
   // session shelf
   shelfReady: () => ipcRenderer.send('shelf:ready'),
   shelfOnUpdate: (cb) => ipcRenderer.on('shelf:update', (e, items) => cb(items)),

@@ -163,7 +163,25 @@
     drawing = true;
     draft = { tool, colour, size: sizeKey, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
   });
-  addEventListener('mousemove', (e) => { if(!drawing) return; const p = toCanvas(e); draft.x2 = p.x; draft.y2 = p.y; redraw(); });
+  // Hold Shift to constrain: arrows and lines snap to 45°, everything else
+  // becomes square. Freehand-straight arrows are the usual reason a mark-up
+  // looks scruffy.
+  function constrain(d, x, y){
+    const dx = x - d.x1, dy = y - d.y1;
+    if(d.tool === 'arrow' || d.tool === 'line'){
+      const len = Math.hypot(dx, dy);
+      const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+      return { x: d.x1 + Math.cos(a) * len, y: d.y1 + Math.sin(a) * len };
+    }
+    const m = Math.max(Math.abs(dx), Math.abs(dy));
+    return { x: d.x1 + Math.sign(dx || 1) * m, y: d.y1 + Math.sign(dy || 1) * m };
+  }
+  addEventListener('mousemove', (e) => {
+    if(!drawing) return;
+    const p = toCanvas(e);
+    const q = e.shiftKey ? constrain(draft, p.x, p.y) : p;
+    draft.x2 = q.x; draft.y2 = q.y; redraw();
+  });
   addEventListener('mouseup', () => {
     if(!drawing) return; drawing = false;
     if(draft && (Math.abs(draft.x2 - draft.x1) > 2 || Math.abs(draft.y2 - draft.y1) > 2)) shapes.push(draft);

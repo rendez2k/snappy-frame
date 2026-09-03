@@ -19,11 +19,13 @@ const DEFAULTS = {
   barTimer: 0,                                     // 0 | 3 | 5 | 10 seconds before the bar captures
   barKeep: false,                                  // bring the capture bar back after each grab
   ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
+  pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   shelfPos: null,                                  // {x,y} the shelf was last dragged to
   shelfSize: 'sm',                                 // 'sm' | 'md' | 'lg' thumbnail size
   shelfLock: false,                                // pin it in place so it can't be dragged
+  shelfHistory: true,                              // keep the shelf's contents across restarts
   terminalAsText: true,                            // window grabs of a terminal capture its text (masked) instead of pixels
   warnSecrets: true,                               // warn if a snipped terminal held something key-shaped
   saveFolder: path.join(app.getPath('pictures'), 'Snappy Snaps'),
@@ -50,7 +52,8 @@ const pending = new Map();                         // webContents.id -> { img (n
 const annPending = new Map();                      // annotator webContents.id -> { dataUrl, w, h }
 const batch = [];
 const shelf = [];                                  // this session's snaps: { file, thumb, name }                                  // collected region grabs (full-res dataURLs) awaiting hand-off
-let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' | 'ocr' — what to do after the marquee
+let captureMode = 'normal';                        // 'normal' | 'markup' | 'batch' | 'ocr' | 'pin' — what to do after the marquee
+const pins = new Map();                            // webContents.id -> { win, image, pct, w, h }
 
 // ---- capture flow --------------------------------------------------------
 // The marquee overlay is built once and kept hidden between grabs, so a
@@ -85,7 +88,7 @@ async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
   const seq = ++grabSeq;
-  captureMode = (mode === 'markup' || mode === 'batch' || mode === 'ocr') ? mode : 'normal';
+  captureMode = ['markup','batch','ocr','pin'].includes(mode) ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
@@ -140,6 +143,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
   if(captureMode === 'ocr'){ await deliverOcr(crop); returnBar(); return; }
+  if(captureMode === 'pin'){ openPin(crop); returnBar(); return; }
   if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); returnBar(); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }   // returns when the editor closes
   await handleResult(crop);
@@ -152,7 +156,9 @@ function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').r
 async function handleResult(image, ctx){
   if(settings.copyToClipboard || (ctx && ctx.forceCopy)){ try{ clipboard.writeImage(image); }catch(e){} }
   let savedPath = null;
-  if(settings.saveToFolder){
+  // forceSave: the user pressed Save on a pin, so honour that even when the
+  // 'save every capture' setting is off.
+  if(settings.saveToFolder || (ctx && ctx.forceSave)){
     ensureFolder();
     const n = nameParts();
     let dir = settings.saveFolder, base;
@@ -356,11 +362,93 @@ ipcMain.on('batch:action', async (e, msg) => {
   }
 });
 
+// ---- pinned shots --------------------------------------------------------
+// A pin is a reference you keep in view while you work on something else — an
+// error message, a design, a number you're copying. The whole image is the drag
+// handle (nothing inside a pin needs its own drag), and each pin is independent
+// so you can have several up at once.
+function openPin(image){
+  const size = image.getSize();
+  if(!size.width || !size.height) return;
+  const cur = screen.getCursorScreenPoint();
+  const wa = (screen.getDisplayNearestPoint(cur) || screen.getPrimaryDisplay()).workArea;
+  // Start at 1:1 but never larger than most of the screen — pinning a
+  // full-screen grab at native size would cover the thing you pinned it for.
+  const max = Math.min(1, (wa.width * 0.6) / size.width, (wa.height * 0.6) / size.height);
+  const pct = Math.max(10, Math.round(max * 100));
+  const w = Math.max(40, Math.round(size.width * pct / 100));
+  const h = Math.max(30, Math.round(size.height * pct / 100));
+  const win = new BrowserWindow({
+    x: Math.round(Math.min(Math.max(cur.x - w / 2, wa.x + 8), wa.x + wa.width - w - 8)),
+    y: Math.round(Math.min(Math.max(cur.y - h / 2, wa.y + 8), wa.y + wa.height - h - 8)),
+    width: w, height: h,
+    frame:false, transparent:true, backgroundColor:'#00000000', resizable:false, movable:true,
+    alwaysOnTop:true, skipTaskbar:true, hasShadow:false, fullscreenable:false, show:false,
+    webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true },
+  });
+  win.setAlwaysOnTop(true, 'floating');
+  win.loadFile('pin.html');
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => { for(const [k, v] of pins) if(v.win === win) pins.delete(k); });
+  pins.set(win.webContents.id, { win, image, pct, w: size.width, h: size.height });
+}
+function pinOf(e){ return pins.get(e.sender.id); }
+ipcMain.on('pin:ready', (e) => {
+  const p = pinOf(e); if(!p) return;
+  e.sender.send('pin:data', { dataUrl: p.image.toDataURL(), w: p.w, h: p.h, pct: p.pct });
+});
+ipcMain.on('pin:close', (e) => { const p = pinOf(e); if(p && !p.win.isDestroyed()) p.win.close(); });
+ipcMain.on('pin:copy',  (e) => { const p = pinOf(e); if(p) try{ clipboard.writeImage(p.image); }catch(e2){} });
+ipcMain.on('pin:save', async (e) => {
+  const p = pinOf(e); if(!p) return;
+  try{ await handleResult(p.image, { forceSave: true }); }catch(e2){ console.error('pin save failed', e2); }
+});
+ipcMain.on('pin:scale', (e, delta) => {
+  const p = pinOf(e); if(!p || p.win.isDestroyed()) return;
+  p.pct = delta === 'reset' ? 100 : Math.max(10, Math.min(400, p.pct + delta));
+  const b = p.win.getBounds();
+  const w = Math.max(40, Math.round(p.w * p.pct / 100));
+  const h = Math.max(30, Math.round(p.h * p.pct / 100));
+  // Grow about the centre so the pin doesn't crawl across the screen as you zoom.
+  p.win.setBounds({ x: Math.round(b.x + (b.width - w) / 2), y: Math.round(b.y + (b.height - h) / 2), width: w, height: h });
+  e.sender.send('pin:scale', p.pct);
+});
+
 // ---- session shelf -------------------------------------------------------
 // A slim always-on-top strip holding this session's snaps. Each thumbnail is a
 // NATIVE file drag source (webContents.startDrag), so a snap can be dragged
 // straight into Claude Desktop, Slack, an editor — anything that accepts a
 // dropped file — with no save-locate-attach detour.
+// The shelf used to die with the process, so yesterday's snaps were gone even
+// though the FILES were still sitting in the save folder. Only the paths are
+// persisted — thumbnails are regenerated from the files on load, which keeps the
+// state file small and means a snap whose file was deleted simply drops out.
+const HISTORY_PATH = () => path.join(app.getPath('userData'), 'history.json');
+function saveHistory(){
+  if(settings.shelfHistory === false) return;
+  try{
+    const rows = shelf.filter(s2 => s2.file).slice(0, 40).map(s2 => ({ file: s2.file, name: s2.name }));
+    fs.writeFileSync(HISTORY_PATH(), JSON.stringify(rows));
+  }catch(e){}
+}
+function loadHistory(){
+  if(settings.shelfHistory === false) return;
+  let rows = [];
+  try{ rows = JSON.parse(fs.readFileSync(HISTORY_PATH(), 'utf8')); }catch(e){ return; }
+  if(!Array.isArray(rows)) return;
+  for(const r of rows){
+    if(!r || !r.file) continue;
+    try{ if(!fs.existsSync(r.file)) continue; }catch(e){ continue; }
+    let thumb = '';
+    try{
+      const im = nativeImage.createFromPath(r.file);
+      if(im.isEmpty()) continue;
+      thumb = im.resize({ height: 168, quality: 'good' }).toDataURL();
+    }catch(e){ continue; }
+    shelf.push({ file: r.file, thumb, name: r.name || path.basename(r.file) });
+    if(shelf.length >= 40) break;
+  }
+}
 function addToShelf(file, image){
   let thumb = '';
   // Stored big enough for the largest shelf size — resizing UP a 96px thumb
@@ -370,6 +458,7 @@ function addToShelf(file, image){
   if(shelf.length > 40) shelf.length = 40;
   if(settings.shelfAutoShow !== false) openShelf(true);
   sendShelf();
+  saveHistory();
 }
 function sendShelf(){
   if(shelfWin && !shelfWin.isDestroyed()){
@@ -506,7 +595,7 @@ ipcMain.on('bar:run', async (e, mode) => {
     // at commit/cancel, so those call returnBar() from their own end points.
     if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
     else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
-    else startCapture(['markup','batch','ocr'].includes(mode) ? mode : 'normal');
+    else startCapture(['markup','batch','ocr','pin'].includes(mode) ? mode : 'normal');
   }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
 });
 // Dismissing after a grab is right for a one-off — it's what the platform tools
@@ -545,8 +634,8 @@ ipcMain.on('shelf:size', (e, size) => {
 });
 ipcMain.on('shelf:lock', (e, on) => { settings.shelfLock = !!on; saveSettings(); applyShelfLock(); });
 ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
-ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); });
-ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); });
+ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); saveHistory(); });
+ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); saveHistory(); });
 ipcMain.on('shelf:copy', (e, i) => {
   const it = shelf[i]; if(!it) return;
   try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
@@ -583,6 +672,7 @@ function refreshTrayMenu(){
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
+    { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
@@ -616,7 +706,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   refreshTrayMenu();
   return settings;
@@ -986,10 +1076,14 @@ function registerHotkey(){
     try{ globalShortcut.register(settings.ocrHotkey, () => startCapture('ocr')); }
     catch(e){ console.error('ocr hotkey failed', e); }
   }
+  if(settings.pinHotkey){
+    try{ globalShortcut.register(settings.pinHotkey, () => startCapture('pin')); }
+    catch(e){ console.error('pin hotkey failed', e); }
+  }
 }
 
 app.whenReady().then(() => {
-  loadSettings(); ensureFolder(); buildTray(); registerHotkey(); ensureOverlay();
+  loadSettings(); loadHistory(); ensureFolder(); buildTray(); registerHotkey(); ensureOverlay();
   if(process.platform === 'darwin' && app.dock) app.dock.hide();   // tray-only
   // Prime the screen-capture pipeline so the first grab isn't a cold start.
   setTimeout(() => { desktopCapturer.getSources({ types:['screen'], thumbnailSize:{ width:1, height:1 } }).catch(() => {}); }, 600);

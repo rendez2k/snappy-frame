@@ -44,6 +44,8 @@
     <input type="text" id="shelfHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Copy text</b> — drag a rectangle over anything on screen and its <i>text</i> lands on the clipboard instead of a picture, with API keys redacted. Uses the OCR engine built into Windows.</p>
     <input type="text" id="ocrHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Pin on top</b> — drag a rectangle and it floats above every window as a reference you can keep in view. Scroll to resize, <b>F</b> to dim it, <b>Esc</b> to close.</p>
+    <input type="text" id="pinHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Terminal text</b> — grab the focused PowerShell / cmd / Windows Terminal window's <i>entire scrollback</i> as text and open it in Snappy Frame as a crisp code card.</p>
     <input type="text" id="termHotkey" spellcheck="false" style="margin-top:6px">
   </div>
@@ -113,6 +115,7 @@
     $('shelfHotkey').value = s.shelfHotkey || '';
     $('barHotkey').value = s.barHotkey || '';
     $('ocrHotkey').value = s.ocrHotkey || '';
+    $('pinHotkey').value = s.pinHotkey || '';
     $('folder').textContent = s.saveFolder;
     ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
@@ -130,6 +133,7 @@
   $('shelfHotkey').addEventListener('change', e => set({ shelfHotkey: e.target.value.trim() }));
   $('barHotkey').addEventListener('change', e => set({ barHotkey: e.target.value.trim() }));
   $('ocrHotkey').addEventListener('change', e => set({ ocrHotkey: e.target.value.trim() }));
+  $('pinHotkey').addEventListener('change', e => set({ pinHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
