@@ -28,7 +28,9 @@ client-side; no upload, no account, no server.
 - **Animated export** — Float / Zoom / Sway / Reveal loops exported as WebM (MP4 on
   Safari) for social.
 - **Magic resize** — style once, export every social size at 2× in a single zip.
-- **Batch** — apply the current look to many screenshots and export them as a zip.
+- **Multiple screenshots** — apply the current look to many at once and export
+  them as a zip, or compose them into a **single image** (row, column, grid or an
+  overlapping stack). Drop several files on the canvas to load them all.
 - **Presets** — 30+ curated one-click looks, plus save/load your own to
   `localStorage`.
 - **Backgrounds** — 30 gradients, 14 mesh gradients, solid colour, your own
@@ -50,7 +52,24 @@ client-side; no upload, no account, no server.
 - **Border** and **film-grain / noise** overlay.
 - **Export** — PNG or JPEG at 1×–4× resolution, download or copy straight to the
   clipboard.
+- **Design brief** — the Chrome extension measures a page's real design tokens
+  (palette with WCAG contrast ratios, type scale with line-height, spacing
+  rhythm, radii, shadows, transition timings and easing) and the app exports them
+  as CSS variables, a Tailwind theme, an AI prompt or a **`DESIGN.md`** you can
+  drop in a repo so Claude Code, Cursor or Codex follow the system.
+- **Text cards** — paste text, markdown or code and it renders as a code-window
+  card, with terminal styling auto-detected and API keys masked.
 - **Mobile-friendly** — responsive layout with a bottom-sheet control panel.
+
+## Snappy Snap — the Windows desktop app
+
+`desktop/` contains **Snappy Snap**, an Electron tray app for capturing outside
+the browser: region, active window, mark-up, batch, a floating capture bar with a
+self-timer, OCR straight to the clipboard, pins that float on top, and a session
+shelf you can drag files out of into Claude Desktop or Slack. Terminals are
+captured as *text* with API keys redacted, because pixels of a key can't be
+masked. See `desktop/README.md`; installers are published on the
+[releases page](https://github.com/rendez2k/snappy-frame/releases).
 
 ## Chrome extension
 
