@@ -74,6 +74,25 @@
   </div>
 
   <div class="row">
+    <h3>🔎 Text recognition (OCR)</h3>
+    <p><b>Windows</b> is the built-in engine: instant, free, and the image
+      <b>never leaves your PC</b>. <b>Claude</b> reads screenshots far better —
+      dark mode, gradients, code, tables, layout — but it <b>uploads the image</b>,
+      so anything sensitive in the grab leaves your machine <i>before</i> the
+      key-redaction can run. Roughly 1–2p per capture.</p>
+    <div class="modes">
+      <div class="mode" id="e-windows">🖥️ Windows<br><span style="font-weight:400;color:var(--mut)">local &amp; private</span></div>
+      <div class="mode" id="e-claude">✨ Claude<br><span style="font-weight:400;color:var(--mut)">most accurate</span></div>
+    </div>
+    <p style="margin-top:10px">Anthropic API key <span style="color:var(--mut)">(stored on this PC only)</span></p>
+    <input type="text" id="anthropicKey" spellcheck="false" placeholder="sk-ant-…" style="margin-top:6px">
+    <p style="margin-top:10px">Model</p>
+    <input type="text" id="ocrModel" spellcheck="false" placeholder="claude-opus-5" style="margin-top:6px">
+    <p style="margin-top:6px;font-size:11px">Cheaper options: <code>claude-sonnet-5</code>, <code>claude-haiku-4-5</code>.
+      If Claude is unreachable the capture falls back to Windows OCR rather than being lost.</p>
+  </div>
+
+  <div class="row">
     <h3>Session shelf</h3>
     <p>Every snap this session stays on a floating strip. Drag a thumbnail into
       any app that accepts a dropped file — no saving, locating and attaching.</p>
@@ -122,6 +141,10 @@
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
+    $('e-windows').classList.toggle('on', (s.ocrEngine || 'windows') !== 'claude');
+    $('e-claude').classList.toggle('on', s.ocrEngine === 'claude');
+    $('anthropicKey').value = s.anthropicKey || '';
+    $('ocrModel').value = s.ocrModel || '';
   }
   async function set(patch){ s = await window.snap.setSettings(patch); paint(); }
   paint();
@@ -137,6 +160,10 @@
   $('pinHotkey').addEventListener('change', e => set({ pinHotkey: e.target.value.trim() }));
   $('m-save').onclick = () => set({ defaultAction:'save' });
   $('m-beautify').onclick = () => set({ defaultAction:'beautify' });
+  $('e-windows').onclick = () => set({ ocrEngine:'windows' });
+  $('e-claude').onclick = () => set({ ocrEngine:'claude' });
+  $('anthropicKey').addEventListener('change', e => set({ anthropicKey: e.target.value.trim() }));
+  $('ocrModel').addEventListener('change', e => set({ ocrModel: e.target.value.trim() || 'claude-opus-5' }));
   ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };

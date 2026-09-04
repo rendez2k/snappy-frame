@@ -21,6 +21,9 @@ const DEFAULTS = {
   ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
   pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
   hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
+  ocrEngine: 'windows',                            // 'windows' (local, private) | 'claude' (cloud, best)
+  anthropicKey: '',                                // BYOK for the Claude OCR engine
+  ocrModel: 'claude-opus-5',                       // which Claude model reads the image
   shelf: true,                                     // collect this session's snaps in a draggable shelf
   shelfAutoShow: true,                             // pop the shelf up on each capture
   shelfPos: null,                                  // {x,y} the shelf was last dragged to
@@ -929,9 +932,64 @@ function ocrImage(image){
       });
   });
 }
+// Claude reads a screenshot far better than a generic OCR engine — it copes with
+// dark mode, gradients, code and tables, and keeps the layout. The trade is real
+// and the user has to opt in: this UPLOADS the image, so anything sensitive in
+// the grab leaves the machine BEFORE the redaction below can run. Local Windows
+// OCR stays the default precisely because it never leaves the PC.
+const OCR_PROMPT =
+  'Transcribe every piece of text in this screenshot, exactly as written. ' +
+  'Preserve the reading order and the line breaks. Keep code, commands and ' +
+  'punctuation verbatim. Output only the transcription — no preamble, no ' +
+  'commentary, no markdown fences.';
+async function ocrViaClaude(image){
+  const key = (settings.anthropicKey || '').trim();
+  if(!key) throw new Error('No Anthropic API key set — add one in Settings.');
+  let Anthropic;
+  try{ Anthropic = require('@anthropic-ai/sdk'); Anthropic = Anthropic.default || Anthropic; }
+  catch(e){ throw new Error('The Anthropic SDK is missing from this build.'); }
+  const client = new Anthropic({ apiKey: key });
+  // Keep the upload small: the engine reads fine well below native resolution,
+  // and image tokens scale with area.
+  let feed = image;
+  try{
+    const sz = image.getSize();
+    const long = Math.max(sz.width, sz.height);
+    if(long > 1600){
+      const k = 1600 / long;
+      feed = image.resize({ width: Math.round(sz.width * k), height: Math.round(sz.height * k), quality: 'best' });
+    }
+  }catch(e){}
+  const res = await client.messages.create({
+    model: settings.ocrModel || 'claude-opus-5',
+    max_tokens: 8000,
+    // A transcription needs no deliberation; low effort keeps it quick and cheap.
+    output_config: { effort: 'low' },
+    messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: feed.toPNG().toString('base64') } },
+      { type: 'text', text: OCR_PROMPT },
+    ] }],
+  });
+  if(res.stop_reason === 'refusal') throw new Error('Claude declined to transcribe that image.');
+  return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+}
+
 async function deliverOcr(image){
   try{
-    const raw = await ocrImage(image);
+    let raw = '', via = 'Windows';
+    if(settings.ocrEngine === 'claude'){
+      try{ raw = await ocrViaClaude(image); via = 'Claude'; }
+      catch(err){
+        // Never lose the grab to a cloud failure — fall back to the local engine
+        // and say which one actually ran.
+        console.error('claude ocr failed', err);
+        raw = await ocrImage(image);
+        try{ new Notification({ title:'Snappy Snap — Claude OCR unavailable',
+          body: String(err && err.message || err).slice(0, 180) + ' — used Windows OCR instead.' }).show(); }catch(e2){}
+      }
+    } else {
+      raw = await ocrImage(image);
+    }
     if(!raw){
       new Notification({ title:'Snappy Snap — Copy text', body:'No text was found in that selection.' }).show();
       return;
@@ -940,7 +998,7 @@ async function deliverOcr(image){
     clipboard.writeText(text);
     const lines = text.split('\n').length;
     new Notification({
-      title: 'Snappy Snap — Text copied',
+      title: 'Snappy Snap — Text copied (' + via + ')',
       body: lines + (lines === 1 ? ' line' : ' lines') + ' on the clipboard' +
             (masked ? ' · ' + masked + ' secret' + (masked === 1 ? '' : 's') + ' redacted' : ''),
     }).show();
