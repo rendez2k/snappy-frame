@@ -831,6 +831,42 @@ function maskSecrets(t){
 // are going to paste into a chat: it is searchable, diffable, costs less, and
 // can have its secrets stripped — a screenshot cannot.
 const OCR_TARGET_PX = 2400;                        // long edge fed to the OCR engine
+// Windows' OCR engine expects dark text on a light page. Dark-mode UI — light
+// text on a dark, often gradient background — is where it falls apart: DESIGN.md
+// came back "DfSlG.V.md". So flatten to greyscale, invert if the grab is
+// predominantly dark, and stretch the contrast so glyph edges are crisp.
+// Exported for testing: pure buffer maths, no Electron needed.
+function ocrPreprocess(bgra, width, height){
+  const n = width * height;
+  if(!n || bgra.length < n * 4) return { changed: false };
+  const lum = new Uint8Array(n);
+  const hist = new Uint32Array(256);
+  let sum = 0;
+  for(let i = 0, j = 0; i < n; i++, j += 4){
+    // toBitmap() is BGRA.
+    const v = (0.0722 * bgra[j] + 0.7152 * bgra[j + 1] + 0.2126 * bgra[j + 2]) | 0;
+    lum[i] = v; hist[v]++; sum += v;
+  }
+  const mean = sum / n;
+  const invert = mean < 128;                       // a dark grab: light text on dark
+  // 2nd/98th percentile stretch — ignores a few stray pixels that would
+  // otherwise pin the range and flatten everything else.
+  const cut = Math.max(1, Math.floor(n * 0.02));
+  let lo = 0, hi = 255, acc = 0;
+  for(let v = 0; v < 256; v++){ acc += hist[v]; if(acc >= cut){ lo = v; break; } }
+  acc = 0;
+  for(let v = 255; v >= 0; v--){ acc += hist[v]; if(acc >= cut){ hi = v; break; } }
+  const span = Math.max(1, hi - lo);
+  for(let i = 0, j = 0; i < n; i++, j += 4){
+    let v = ((lum[i] - lo) * 255 / span);
+    v = v < 0 ? 0 : v > 255 ? 255 : v;
+    if(invert) v = 255 - v;
+    bgra[j] = bgra[j + 1] = bgra[j + 2] = v | 0;
+    bgra[j + 3] = 255;
+  }
+  return { changed: true, invert, lo, hi, mean: Math.round(mean) };
+}
+if(typeof module !== 'undefined' && module.exports) module.exports.ocrPreprocess = ocrPreprocess;
 function ocrImage(image){
   return new Promise((resolve, reject) => {
     let tmp = '';
@@ -843,17 +879,25 @@ function ocrImage(image){
       // the standard fix — the engine gets more pixels per glyph to work with.
       // Cap the result so a full-screen grab doesn't balloon into a slow decode.
       let feed = image;
+      // Contrast/inversion first — cheaper on the un-upscaled pixels, and the
+      // result is the same either way.
       try{
-        const sz = image.getSize();
+        const sz0 = image.getSize();
+        const bmp = image.toBitmap();
+        const info = ocrPreprocess(bmp, sz0.width, sz0.height);
+        if(info.changed) feed = nativeImage.createFromBuffer(bmp, { width: sz0.width, height: sz0.height });
+      }catch(e2){ feed = image; }
+      try{
+        const sz = feed.getSize();
         const long = Math.max(sz.width, sz.height);
         if(long > 0){
           const scale = Math.max(1, Math.min(4, OCR_TARGET_PX / long));
           if(scale > 1.05){
-            feed = image.resize({ width: Math.round(sz.width * scale),
-                                  height: Math.round(sz.height * scale), quality: 'best' });
+            feed = feed.resize({ width: Math.round(sz.width * scale),
+                                 height: Math.round(sz.height * scale), quality: 'best' });
           }
         }
-      }catch(e2){ feed = image; }
+      }catch(e2){ /* keep whatever we have */ }
       fs.writeFileSync(tmp, feed.toPNG());
     }catch(e){ return reject(e); }
     const q = tmp.replace(/'/g, "''");
