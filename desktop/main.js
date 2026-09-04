@@ -830,6 +830,7 @@ function maskSecrets(t){
 // terminal capture already uses. Text beats a picture of text for anything you
 // are going to paste into a chat: it is searchable, diffable, costs less, and
 // can have its secrets stripped — a screenshot cannot.
+const OCR_TARGET_PX = 2400;                        // long edge fed to the OCR engine
 function ocrImage(image){
   return new Promise((resolve, reject) => {
     let tmp = '';
@@ -837,7 +838,23 @@ function ocrImage(image){
       const dir = path.join(app.getPath('temp'), 'snappy-ocr');
       fs.mkdirSync(dir, { recursive: true });
       tmp = path.join(dir, 'ocr-' + Date.now() + '.png');
-      fs.writeFileSync(tmp, image.toPNG());
+      // Windows' OCR engine is tuned for document-scale text, so UI text grabbed
+      // at 1:1 is where it confuses 1/l and 0/O. Upscaling before recognition is
+      // the standard fix — the engine gets more pixels per glyph to work with.
+      // Cap the result so a full-screen grab doesn't balloon into a slow decode.
+      let feed = image;
+      try{
+        const sz = image.getSize();
+        const long = Math.max(sz.width, sz.height);
+        if(long > 0){
+          const scale = Math.max(1, Math.min(4, OCR_TARGET_PX / long));
+          if(scale > 1.05){
+            feed = image.resize({ width: Math.round(sz.width * scale),
+                                  height: Math.round(sz.height * scale), quality: 'best' });
+          }
+        }
+      }catch(e2){ feed = image; }
+      fs.writeFileSync(tmp, feed.toPNG());
     }catch(e){ return reject(e); }
     const q = tmp.replace(/'/g, "''");
     const ps = [
