@@ -30,6 +30,7 @@
     <div id="bar">
       <button id="copy" title="Copy to clipboard">Copy</button>
       <button id="save" title="Save a PNG">Save</button>
+      <button id="share" title="Upload and copy a 7-day share link">Link</button>
       <span class="sp"></span>
       <span id="scale">100%</span>
       <button id="fade" title="Dim so you can read through it (F)">Dim</button>
@@ -52,6 +53,7 @@
 
   $('copy').onclick  = () => window.snap.pinCopy();
   $('save').onclick  = () => window.snap.pinSave();
+  $('share').onclick = () => window.snap.pinShare();
   $('close').onclick = () => window.snap.pinClose();
   $('fade').onclick  = () => document.body.classList.toggle('faded');
 

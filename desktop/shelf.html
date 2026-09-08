@@ -117,6 +117,8 @@
       // with the real file, so the drop target receives a FILE, not a bitmap.
       d.addEventListener('dragstart', e => { e.preventDefault(); window.snap.shelfDrag(it.i); });
       d.addEventListener('dblclick', () => window.snap.shelfReveal(it.i));
+      // Right-click: native menu with share / copy / pin / reveal / remove.
+      d.addEventListener('contextmenu', e => { e.preventDefault(); window.snap.shelfMenu(it.i); });
       // Middle-click removes, as it does on a browser tab.
       d.addEventListener('auxclick', e => { if(e.button === 1){ e.preventDefault(); window.snap.shelfRemove(it.i); } });
       d.appendChild(x); d.appendChild(c); d.appendChild(pn);

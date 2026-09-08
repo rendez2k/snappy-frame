@@ -18,3 +18,11 @@
     Content-Type = "application/javascript"
     Cache-Control = "no-cache"
     Service-Worker-Allowed = "/"
+
+# Share links: /s/<token> serves the image bytes for a public share token.
+# A rewrite (200), not a redirect, so the clean URL is what people see and
+# what chat clients unfurl.
+[[redirects]]
+  from = "/s/*"
+  to = "/.netlify/functions/inbox?op=view&token=:splat"
+  status = 200

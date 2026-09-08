@@ -427,6 +427,7 @@ ipcMain.on('pin:ready', (e) => {
 });
 ipcMain.on('pin:close', (e) => { const p = pinOf(e); if(p && !p.win.isDestroyed()) p.win.close(); });
 ipcMain.on('pin:copy',  (e) => { const p = pinOf(e); if(p) try{ clipboard.writeImage(p.image); }catch(e2){} });
+ipcMain.on('pin:share', (e) => { const p = pinOf(e); if(p) shareAndCopy(p.image); });
 ipcMain.on('pin:save', async (e) => {
   const p = pinOf(e); if(!p) return;
   try{ await handleResult(p.image, { forceSave: true }); }catch(e2){ console.error('pin save failed', e2); }
@@ -441,6 +442,39 @@ ipcMain.on('pin:scale', (e, delta) => {
   p.win.setBounds({ x: Math.round(b.x + (b.width - w) / 2), y: Math.round(b.y + (b.height - h) / 2), width: w, height: h });
   e.sender.send('pin:scale', p.pct);
 });
+
+// ---- share links ---------------------------------------------------------
+// Uploads the image to your inbox room and mints a public, unguessable link
+// for that one image. The link lives 7 days, then it and the upload are
+// deleted server-side. Same opt-in as the inbox: needs a pairing code, and it
+// is an UPLOAD — the same caution as cloud OCR applies to anything sensitive.
+async function shareImage(image){
+  const code = (settings.inboxCode || '').trim();
+  if(!code){
+    try{ new Notification({ title:'Snappy Snap — Share link', body:'Sharing uses your online inbox. Get a code at snappy-frame.netlify.app/inbox and paste it into Settings.' }).show(); }catch(e){}
+    return null;
+  }
+  const origin = new URL(settings.beautifyUrl).origin;
+  const size = image.getSize();
+  const res = await fetch(origin + '/.netlify/functions/inbox?op=share', {
+    method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ code, image: image.toDataURL(), source:'desktop', w:size.width, h:size.height }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if(!res.ok || !j.url) throw new Error(j.error || ('upload failed (' + res.status + ')'));
+  return j.url;
+}
+async function shareAndCopy(image){
+  try{
+    const url = await shareImage(image);
+    if(!url) return;
+    clipboard.writeText(url);
+    try{ new Notification({ title:'Snappy Snap — Link copied', body: url + '\nAnyone with the link can view it. Expires in 7 days.' }).show(); }catch(e){}
+  }catch(e){
+    console.error('share failed', e);
+    try{ new Notification({ title:'Snappy Snap — Share failed', body:String(e && e.message || e).slice(0, 180) }).show(); }catch(e2){}
+  }
+}
 
 // ---- session shelf -------------------------------------------------------
 // A slim always-on-top strip holding this session's snaps. Each thumbnail is a
@@ -669,6 +703,25 @@ ipcMain.on('shelf:copy', (e, i) => {
   try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
 });
 ipcMain.on('shelf:reveal', (e, i) => { const it = shelf[i]; if(it) shell.showItemInFolder(it.file); });
+// Right-click a tile: the actions the hover buttons don't have room for.
+ipcMain.on('shelf:menu', (e, i) => {
+  const it = shelf[i]; if(!it) return;
+  const load = () => { try{ const im = nativeImage.createFromPath(it.file); return im.isEmpty() ? null : im; }catch(e2){ return null; } };
+  const menu = Menu.buildFromTemplate([
+    { label: 'Share link  (7 days)', click: () => { const im = load(); if(im) shareAndCopy(im); } },
+    { label: 'Copy image', click: () => { const im = load(); if(im) try{ clipboard.writeImage(im); }catch(e2){} } },
+    { label: 'Pin on top', click: () => { const im = load(); if(im) openPin(im); } },
+    { type: 'separator' },
+    { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
+    { label: 'Remove from shelf', click: () => { const k = shelf.indexOf(it); if(k >= 0) shelf.splice(k, 1); sendShelf(); saveHistory(); } },
+  ]);
+  const w = BrowserWindow.fromWebContents(e.sender);
+  menu.popup(w ? { window: w } : {});
+});
+ipcMain.on('shelf:share', (e, i) => {
+  const it = shelf[i]; if(!it) return;
+  try{ const im = nativeImage.createFromPath(it.file); if(!im.isEmpty()) shareAndCopy(im); }catch(e2){}
+});
 // Put a shot from history back on screen as a floating reference.
 ipcMain.on('shelf:pin', (e, i) => {
   const it = shelf[i]; if(!it) return;

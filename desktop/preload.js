@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('snap', {
   pinClose: () => ipcRenderer.send('pin:close'),
   pinCopy: () => ipcRenderer.send('pin:copy'),
   pinSave: () => ipcRenderer.send('pin:save'),
+  pinShare: () => ipcRenderer.send('pin:share'),
   pinScale: (d) => ipcRenderer.send('pin:scale', d),
   // session shelf
   shelfReady: () => ipcRenderer.send('shelf:ready'),
@@ -39,6 +40,8 @@ contextBridge.exposeInMainWorld('snap', {
   shelfRemove: (i) => ipcRenderer.send('shelf:remove', i),
   shelfReveal: (i) => ipcRenderer.send('shelf:reveal', i),
   shelfPin: (i) => ipcRenderer.send('shelf:pin', i),
+  shelfShare: (i) => ipcRenderer.send('shelf:share', i),
+  shelfMenu: (i) => ipcRenderer.send('shelf:menu', i),
   shelfClear: () => ipcRenderer.send('shelf:clear'),
   shelfHide: () => ipcRenderer.send('shelf:hide'),
   // batch collector
