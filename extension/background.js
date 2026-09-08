@@ -494,17 +494,40 @@ async function scrollStitchCapture() {
       return out;
     };
 
+    // A long page is 30+ captures over ~20s, and any one of them can come back
+    // empty — the MV3 service worker gets killed mid-capture, the window loses
+    // focus, the quota bites. Retry before giving up: a dropped tile used to be
+    // silently skipped, leaving a BLACK BAND across the finished screenshot.
+    let tilesFailed = 0;
     const tile = async () => {
-      // Hide our own badge for the shot so it isn't stamped into the image.
-      badge.style.visibility = "hidden";
-      await sleep(32); // let the hidden state paint before capturing
-      let resp = null;
-      try { resp = await chrome.runtime.sendMessage({ type: "capture-tile" }); } catch (e) {}
-      badge.style.visibility = "visible";
-      if (!resp || !resp.dataUrl) return null;
-      const img = new Image();
-      await new Promise((res) => { img.onload = res; img.onerror = res; img.src = resp.dataUrl; });
-      return img;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) {
+          try { badge.textContent = "Snappy Frame — retrying…"; } catch (e) {}
+          await sleep(500 * attempt);          // the quota window is ~1s
+        }
+        // Hide our own badge for the shot so it isn't stamped into the image.
+        badge.style.visibility = "hidden";
+        await sleep(32); // let the hidden state paint before capturing
+        let resp = null;
+        try { resp = await chrome.runtime.sendMessage({ type: "capture-tile" }); } catch (e) {}
+        badge.style.visibility = "visible";
+        if (!resp || !resp.dataUrl) continue;
+        const img = new Image();
+        await new Promise((res) => { img.onload = res; img.onerror = res; img.src = resp.dataUrl; });
+        if (img.naturalWidth > 0) return img;   // a decode failure is also a miss
+      }
+      tilesFailed++;
+      return null;
+    };
+
+    // If the tiles turned out narrower than the canvas we sized up front, trim
+    // the never-drawn margin rather than shipping a blank strip down the side.
+    const trim = (cv, w) => {
+      if (!w || w >= cv.width - 1) return cv;
+      const out = document.createElement("canvas");
+      out.width = w; out.height = cv.height;
+      out.getContext("2d").drawImage(cv, 0, 0, w, cv.height, 0, 0, w, cv.height);
+      return out;
     };
 
     // Find an inner scroll panel if the document itself doesn't scroll.
@@ -545,7 +568,9 @@ async function scrollStitchCapture() {
       canvas.width = Math.min(Math.round(sw * dpr), MAX);
       canvas.height = Math.min(Math.round(total * dpr), MAX);
       const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
       const startTop = scroller.scrollTop;
+      let drawnW = 0;
       const hidden = [];
       let first = true, y = 0, guard = Math.ceil(total / sh) + 4;
       while (guard-- > 0) {
@@ -553,7 +578,14 @@ async function scrollStitchCapture() {
         await sleep(first ? 280 : 170);
         const realY = scroller.scrollTop; // clamped at the bottom
         const img = await tile();
-        if (img) ctx.drawImage(img, sx * dpr, sy * dpr, sw * dpr, sh * dpr, 0, Math.round(realY * dpr), sw * dpr, sh * dpr);
+        if (img && img.naturalWidth) {
+          const k = img.naturalWidth / vw;                 // measured, not assumed
+          const ssw = Math.min(sw * k, img.naturalWidth - sx * k);
+          const ssh = Math.min(sh * k, img.naturalHeight - sy * k);
+          const dw = Math.round((ssw / k) * dpr), dh = Math.round((ssh / k) * dpr);
+          ctx.drawImage(img, sx * k, sy * k, ssw, ssh, 0, Math.round(realY * dpr), dw, dh);
+          if (dw > drawnW) drawnW = dw;
+        }
         // Hide sticky/fixed chrome only AFTER the first tile — see the note on
         // the document path; the top of the page legitimately contains them.
         if (first) {
@@ -576,7 +608,7 @@ async function scrollStitchCapture() {
       scroller.style.overflow = savedOv; scroller.style.overflowY = savedOvY;
       scroller.scrollTop = startTop;
       cleanup();
-      return done(canvas.toDataURL("image/png"), "inner");
+      return done(trim(canvas, drawnW).toDataURL("image/png"), tilesFailed ? "inner-partial:" + tilesFailed : "inner");
     }
 
     // Document scroller: whole-viewport tiles stacked by scroll position.
@@ -588,7 +620,9 @@ async function scrollStitchCapture() {
     canvas.width = Math.min(Math.round(cw * dpr), MAX);
     canvas.height = Math.min(Math.round(capH * dpr), MAX);
     const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     const startX = window.scrollX, startY = window.scrollY;
+    let drawnW = 0;
     const barsHidden = hideBars(document.body);
     const hidden = []; let first = true;
     for (let y = 0; y < capH; y += vh) {
@@ -598,7 +632,18 @@ async function scrollStitchCapture() {
       // scroll-linked animation) otherwise hand back a torn or duplicated tile.
       for (let t = 0; t < 12 && Math.abs(window.scrollY - Math.min(y, totalH - vh)) > 2; t++) await sleep(40);
       const img = await tile();
-      if (img) ctx.drawImage(img, 0, 0, Math.round(cw * dpr), Math.round(vh * dpr), 0, Math.round(window.scrollY * dpr), Math.round(cw * dpr), Math.round(vh * dpr));
+      if (img && img.naturalWidth) {
+        // Measure the tile's REAL scale rather than trusting devicePixelRatio.
+        // Under browser zoom (or if dpr changes mid-capture) the returned tile
+        // is not cw*dpr wide, and sampling past its edge leaves a TRANSPARENT
+        // strip — which shows through the card as a black bar down the side.
+        const k = img.naturalWidth / vw;
+        const sw = Math.min(cw * k, img.naturalWidth);
+        const sh = Math.min(vh * k, img.naturalHeight);
+        const dw = Math.round((sw / k) * dpr), dh = Math.round((sh / k) * dpr);
+        ctx.drawImage(img, 0, 0, sw, sh, 0, Math.round(window.scrollY * dpr), dw, dh);
+        if (dw > drawnW) drawnW = dw;
+      }
       // Fixed/sticky elements are hidden only AFTER the first tile: they belong
       // to the top of the page (hero video, gradient, nav) and must appear
       // there — hiding them up front stripped the very thing being captured.
@@ -619,7 +664,7 @@ async function scrollStitchCapture() {
     for (const [el, v] of barsHidden) el.style.visibility = v;
     window.scrollTo(startX, startY);
     cleanup();
-    return done(canvas.toDataURL("image/png"), "document");
+    return done(trim(canvas, drawnW).toDataURL("image/png"), tilesFailed ? "document-partial:" + tilesFailed : "document");
   } catch (e) {
     cleanup();
     return done(null, "error");
