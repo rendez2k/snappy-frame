@@ -38,6 +38,58 @@ const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 const store = () => getStore({ name: "inbox", consistency: "strong" });
+
+// The share page is the only part of the product a stranger ever sees, so it
+// does three jobs: show the picture, offer the file, and say where it came
+// from. Self-contained — no external assets, nothing to break.
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function sharePage(origin, token, state, status, rec) {
+  const img = `${origin}/s/${token}.png`;
+  const home = origin + "/";
+  const ok = state === "ok";
+  const title = ok ? "Shared screenshot" : state === "expired" ? "This link has expired" : "Link not found";
+  const daysLeft = ok && rec ? Math.max(1, Math.ceil((rec.createdAt + SHARE_TTL_MS - Date.now()) / 864e5)) : 0;
+  const body = ok
+    ? `<a class="pic" href="${esc(img)}" title="Open the image"><img src="${esc(img)}" alt="Shared screenshot"></a>
+       <div class="row"><a class="btn" href="${esc(img)}" download="snappy-${esc(token.slice(0, 8))}.png">Download PNG</a>
+       <span class="mut">Link expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}</span></div>`
+    : `<div class="gone"><div class="big">${state === "expired" ? "⏳" : "🔍"}</div>
+       <p>${state === "expired"
+         ? "Share links last 7 days, and this one has run out. The image has been deleted."
+         : "There's nothing at this address. The link may have been mistyped, or it was removed."}</p></div>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)} · Snappy Frame</title>
+<meta name="robots" content="noindex">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${esc(origin + "/s/" + token)}">
+${ok ? `<meta property="og:image" content="${esc(img)}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(img)}">` : ""}
+<meta property="og:site_name" content="Snappy Frame">
+<meta name="theme-color" content="#0e0f14">
+<style>
+  :root{color-scheme:dark}*{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0e0f14;color:#e7e9ef;font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;align-items:center;padding:28px 16px 40px}
+  a.hdr{text-decoration:none;color:inherit}header{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6d5efc,#c05bff)}
+  header b{font-size:15px}header span{color:#9aa0b0;font-size:13px}
+  .pic{display:block;max-width:min(100%,1200px)}
+  .pic img{display:block;max-width:100%;height:auto;border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.6);border:1px solid #262b38}
+  .row{display:flex;gap:14px;align-items:center;margin-top:18px;flex-wrap:wrap;justify-content:center}
+  .btn{display:inline-block;background:#6d5efc;color:#fff;text-decoration:none;font-weight:600;padding:10px 16px;border-radius:10px}
+  .btn:hover{filter:brightness(1.08)}.mut{color:#9aa0b0;font-size:13px}
+  .gone{text-align:center;max-width:440px;margin-top:40px}.big{font-size:44px}
+  footer{margin-top:auto;padding-top:40px;text-align:center;color:#9aa0b0;font-size:13px;line-height:1.7}
+  footer a{color:#c9c4ff;text-decoration:none;font-weight:600}footer a:hover{text-decoration:underline}
+</style></head><body>
+<a class="hdr" href="${esc(home)}" title="Snappy Frame"><header><span class="logo"></span><b>Snappy Frame</b><span>shared screenshot</span></header></a>
+${body}
+<footer>Shared with <a href="${esc(home)}">Snappy Frame</a> — free screenshot capture &amp; beautifier.<br>
+<a href="${esc(home)}">Make your own →</a></footer>
+</body></html>`;
+  return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": ok ? "public, max-age=300" : "no-store" } });
+}
 const idxKey = (c) => `${c}/index`;
 const imgKey = (c, id) => `${c}/img/${id}`;
 const shareKey = (t) => `share/${t}`;
@@ -61,20 +113,25 @@ export default async (req) => {
   // the rewritten one — so the op=view&token= query never arrives and the
   // request fell through to the code gate ("bad or missing code"). Read the
   // token off the path too, so it works whichever URL Netlify passes.
-  let pathToken = "";
-  const pm = url.pathname.match(/\/s\/([A-Za-z0-9_-]{16,64})\/?$/);
-  if (pm) { op = "view"; pathToken = pm[1]; }
+  let pathToken = "", raw = q.raw === "1";
+  const pm = url.pathname.match(/\/s\/([A-Za-z0-9_-]{16,64})(\.png)?\/?$/);
+  if (pm) { op = "view"; pathToken = pm[1]; if (pm[2]) raw = true; }
   let body = {};
   if (req.method === "POST") { try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); } }
   // Public view: the only op that takes no pairing code. The token alone
   // identifies one image and nothing else.
+  //   /s/<token>      -> an HTML page: the image, a download, and a way back to
+  //                      Snappy Frame. Carries Open Graph tags pointing at the
+  //                      raw bytes so Slack / Discord / iMessage unfurl the
+  //                      picture rather than a blank card.
+  //   /s/<token>.png  -> the raw bytes, for <img>, unfurlers and curl.
   if (op === "view") {
     const token = (q.token || pathToken || "").trim();
-    if (!TOKEN_RE.test(token)) return json({ error: "bad token" }, 400);
+    if (!TOKEN_RE.test(token)) return raw ? json({ error: "bad token" }, 400) : sharePage(url.origin, token, "missing", 404);
     const sv = store();
     let rec = null;
     try { rec = await sv.get(shareKey(token), { type: "json" }); } catch {}
-    if (!rec || !rec.code || !rec.id) return json({ error: "not found" }, 404);
+    if (!rec || !rec.code || !rec.id) return raw ? json({ error: "not found" }, 404) : sharePage(url.origin, token, "missing", 404);
     if (Date.now() - (rec.createdAt || 0) > SHARE_TTL_MS) {
       // Expired: the link goes, and if the image was uploaded purely to make
       // this link (rather than being an existing inbox item), it goes too.
@@ -83,8 +140,9 @@ export default async (req) => {
         try { await sv.delete(imgKey(rec.code, rec.id)); } catch {}
         try { const l = (await readIndex(sv, rec.code)).filter((i) => i.id !== rec.id); await sv.setJSON(idxKey(rec.code), l); } catch {}
       }
-      return json({ error: "expired" }, 410);
+      return raw ? json({ error: "expired" }, 410) : sharePage(url.origin, token, "expired", 410);
     }
+    if (!raw) return sharePage(url.origin, token, "ok", 200, rec);
     const buf = await sv.get(imgKey(rec.code, rec.id), { type: "arrayBuffer" });
     if (!buf) { try { await sv.delete(shareKey(token)); } catch {} return json({ error: "expired" }, 404); }
     return new Response(buf, { status: 200, headers: {
