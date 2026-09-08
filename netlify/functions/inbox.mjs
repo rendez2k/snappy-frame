@@ -56,13 +56,20 @@ export default async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   const q = Object.fromEntries(url.searchParams);
-  const op = q.op || "";
+  let op = q.op || "";
+  // The /s/<token> rewrite hands the function the ORIGINAL request URL, not
+  // the rewritten one — so the op=view&token= query never arrives and the
+  // request fell through to the code gate ("bad or missing code"). Read the
+  // token off the path too, so it works whichever URL Netlify passes.
+  let pathToken = "";
+  const pm = url.pathname.match(/\/s\/([A-Za-z0-9_-]{16,64})\/?$/);
+  if (pm) { op = "view"; pathToken = pm[1]; }
   let body = {};
   if (req.method === "POST") { try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); } }
   // Public view: the only op that takes no pairing code. The token alone
   // identifies one image and nothing else.
   if (op === "view") {
-    const token = (q.token || "").trim();
+    const token = (q.token || pathToken || "").trim();
     if (!TOKEN_RE.test(token)) return json({ error: "bad token" }, 400);
     const sv = store();
     let rec = null;
