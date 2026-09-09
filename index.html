@@ -1257,7 +1257,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.15.1';
+const APP_VERSION='1.15.2';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1717,9 +1717,15 @@ function updateDimHint(){
 }
 
 // ---------- Image loading ----------
+let _loadSeq=0;
 function loadImage(src,quiet,meta){
+  // Sequence-guarded: decodes are async and finish in any order, so without
+  // this the autosaved previous image (slow, large) could land AFTER a fresh
+  // hand-off and silently replace it — seen as "my annotations didn't copy".
+  const seq=++_loadSeq;
   const im=new Image();
   im.onload=()=>{
+    if(seq!==_loadSeq) return;                 // superseded by a newer load
     state.imgW=im.naturalWidth; state.imgH=im.naturalHeight; state.hasImage=true;
     state.mode='image'; $('modeSeg')&&$('modeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v==='image')); $('codeCtl')&&($('codeCtl').hidden=true);
     if(!quiet){ state.annotations=[]; state.redactions=[]; state.origSrc=null;  // markup is per-image; a genuinely new import clears it
@@ -2480,6 +2486,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.15.2', items:[
+    'Fixed: an image handed over from Snappy Snap could be silently replaced by your previous autosaved one when that decoded more slowly — seen as mark-up "not copying across"',
+    'The desktop app now waits for the page to be ready before handing over, and says so if it can\'t',
+  ]},
   {v:'1.15.1', items:[
     'The Batch panel is now “Multiple screenshots” and sits near the top of the sidebar — it was the last of 14 panels, and collapsed, so the new layouts were unfindable',
     'Dropping several images on the canvas now frames them all; it used to keep the first and silently discard the rest',
@@ -2885,6 +2895,7 @@ window.addEventListener('message',e=>{
   // Pass them through loadImage so the caption is tied to THIS image.
   loadImage(d.dataUrl,false,{url:d.url,title:d.title});
 });
+window.__snappyReady=true;   // the desktop app polls for this before posting the image
 
 // ---------- Text cards (paste text/markdown/code → styled code-window card) ----------
 // The text panel is drawn to a canvas at 2× and fed through loadImage like any
@@ -4032,7 +4043,7 @@ function autosave(){
   }
   if(s && s._mode==='code'){ state.hasImage=true;
     ['btnDownload','btnDownload2','btnAnim','btnMagic','btnCopy'].forEach(id=>{ const b=$(id); if(b) b.disabled=false; }); render(); }
-  else if(s && s._has && s._img){ loadImage(s._img,true); }
+  else if(s && s._has && s._img && location.hash!=='#handoff'){ loadImage(s._img,true); }   // #handoff: an image is about to arrive
   else render();
 })();
 })();

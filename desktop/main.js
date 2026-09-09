@@ -259,20 +259,37 @@ function notify(savedPath, inboxOk){
 }
 
 // ---- beautify (hand the crop to Snappy Frame, same protocol as the extension)
+// Hand an image (or text) to a Snappy Frame window. The old version fired one
+// postMessage 700ms after load and swallowed any failure, so a slow page or a
+// large payload meant the user saw the app's autosaved PREVIOUS image and
+// concluded their mark-up hadn't come across. Now: open with #handoff (the
+// app skips its autosave restore), poll until the app says its listener is
+// registered, post, and say so if it never lands.
+async function deliverToBeautify(win, msg){
+  const payload = JSON.stringify(msg);
+  for(let i = 0; i < 50; i++){                       // up to ~10s
+    if(!win || win.isDestroyed()) return;
+    let ready = false;
+    try{ ready = await win.webContents.executeJavaScript('!!window.__snappyReady', true); }catch(e){}
+    if(ready){
+      try{ await win.webContents.executeJavaScript('window.postMessage(' + payload + ', "*"); true', true); return; }
+      catch(e){ console.error('beautify hand-off failed', e); }
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  try{ new Notification({ title:'Snappy Snap — Beautify', body:"Snappy Frame didn't pick up the capture. Paste it in with Ctrl+V, or drag it from the shelf." }).show(); }catch(e){}
+}
 function openBeautify(dataUrl){
   beautifyWin = new BrowserWindow({ width:1240, height:840, title:'Snappy Frame', autoHideMenuBar:true });
-  beautifyWin.loadURL(settings.beautifyUrl);
-  beautifyWin.webContents.on('did-finish-load', () => {
-    const js = 'window.postMessage(' + JSON.stringify({ type:'snappy-frame-image', dataUrl }) + ', "*");';
-    setTimeout(() => { beautifyWin.webContents.executeJavaScript(js).catch(() => {}); }, 700);
-  });
+  beautifyWin.loadURL(settings.beautifyUrl.replace(/#.*$/, '') + '#handoff');
+  beautifyWin.webContents.once('did-finish-load', () => deliverToBeautify(beautifyWin, { type:'snappy-frame-image', dataUrl }));
   beautifyWin.on('closed', () => { beautifyWin = null; });
 }
-
-// ---- mark-up editor ------------------------------------------------------
-// Hand the fresh crop to a canvas annotator; on finish it posts back a flattened
-// PNG. Markup always copies to the clipboard (that's the point — paste into a
-// chat), plus save/inbox/notify per the normal settings.
+function openBeautifyText(text, title){
+  const w = new BrowserWindow({ width:1240, height:840, title:'Snappy Frame', autoHideMenuBar:true });
+  w.loadURL(settings.beautifyUrl.replace(/#.*$/, '') + '#handoff');
+  w.webContents.once('did-finish-load', () => deliverToBeautify(w, { type:'snappy-frame-text', text, title }));
+}
 function openAnnotator(dataUrl){
   if(annotatorWin){ annotatorWin.focus(); return; }
   const img = nativeImage.createFromDataURL(dataUrl);
