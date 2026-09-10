@@ -135,7 +135,11 @@ input,select{font-family:inherit}
   background-repeat:repeat; background-position:center; transform-origin:center;
   mix-blend-mode:overlay; will-change:transform}
 /* card is absolutely centred; JS sizes the stage + nudges for perspective */
-#persp{position:absolute; left:50%; top:50%; z-index:2; perspective:1600px; will-change:transform}
+/* Flex, not inline: an inline-block card sits on a text baseline, so a font-metric
+   descender gap (~3px) crept under it and shifted it off-centre — and by a
+   DIFFERENT amount in the export clone, which floors font sizes. No line boxes,
+   no gap, and the export lands exactly where the layout was measured. */
+#persp{position:absolute; left:50%; top:50%; z-index:2; perspective:1600px; will-change:transform; display:flex}
 .f-card{
   position:relative; display:inline-flex; flex-direction:column; overflow:hidden;
   transform-style:preserve-3d; will-change:transform; background:#0b0c11;
@@ -400,10 +404,10 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
    just applied — there's no second styling path to keep in sync. */
 #multi{display:none; position:relative; align-items:center; justify-content:center; will-change:transform}
 #multi > *{flex:0 0 auto}
-.f-device{position:relative; display:inline-block}
+.f-device{position:relative; display:inline-flex; flex-direction:column}
 .f-device.d-none{padding:0}
 .f-device.d-browser3d{padding:0}
-.dv-screen{position:relative; display:inline-block; line-height:0}
+.dv-screen{position:relative; display:flex; line-height:0}
 /* laptop */
 .f-device.d-laptop{padding:14px 14px 0}
 .f-device.d-laptop .dv-screen{background:#0b0c11; padding:10px; border-radius:16px 16px 0 0;
@@ -1257,7 +1261,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.15.2';
+const APP_VERSION='1.15.3';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1462,8 +1466,14 @@ function layout(){
 
   // scale is applied *outside* the rotation so it scales the tilted result uniformly
   FR.style.transform=(scale!==1?`scale(${scale}) `:'')+rot;
-  persp.style.left=cx+'px'; persp.style.top=cy+'px';
-  persp.style.transform=`translate(-50%,-50%) translate(${(-dx).toFixed(2)}px,${(-dy).toFixed(2)}px)`;
+  // Chrome rounds a transformed element's layout position to whole px at paint
+  // time (getBoundingClientRect doesn't show it) — so keep the anchor integer and
+  // carry the fraction in the transform, which is applied at full precision.
+  // Otherwise a 345.5px anchor paints at 346 and the export lands 1px off the
+  // pixel-exact placement snapShotForExport() measured.
+  const cxI=Math.round(cx), cyI=Math.round(cy);
+  persp.style.left=cxI+'px'; persp.style.top=cyI+'px';
+  persp.style.transform=`translate(-50%,-50%) translate(${(cx-cxI-dx).toFixed(4)}px,${(cy-cyI-dy).toFixed(4)}px)`;
   fit.style.transform=savedFit; void fit.offsetWidth; fit.style.transition=savedTrans;
 }
 
@@ -1695,15 +1705,81 @@ $('zoomReset').addEventListener('click',resetView);
 // the screenshot renders at at least its native resolution — otherwise a large
 // grab shrunk to fit the canvas exports downsampled (grainy) text. Clamped so
 // the output stays within sane canvas bounds (and the iOS ~16.7M-px cap).
+// The screenshot's box in stage layout px (fractional — offsetWidth rounds, and a
+// rounded width is enough to drift the export off the pixel grid). Measured through
+// the preview transform, so it's valid mid-zoom too.
+function shotOnStage(){
+  const s=stage.getBoundingClientRect(), r=shot.getBoundingClientRect();
+  const k=s.width/(stage.offsetWidth||1) || 1;
+  return { x:(r.left-s.left)/k, y:(r.top-s.top)/k, w:r.width/k, h:r.height/k };
+}
+function _shotSnappable(){
+  return state.hasImage && state.mode!=='code' && !multiOn() && !(state.fill && state.aspect!=='auto')
+    && !state.rx && !state.ry && !state.rz;
+}
 function effectiveExportPR(){
   let pr=state.scale;
   if(state.hasImage && state.mode!=='code' && state.imgW && shot && shot.offsetWidth){
-    pr=Math.max(pr, state.imgW/shot.offsetWidth);
+    const css=_shotSnappable() ? (shotOnStage().w||shot.offsetWidth) : shot.offsetWidth;
+    // Never below native resolution — and, when the card is flat, snap so each
+    // screenshot pixel becomes a WHOLE number of output pixels (1:1 for big grabs,
+    // 2:1 for small). A fractional ratio (e.g. 2× layout over a 1920px grab =
+    // 1.04 output px per source px) resamples every pixel and softens all the text.
+    const native=state.imgW/css;
+    if(_shotSnappable()){ const n=Math.max(1, Math.round(pr/native)); pr=n*native; }
+    else pr=Math.max(pr, native);
   }
   const w=stage.offsetWidth||1, h=stage.offsetHeight||1, MAXSIDE=12000;
   pr=Math.min(pr, MAXSIDE/w, MAXSIDE/h);
   if(typeof IS_IOS!=='undefined' && IS_IOS){ pr=Math.min(pr, Math.sqrt(16000000/(w*h))); }
-  return Math.max(1, Math.round(pr*100)/100);
+  return Math.max(1, Math.round(pr*1e6)/1e6);
+}
+// Pixel-exact placement for the export. Chrome pixel-snaps an <img>'s box to
+// whole CSS px before painting, so a screenshot laid out at 1000×562.5 CSS px is
+// really painted 1000×563 — a 0.1% stretch that walks the bottom rows off the
+// pixel grid (and at a fractional pr, 64.25 CSS → 123.36 output px puts EVERY
+// row between two pixels). Transforms aren't snapped, so for the export the img
+// is laid out at its native size (integer box, no snap) and transform-scaled
+// into the same footprint (negative margins keep the card's layout unchanged);
+// the card is then nudged by < 1 output px so the shot's corner lands on a
+// whole pixel, and nearest-neighbour sampling makes the n:1 mapping lossless.
+// Only the export sees this; the preview keeps its normal styling.
+function snapShotForExport(pr){
+  const noop=()=>{};
+  if(!_shotSnappable()) return noop;
+  const r0=shotOnStage(); if(!(r0.w>0)) return noop;
+  const n=Math.round(r0.w*pr/state.imgW);                       // output px per source px
+  if(n<1 || Math.abs(r0.w*pr/state.imgW-n)>0.002) return noop;  // clamped by MAXSIDE/iOS — off-grid anyway
+  const sv={ w:shot.style.width, h:shot.style.height, mr:shot.style.marginRight, mb:shot.style.marginBottom,
+    tf:shot.style.transform, to:shot.style.transformOrigin, ir:shot.style.imageRendering, pt:persp.style.transform };
+  const s=n/pr;                                                  // layout px per source px
+  shot.style.width=state.imgW+'px'; shot.style.height=state.imgH+'px';
+  shot.style.marginRight=(-(state.imgW-state.imgW*s)).toFixed(4)+'px';
+  shot.style.marginBottom=(-(state.imgH-state.imgH*s)).toFixed(4)+'px';
+  shot.style.transformOrigin='0 0'; shot.style.transform=`scale(${s.toFixed(9)})`;
+  shot.style.imageRendering='pixelated';
+  const r=shotOnStage();
+  const dx=(Math.round(r.x*pr)-r.x*pr)/pr, dy=(Math.round(r.y*pr)-r.y*pr)/pr;
+  persp.style.transform=sv.pt+` translate(${dx.toFixed(6)}px,${dy.toFixed(6)}px)`;
+  return ()=>{ shot.style.width=sv.w; shot.style.height=sv.h; shot.style.marginRight=sv.mr; shot.style.marginBottom=sv.mb;
+    shot.style.transform=sv.tf; shot.style.transformOrigin=sv.to; shot.style.imageRendering=sv.ir; persp.style.transform=sv.pt; };
+}
+// html-to-image sizes its canvas with floor(width×pr), then stretches the SVG to
+// fit — so at a fractional pr (2.56 for a 2560px grab) the real scale is a hair
+// off and the screenshot drifts across pixel boundaries down the image. Composite
+// it ourselves at EXACTLY pr; the sub-pixel sliver at the right/bottom is dropped.
+async function stageToBlob(opts){
+  const svg=await htmlToImage.toSvg(stage, opts);
+  const im=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.decoding='async'; i.src=svg; });
+  try{ if(im.decode) await im.decode(); }catch(e){}
+  await new Promise(r=>requestAnimationFrame(r));
+  const pr=opts.pixelRatio||1, W=opts.width, H=opts.height;
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.floor(W*pr+1e-6)); c.height=Math.max(1,Math.floor(H*pr+1e-6));
+  const g=c.getContext('2d');
+  if(opts.type==='image/jpeg'){ g.fillStyle=opts.backgroundColor||'#ffffff'; g.fillRect(0,0,c.width,c.height); }
+  g.drawImage(im,0,0,W*pr,H*pr);
+  return new Promise(res=>c.toBlob(res, opts.type||'image/png', opts.quality));
 }
 function outSize(){
   const pr=effectiveExportPR();
@@ -1713,7 +1789,10 @@ function outSize(){
 function updateDimHint(){
   if(!state.hasImage){ $('dimHint').textContent='Import an image to export.'; return; }
   const [w,h]=outSize();
-  $('dimHint').textContent=`Output: ${w} × ${h}px · ${state.fmt.toUpperCase()}`;
+  let map='';
+  if(_shotSnappable() && state.imgW){ const r=shotOnStage(); const n=Math.round(r.w*effectiveExportPR()/state.imgW);
+    if(n>=1 && Math.abs(r.w*effectiveExportPR()/state.imgW-n)<0.002) map=` · pixel-exact ${n}:1`; }
+  $('dimHint').textContent=`Output: ${w} × ${h}px · ${state.fmt.toUpperCase()}${map}`;
 }
 
 // ---------- Image loading ----------
@@ -1783,19 +1862,26 @@ async function renderBlob(){
   const safari=_isSafari();
   try{ if(state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   try{ const lg=$('logoLayer'); if(state.logoSrc && lg.decode) await lg.decode(); }catch(e){}
+  // The stage may have been sized before a big image reported its dimensions
+  // (nothing re-lays-out on the img's load) — an export straight after a hand-off
+  // then came out cropped to the padding. Lay out again now the size is known.
+  try{ layout(); }catch(e){}
   // Native-resolution-aware pixel ratio (keeps text crisp on large grabs);
   // already clamped to the iOS ~16.7M-px canvas cap.
   const pr=effectiveExportPR();
   const opts={ pixelRatio:pr, width:stage.offsetWidth, height:stage.offsetHeight,
     style:{transform:'none'}, cacheBust:!safari };
   const final=()=> state.fmt==='jpeg'
-    ? htmlToImage.toBlob(stage,{...opts, type:'image/jpeg', quality:0.95, backgroundColor: state.bgType==='none'?'#ffffff':undefined})
-    : htmlToImage.toBlob(stage, opts);
-  // Safari paints embedded images blank on the FIRST full render, then caches them —
-  // so prime with a full discarded render (a low-res warm-up wasn't enough), let it
-  // settle a beat, then return the second render which is correct.
-  if(safari){ try{ await final(); }catch(e){} await new Promise(r=>setTimeout(r,60)); }
-  return await final();
+    ? stageToBlob({...opts, type:'image/jpeg', quality:0.95, backgroundColor: state.bgType==='none'?'#ffffff':undefined})
+    : stageToBlob(opts);
+  const unsnap=snapShotForExport(pr);
+  try{
+    // Safari paints embedded images blank on the FIRST full render, then caches them —
+    // so prime with a full discarded render (a low-res warm-up wasn't enough), let it
+    // settle a beat, then return the second render which is correct.
+    if(safari){ try{ await final(); }catch(e){} await new Promise(r=>setTimeout(r,60)); }
+    return await final();
+  } finally { unsnap(); }
 }
 // Inside the native app (Capacitor), neither navigator.share({files}) nor an
 // <a download> works in the WebView. Write the image to the app cache with the
@@ -2486,6 +2572,11 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.15.3', items:[
+    'Exports are now pixel-exact: every screenshot pixel becomes a whole number of output pixels, on the pixel grid — before, a 1920px grab at 2× was resampled at 1.04:1 and every row of text came out slightly soft',
+    'Scale now means "nearest whole multiple of the screenshot\'s own resolution" (the Output line says which, e.g. 1:1 or 2:1); integer upscales use nearest-neighbour so 1px UI detail stays sharp',
+    'Fixed a ~3px gap that sat under the card and left it slightly off-centre',
+  ]},
   {v:'1.15.2', items:[
     'Fixed: an image handed over from Snappy Snap could be silently replaced by your previous autosaved one when that decoded more slowly — seen as mark-up "not copying across"',
     'The desktop app now waits for the page to be ready before handing over, and says so if it can\'t',
