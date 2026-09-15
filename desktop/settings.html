@@ -142,7 +142,7 @@
   $('autoStart').checked = await window.snap.getAutoStart();
   $('autoStart').addEventListener('change', async e => { const on = await window.snap.setAutoStart(e.target.checked); $('autoStart').checked = on; });
   function paint(){
-    $('hotkey').value = s.hotkey;
+    $('hotkey').value = s.hotkey || '';   // every other field guards; this one showed "undefined" if it ever arrived empty
     $('windowHotkey').value = s.windowHotkey || '';
     $('screenHotkey').value = s.screenHotkey || '';
     $('allHotkey').value = s.allHotkey || '';
