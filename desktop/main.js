@@ -726,6 +726,16 @@ ipcMain.on('shelf:copy', (e, i) => {
   try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
 });
 ipcMain.on('shelf:reveal', (e, i) => { const it = shelf[i]; if(it) shell.showItemInFolder(it.file); });
+// Hand a saved PNG to another app. Windows' own "Open with" chooser is a
+// shell32 entry point, so you get the real OS list (Paint, Photoshop, whatever
+// you have) rather than a list we'd have to guess at and keep current.
+function openWith(file){
+  if(!file) return;
+  if(process.platform !== 'win32'){ try{ shell.openPath(file); }catch(e){} return; }
+  execFile('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', file], (err) => {
+    if(err){ console.error('open with failed', err); try{ shell.openPath(file); }catch(e2){} }
+  });
+}
 // Right-click a tile: the actions the hover buttons don't have room for.
 ipcMain.on('shelf:menu', (e, i) => {
   const it = shelf[i]; if(!it) return;
@@ -735,6 +745,7 @@ ipcMain.on('shelf:menu', (e, i) => {
     { label: 'Copy image', click: () => { const im = load(); if(im) try{ clipboard.writeImage(im); }catch(e2){} } },
     { label: 'Pin on top', click: () => { const im = load(); if(im) openPin(im); } },
     { type: 'separator' },
+    { label: 'Open with…', click: () => openWith(it.file) },
     { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
     { label: 'Remove from shelf', click: () => { const k = shelf.indexOf(it); if(k >= 0) shelf.splice(k, 1); sendShelf(); saveHistory(); } },
   ]);

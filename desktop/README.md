@@ -46,11 +46,19 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 
 ## Things worth knowing
 
+**While you drag a region**, a magnifier follows the cursor showing individual
+pixels and the exact coordinate, so you can land an edge instead of guessing
+through the dimming veil. Hold **Space** to slide the whole rectangle without
+resizing it — the rescue for a drag started a few pixels off. **Z** hides the
+magnifier for that grab; Settings has the permanent switch.
+
 **The session shelf** holds everything you've captured. Drag a thumbnail
 straight into Claude Desktop, Slack or an editor — it's a real OS file drag, not
-a bitmap, so anything that accepts a dropped file accepts it. Drag the shelf by
-its header to move it (including to another monitor), **S/M/L** resizes the
-thumbnails, and the padlock pins it in place. Its contents survive a restart.
+a bitmap, so anything that accepts a dropped file accepts it. Right-click a tile
+for a share link, a pin, **Open with…** (the Windows app chooser) or the folder.
+Drag the shelf by its header to move it (including to another monitor),
+**S/M/L** resizes the thumbnails, and the padlock pins it in place. Its contents
+survive a restart.
 
 **Terminals are captured as text, not pixels.** A screenshot of a terminal is
 how API keys end up pasted into a chat, and pixels can't be masked — so a window
