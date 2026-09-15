@@ -79,6 +79,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/>
       </svg></button>
+    <button class="mode" data-m="board" title="Send this grab straight to your AI Launchpad idea board">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>
+        <rect x="3" y="16" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/>
+      </svg></button>
     <button class="mode" data-m="batch" title="Add this grab to a batch">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
         <rect x="8" y="3" width="13" height="13" rx="2"/><path d="M16 19v0a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h0"/>
@@ -95,7 +100,8 @@
   const NAMES = { region:'Capture a region', window:'Capture the active window',
                   screen:'Capture the whole screen', markup:'Capture and mark up',
                   terminal:'Capture terminal text',
-                  ocr:'Copy text from a region', pin:'Pin on top', batch:'Add to batch' };
+                  ocr:'Copy text from a region', pin:'Pin on top',
+                  board:'Send to the idea board', batch:'Add to batch' };
   let mode = 'region', s = {};
 
   window.snap.barOnState(v => { s = v || {}; paintMenu(); });
@@ -180,7 +186,7 @@
   addEventListener('keydown', e => {
     if(e.key === 'Escape'){ open ? closeMenu() : window.snap.barClose(); }
     else if(e.key === 'Enter'){ go(); }
-    else if(e.key >= '1' && e.key <= '8'){
+    else if(e.key >= '1' && e.key <= '9'){
       const b = document.querySelectorAll('.mode')[+e.key - 1]; if(b) setMode(b.dataset.m);
     }
   });

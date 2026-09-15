@@ -36,6 +36,7 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 | `Ctrl+Shift+2` | **Active window** — grab the focused window, no dragging |
 | `Ctrl+Shift+6` | **Whole screen** — the screen your cursor is on, no rectangle to drag |
 | *(set your own)* | **All monitors** — every screen stitched into one image, laid out as they sit on your desk |
+| *(set your own)* | **Idea board** — a region pinned straight to your AI Launchpad board |
 | `Ctrl+Shift+3` | **Mark up** — grab a region, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate, blur; move/nudge/delete anything, undo/redo; finish to clipboard, Pin, a 7-day Link, or Beautify |
 | `Ctrl+Shift+4` | **Terminal text** — the focused terminal's whole scrollback, as text |
 | `Ctrl+Shift+5` | **Batch** — collect several grabs and hand them over together |
@@ -64,6 +65,15 @@ moment you release is faster when your aim was good.
 `{year}` `{month}` `{day}` `{hour}` `{minute}` `{second}` `{app}` `{width}`
 `{height}`. Anything else in the box is kept as typed, and Settings previews the
 result as you type. Leave it empty for the built-in naming.
+
+**Pin captures to your AI Launchpad.** Put your Launchpad's address and owner
+passphrase in Settings and captures can go straight to its private idea board:
+a whole capture mode, a button on the capture bar, **🧷 Board** in the mark-up
+editor, and *Send to idea board* on a shelf tile. It signs in once and keeps the
+week-long bearer token it gets back, exactly as the Launchpad's own browser
+extension does, so nothing changes on that side. Oversized captures are stepped
+down (and finally re-encoded as JPEG) to fit the board's 4 MB limit. Sending is
+an upload, with the same caution as the inbox.
 
 **Share links can be revoked.** Tray → *Share links…* lists every link this
 computer has minted, when it was made and how long it has left. Revoking deletes
@@ -122,6 +132,7 @@ manager you already use.
 "Snappy Snap.exe" --all                         # every monitor, stitched
 "Snappy Snap.exe" --markup                      # region, then the editor
 "Snappy Snap.exe" --ocr | --pin | --batch       # the other capture modes
+"Snappy Snap.exe" --board                       # a region, pinned to the idea board
 "Snappy Snap.exe" --bar | --shelf               # show/hide the bar or the shelf
 
 "Snappy Snap.exe" --screen --delay 3000         # wait 3s first (max 60s)

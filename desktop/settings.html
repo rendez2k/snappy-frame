@@ -38,6 +38,8 @@
     <input type="text" id="screenHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>All monitors</b> — every screen stitched into one image, laid out the way they are on your desk. Empty for none.</p>
     <input type="text" id="allHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+7" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Idea board</b> — drag a rectangle and it goes straight to your AI Launchpad board. Empty for none.</p>
+    <input type="text" id="boardHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+I" style="margin-top:6px">
     <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate and blur. Great for flagging a fix to paste into a chat.</p>
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
@@ -124,6 +126,18 @@
   </div>
 
   <div class="row">
+    <h3>AI Launchpad idea board <span style="font-weight:400;color:var(--mut)">(optional · uploads)</span></h3>
+    <p>Pin captures straight to your Launchpad's private idea board. It signs in
+      once with your owner passphrase and keeps the week-long token it gets back,
+      the same way the Launchpad's own browser extension does. Sending a capture
+      <b>uploads it</b> to your Launchpad site.</p>
+    <p style="margin-top:10px">Address</p>
+    <input type="text" id="launchpadUrl" spellcheck="false" placeholder="https://my-launchpad.netlify.app" style="margin-top:6px">
+    <p style="margin-top:10px">Owner passphrase <span style="color:var(--mut)">(stored on this PC only)</span></p>
+    <input type="password" id="launchpadPass" spellcheck="false" placeholder="••••••••••" style="margin-top:6px">
+  </div>
+
+  <div class="row">
     <h3>Online inbox <span style="font-weight:400;color:var(--mut)">(optional · uploads)</span></h3>
     <p>Also send each snap to your web inbox. Get a code at
       <b>snappy-frame.netlify.app/inbox</b> and paste it here. This is the only
@@ -146,6 +160,9 @@
     $('windowHotkey').value = s.windowHotkey || '';
     $('screenHotkey').value = s.screenHotkey || '';
     $('allHotkey').value = s.allHotkey || '';
+    $('boardHotkey').value = s.boardHotkey || '';
+    $('launchpadUrl').value = s.launchpadUrl || '';
+    $('launchpadPass').value = s.launchpadPass || '';
     $('namePattern').value = s.namePattern || '';
     previewName();
     $('markupHotkey').value = s.markupHotkey || '';
@@ -172,6 +189,9 @@
   $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
   $('screenHotkey').addEventListener('change', e => set({ screenHotkey: e.target.value.trim() }));
   $('allHotkey').addEventListener('change', e => set({ allHotkey: e.target.value.trim() }));
+  $('boardHotkey').addEventListener('change', e => set({ boardHotkey: e.target.value.trim() }));
+  $('launchpadUrl').addEventListener('change', e => set({ launchpadUrl: e.target.value.trim() }));
+  $('launchpadPass').addEventListener('change', e => set({ launchpadPass: e.target.value }));
   $('namePattern').addEventListener('input', previewName);
   $('namePattern').addEventListener('change', e => set({ namePattern: e.target.value.trim() }));
   // Show what the template actually produces. The same substitution as the main

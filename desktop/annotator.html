@@ -84,6 +84,7 @@
     <span class="hint">Esc cancel</span>
     <div class="spacer"></div>
     <div id="acts">
+      <button class="act" id="board" title="Send it to your AI Launchpad idea board">🧷 Board</button>
       <button class="act" id="pin" title="Pin the marked-up image on top of everything">📌 Pin</button>
       <button class="act" id="share" title="Upload and copy a 7-day link">🔗 Link</button>
       <button class="act" id="beautify" title="Open in Snappy Frame">✨ Beautify</button>
@@ -440,6 +441,7 @@
   $('done').onclick = () => finish('done');
   $('beautify').onclick = () => finish('beautify');
   $('pin').onclick = () => finish('pin');
+  $('board').onclick = () => finish('board');
   $('share').onclick = () => finish('share');
 
   // ---- keyboard ----------------------------------------------------------

@@ -25,6 +25,9 @@ const DEFAULTS = {
   magnifier: true,                                 // pixel loupe while dragging the marquee
   adjustRegion: false,                             // hold the marquee after the drag so it can be nudged/resized
   namePattern: '',                                 // '' = the built-in naming; else a {token} template
+  launchpadUrl: '',                                // your AI Launchpad origin, e.g. https://my-launchpad.netlify.app
+  launchpadPass: '',                               // its owner passphrase — swapped for a 7-day bearer token
+  boardHotkey: '',                                 // grab a region and pin it straight to the idea board
   hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
   ocrEngine: 'windows',                            // 'windows' (local, private) | 'claude' (cloud, best)
   anthropicKey: '',                                // BYOK for the Claude OCR engine
@@ -117,7 +120,7 @@ async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
   const seq = ++grabSeq;
-  captureMode = ['markup','batch','ocr','pin'].includes(mode) ? mode : 'normal';
+  captureMode = ['markup','batch','ocr','pin','board'].includes(mode) ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
@@ -175,6 +178,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
   if(captureMode === 'ocr'){ await deliverOcr(crop); returnBar(); return; }
   if(captureMode === 'pin'){ openPin(crop); returnBar(); return; }
+  if(captureMode === 'board'){ await sendToBoard(crop); returnBar(); return; }
   if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); returnBar(); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }   // returns when the editor closes
   await handleResult(crop);
@@ -370,6 +374,7 @@ ipcMain.on('annotator:done', async (e, payload) => {
                               : nativeImage.createFromDataURL(payload.dataUrl);
     if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); returnBar(); return; }
     if(payload.action === 'pin'){ openPin(img); returnBar(); return; }
+    if(payload.action === 'board'){ await sendToBoard(img); returnBar(); return; }
     if(payload.action === 'share'){ await shareAndCopy(img); returnBar(); return; }
     await handleResult(img, { markup: true, forceCopy: true });
     returnBar();
@@ -609,6 +614,95 @@ async function shareAndCopy(image){
   }
 }
 
+// ---- AI Launchpad idea board ---------------------------------------------
+// The Launchpad's own board already takes owner-authenticated uploads, and its
+// owner check accepts a BEARER token as proof in place of a session cookie
+// (that path exists for its Chrome extension). So a capture can be pinned
+// straight to the board with no change at that end: swap the passphrase for a
+// token once, then POST the image. The token lasts a week; a 401 means it
+// expired, so we log in again and retry exactly once.
+let boardToken = null, boardTokenAt = 0;
+const BOARD_MAX_BYTES = 4 * 1024 * 1024;           // the board's own limit
+function boardOrigin(){
+  const raw = (settings.launchpadUrl || '').trim();
+  if(!raw) return null;
+  try{ return new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw).origin; }catch(e){ return null; }
+}
+async function boardLogin(){
+  const origin = boardOrigin();
+  const pass = (settings.launchpadPass || '').trim();
+  if(!origin || !pass) throw new Error('Set your Launchpad address and passphrase in Settings');
+  const res = await fetch(origin + '/api/login', {
+    method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ passphrase: pass, token: true }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if(!res.ok || !j.token) throw new Error(j.error || (res.status === 401 ? 'That passphrase was rejected' : 'Sign-in failed (' + res.status + ')'));
+  boardToken = j.token; boardTokenAt = Date.now();
+  return boardToken;
+}
+// The board caps an image at 4 MB. A full-screen PNG can be bigger, so step the
+// long edge down, then fall back to JPEG — better a slightly softer pin than a
+// refused one. Returns a data URL.
+function boardEncode(image){
+  const trySizes = [0, 2200, 1600, 1200];
+  for(const side of trySizes){
+    const im = side ? fitLongEdge(image, side) : image;
+    const png = im.toPNG();
+    if(png.length <= BOARD_MAX_BYTES) return { dataUrl: 'data:image/png;base64,' + png.toString('base64'), size: im.getSize() };
+  }
+  const im = fitLongEdge(image, 1600);
+  for(const q of [82, 68, 50]){
+    const jpg = im.toJPEG(q);
+    if(jpg.length <= BOARD_MAX_BYTES) return { dataUrl: 'data:image/jpeg;base64,' + jpg.toString('base64'), size: im.getSize() };
+  }
+  return null;
+}
+function fitLongEdge(image, side){
+  const sz = image.getSize();
+  const long = Math.max(sz.width, sz.height);
+  if(long <= side) return image;
+  const k = side / long;
+  try{ return image.resize({ width: Math.round(sz.width * k), height: Math.round(sz.height * k), quality:'best' }); }
+  catch(e){ return image; }
+}
+async function postIdea(payload, token){
+  const res = await fetch(boardOrigin() + '/api/ideas', {
+    method:'POST', headers:{ 'Content-Type':'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify(payload),
+  });
+  const j = await res.json().catch(() => ({}));
+  return { res, j };
+}
+async function sendToBoard(image, ctx){
+  const origin = boardOrigin();
+  if(!origin){
+    try{ new Notification({ title:'Snappy Snap — Idea board', body:'Add your Launchpad address and passphrase in Settings first.' }).show(); }catch(e){}
+    return false;
+  }
+  try{
+    const enc = boardEncode(image);
+    if(!enc) throw new Error('That image is too large to pin, even reduced');
+    const payload = { image: enc.dataUrl, w: enc.size.width, h: enc.size.height };
+    const title = (ctx && ctx.title) || '';
+    if(title) payload.title = title;
+    if(ctx && ctx.note) payload.note = ctx.note;
+    let token = boardToken || await boardLogin();
+    let { res, j } = await postIdea(payload, token);
+    if(res.status === 401 || res.status === 403){            // expired or revoked — one fresh attempt
+      token = await boardLogin();
+      ({ res, j } = await postIdea(payload, token));
+    }
+    if(!res.ok) throw new Error(j.error || ('the board said ' + res.status));
+    try{ new Notification({ title:'Snappy Snap — Pinned', body:'Added to your idea board.' }).show(); }catch(e){}
+    return true;
+  }catch(e){
+    console.error('send to board failed', e);
+    try{ new Notification({ title:'Snappy Snap — Idea board', body:String(e && e.message || e).slice(0, 180) }).show(); }catch(e2){}
+    return false;
+  }
+}
+
 // ---- session shelf -------------------------------------------------------
 // A slim always-on-top strip holding this session's snaps. Each thumbnail is a
 // NATIVE file drag source (webContents.startDrag), so a snap can be dragged
@@ -733,7 +827,7 @@ function toggleShelf(){
 // The window is sized from what the page ACTUALLY measures, not a constant:
 // a hardcoded height was measured against one machine's fonts and clipped the
 // top of the Options menu everywhere Segoe UI renders it taller.
-const BAR_W = 660, BAR_H_MIN = 84;
+const BAR_W = 712, BAR_H_MIN = 84;   // widened for the 9th mode; the pill self-measures its height only
 let barH = BAR_H_MIN;                              // current content height, reported by the renderer
 function barBounds(){
   const cur = screen.getCursorScreenPoint();
@@ -771,6 +865,8 @@ ipcMain.on('bar:size', (e, px) => {
   barH = Math.max(BAR_H_MIN, Math.min(1200, Math.round(+px) || BAR_H_MIN));
   if(barWin && !barWin.isDestroyed()) barWin.setBounds(barBounds());
 });
+// A new address or passphrase makes the cached token meaningless.
+function forgetBoardToken(){ boardToken = null; boardTokenAt = 0; }
 ipcMain.on('bar:option', (e, patch) => {
   Object.assign(settings, patch || {}); saveSettings(); refreshTrayMenu();
   if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:state', settings);
@@ -790,8 +886,9 @@ ipcMain.on('bar:run', async (e, mode) => {
     // at commit/cancel, so those call returnBar() from their own end points.
     if(mode === 'screen'){ await captureWholeScreen(); }          // returns the bar itself
     else if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
+    else if(mode === 'board'){ startCapture('board'); }
     else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
-    else startCapture(['markup','batch','ocr','pin'].includes(mode) ? mode : 'normal');
+    else startCapture(['markup','batch','ocr','pin','board'].includes(mode) ? mode : 'normal');
   }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
 });
 // Dismissing after a grab is right for a one-off — it's what the platform tools
@@ -855,6 +952,7 @@ ipcMain.on('shelf:menu', (e, i) => {
     { label: 'Share link  (7 days)', click: () => { const im = load(); if(im) shareAndCopy(im); } },
     { label: 'Copy image', click: () => { const im = load(); if(im) try{ clipboard.writeImage(im); }catch(e2){} } },
     { label: 'Pin on top', click: () => { const im = load(); if(im) openPin(im); } },
+    { label: 'Send to idea board', click: () => { const im = load(); if(im) sendToBoard(im, { title: it.name }); } },
     { type: 'separator' },
     { label: 'Open with…', click: () => openWith(it.file) },
     { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
@@ -909,6 +1007,7 @@ function refreshTrayMenu(){
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
+    { label: 'Send a region to the idea board   (' + (settings.boardHotkey || '—') + ')', click: () => startCapture('board') },
     ...(pins.size ? [{ label: 'Close all pins (' + pins.size + ')', click: () => { closeAllPins(); refreshTrayMenu(); } }] : []),
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
@@ -944,8 +1043,9 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch || 'boardHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
+  if('launchpadUrl' in patch || 'launchpadPass' in patch) forgetBoardToken();
   refreshTrayMenu();
   return settings;
 });
@@ -1548,6 +1648,10 @@ function registerHotkey(){
     try{ globalShortcut.register(settings.pinHotkey, () => startCapture('pin')); }
     catch(e){ console.error('pin hotkey failed', e); }
   }
+  if(settings.boardHotkey){
+    try{ globalShortcut.register(settings.boardHotkey, () => startCapture('board')); }
+    catch(e){ console.error('board hotkey failed', e); }
+  }
 }
 
 // ---- command line ---------------------------------------------------------
@@ -1555,7 +1659,7 @@ function registerHotkey(){
 // second copy: Electron hands its argv to the running instance, which performs
 // the capture. That makes every mode scriptable and bindable to whatever
 // shortcut manager you already use. Pure parser, exported for the tests.
-const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','bar','shelf'];
+const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','board','bar','shelf'];
 function parseCli(argv){
   // argv arrives as the full process argv; drop the exe and any Electron/Chromium
   // switches so `snappy-snap.exe --region` and `electron . --region` parse alike.
@@ -1593,7 +1697,7 @@ async function runCli(cmd){
     if(cmd.mode === 'window') await captureActiveWindow();
     else if(cmd.mode === 'screen') await captureWholeScreen();
     else if(cmd.mode === 'all') await captureAllScreens();
-    else startCapture(['markup','ocr','pin','batch'].includes(cmd.mode) ? cmd.mode : 'normal');
+    else startCapture(['markup','ocr','pin','batch','board'].includes(cmd.mode) ? cmd.mode : 'normal');
   }catch(e){ console.error('cli capture failed', e); cliOverride = null; }
 }
 
