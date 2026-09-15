@@ -34,7 +34,9 @@
     <input type="text" id="hotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Active window</b> — grab the focused window instantly, no dragging. Files under the app's name.</p>
     <input type="text" id="windowHotkey" spellcheck="false" style="margin-top:6px">
-    <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw arrows, boxes, text or blur before it's copied. Great for flagging a fix to paste into a chat.</p>
+    <p style="margin-top:12px"><b>Whole screen</b> — the screen your cursor is on, grabbed instantly with no rectangle to drag.</p>
+    <input type="text" id="screenHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate and blur. Great for flagging a fix to paste into a chat.</p>
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
     <input type="text" id="batchHotkey" spellcheck="false" style="margin-top:6px">
@@ -71,6 +73,7 @@
     <label class="sw" style="margin-top:8px"><input type="checkbox" id="terminalAsText"> Capture terminal <b>windows</b> as masked text, not a picture <span style="color:var(--mut)">(active-window hotkey)</span></label>
     <label class="sw"><input type="checkbox" id="warnSecrets"> Warn me if I snip a terminal that has a key on screen</label>
     <label class="sw"><input type="checkbox" id="hideOwn"> Keep Snappy's own windows out of the shot <span style="color:var(--mut)">(shelf, pins, batch)</span></label>
+    <label class="sw"><input type="checkbox" id="magnifier"> Show the pixel magnifier while dragging a region <span style="color:var(--mut)">(Z toggles it mid-capture)</span></label>
   </div>
 
   <div class="row">
@@ -132,6 +135,7 @@
   function paint(){
     $('hotkey').value = s.hotkey;
     $('windowHotkey').value = s.windowHotkey || '';
+    $('screenHotkey').value = s.screenHotkey || '';
     $('markupHotkey').value = s.markupHotkey || '';
     $('batchHotkey').value = s.batchHotkey || '';
     $('termHotkey').value = s.termHotkey || '';
@@ -140,7 +144,7 @@
     $('ocrHotkey').value = s.ocrHotkey || '';
     $('pinHotkey').value = s.pinHotkey || '';
     $('folder').textContent = s.saveFolder;
-    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn'].forEach(k => $(k).checked = !!s[k]);
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
@@ -154,6 +158,7 @@
 
   $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
   $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
+  $('screenHotkey').addEventListener('change', e => set({ screenHotkey: e.target.value.trim() }));
   $('markupHotkey').addEventListener('change', e => set({ markupHotkey: e.target.value.trim() }));
   $('batchHotkey').addEventListener('change', e => set({ batchHotkey: e.target.value.trim() }));
   $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
@@ -167,7 +172,7 @@
   $('e-claude').onclick = () => set({ ocrEngine:'claude' });
   $('anthropicKey').addEventListener('change', e => set({ anthropicKey: e.target.value.trim() }));
   $('ocrModel').addEventListener('change', e => set({ ocrModel: e.target.value.trim() || 'claude-opus-5' }));
-  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
   $('open').onclick = () => window.snap.openFolder();

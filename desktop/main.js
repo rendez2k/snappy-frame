@@ -20,6 +20,8 @@ const DEFAULTS = {
   barKeep: false,                                  // bring the capture bar back after each grab
   ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
   pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
+  screenHotkey: 'CommandOrControl+Shift+6',        // the whole screen, no marquee
+  magnifier: true,                                 // pixel loupe while dragging the marquee
   hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
   ocrEngine: 'windows',                            // 'windows' (local, private) | 'claude' (cloud, best)
   anthropicKey: '',                                // BYOK for the Claude OCR engine
@@ -146,7 +148,8 @@ async function startCapture(mode){
     // showing, so the window appears already dimmed — no stale-image flash and
     // no live-transparent phase. Focus is safe now: the frame is captured.
     const ready = new Promise(r => { readyResolve = r; });
-    overlayWin.webContents.send('overlay:show', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') });
+    overlayWin.webContents.send('overlay:show', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64'),
+      magnifier: settings.magnifier !== false });
     await Promise.race([ready, new Promise(r => setTimeout(r, 400))]);
     readyResolve = null;
     if(seq !== grabSeq){ return; }                   // superseded while waiting
@@ -674,7 +677,8 @@ ipcMain.on('bar:run', async (e, mode) => {
   try{
     // window/terminal finish when they resolve; the marquee modes finish later,
     // at commit/cancel, so those call returnBar() from their own end points.
-    if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
+    if(mode === 'screen'){ await captureWholeScreen(); }          // returns the bar itself
+    else if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
     else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
     else startCapture(['markup','batch','ocr','pin'].includes(mode) ? mode : 'normal');
   }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
@@ -777,6 +781,7 @@ function refreshTrayMenu(){
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Capture region   (' + settings.hotkey + ')', click: () => startCapture() },
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
+    { label: 'Capture whole screen   (' + (settings.screenHotkey || '—') + ')', click: () => captureWholeScreen().catch((e) => console.error(e)) },
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
@@ -815,7 +820,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   refreshTrayMenu();
   return settings;
@@ -1125,6 +1130,35 @@ async function captureActiveWindow(){
   await handleResult(img, { appName: appName || src.name });
 }
 
+// ---- whole-screen capture (no marquee) -----------------------------------
+// The screen under the cursor, grabbed and delivered in one keystroke. The
+// marquee path already takes exactly this frame before it shows anything, so
+// this is the same capture minus the crop — and it keeps the hover-safety
+// contract: nothing of ours is on screen when the frame is taken.
+async function captureWholeScreen(){
+  if(overlayBusy) return;
+  overlayBusy = true;
+  try{
+    const pt = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(pt);
+    const sf = display.scaleFactor || 1;
+    const px = { width: Math.round(display.size.width * sf), height: Math.round(display.size.height * sf) };
+    await hideOwnWindows();
+    const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize: px });
+    const displays = screen.getAllDisplays();
+    const idx = displays.findIndex(d => d.id === display.id);
+    const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[idx] || sources[0];
+    restoreOwnWindows();
+    if(!src || src.thumbnail.isEmpty()){
+      try{ new Notification({ title:'Snappy Snap', body:'Couldn’t read the screen' }).show(); }catch(e){}
+      return;
+    }
+    await handleResult(src.thumbnail);
+  }catch(e){
+    console.error('captureWholeScreen failed', e); restoreOwnWindows();
+  }finally{ overlayBusy = false; returnBar(); }
+}
+
 // ---- terminal scrollback capture (text, not pixels) ----------------------
 // A terminal's scrollback is text, so instead of scroll-and-stitching pixels
 // we read the buffer itself and hand it to Snappy Frame's Text cards, which
@@ -1284,6 +1318,10 @@ function registerHotkey(){
   if(settings.markupHotkey){
     try{ globalShortcut.register(settings.markupHotkey, () => startCapture('markup')); }
     catch(e){ console.error('markup hotkey failed', e); }
+  }
+  if(settings.screenHotkey){
+    try{ globalShortcut.register(settings.screenHotkey, () => captureWholeScreen().catch(e => console.error(e))); }
+    catch(e){ console.error('screen hotkey failed', e); }
   }
   if(settings.batchHotkey){
     try{ globalShortcut.register(settings.batchHotkey, () => startCapture('batch')); }

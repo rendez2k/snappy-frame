@@ -15,13 +15,22 @@
     background:rgba(18,20,28,.86);color:#fff;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:999px;
     box-shadow:0 6px 20px rgba(0,0,0,.4);}
   #hint b{color:#b8a7ff;}
+  /* Magnifier: a pixel-level loupe that follows the cursor, so you can land an
+     edge exactly instead of eyeballing it through the dimming veil. */
+  #loupe{position:fixed;display:none;z-index:6;pointer-events:none;
+    border:2px solid rgba(255,255,255,.9);border-radius:10px;overflow:hidden;
+    box-shadow:0 8px 28px rgba(0,0,0,.55);background:#12141c;}
+  #loupe canvas{display:block;image-rendering:pixelated;}
+  #loupeTxt{position:absolute;left:0;right:0;bottom:0;background:rgba(18,20,28,.92);
+    color:#fff;font-size:10.5px;font-weight:700;text-align:center;padding:2px 0;letter-spacing:.02em;}
 </style>
 </head>
 <body>
   <img id="shot" alt="" draggable="false">
   <div id="veil"></div>
   <div id="sel"><div id="dim"></div></div>
-  <div id="hint">Drag to snap &nbsp;·&nbsp; <b>Esc</b> to cancel</div>
+  <div id="loupe"><canvas id="loupeC" width="132" height="132"></canvas><div id="loupeTxt"></div></div>
+  <div id="hint">Drag to snap &nbsp;·&nbsp; hold <b>Space</b> to move it &nbsp;·&nbsp; <b>Z</b> loupe &nbsp;·&nbsp; <b>Esc</b> to cancel</div>
 <script>
 (() => {
   const shot = document.getElementById('shot'), veil = document.getElementById('veil'),
@@ -29,6 +38,27 @@
   // The window is reused across grabs. `armed` gates input so stray events
   // between grabs (while hidden) can't fire a commit.
   let sx = 0, sy = 0, drag = false, armed = false;
+  const loupe = document.getElementById('loupe'), lc = document.getElementById('loupeC'),
+        lg = lc.getContext('2d'), ltx = document.getElementById('loupeTxt');
+  const L = 132, ZOOM = 8, SPAN = L / ZOOM;              // source px shown across the loupe
+  let spaceDown = false, magnify = true;                  // Space = shift the whole marquee
+  function drawLoupe(cx, cy){
+    if(!magnify || !shot.naturalWidth){ loupe.style.display = 'none'; return; }
+    const k = shot.naturalWidth / innerWidth;             // frozen frame is at device pixels
+    lg.imageSmoothingEnabled = false;
+    lg.fillStyle = '#12141c'; lg.fillRect(0, 0, L, L);
+    lg.drawImage(shot, cx * k - SPAN / 2, cy * k - SPAN / 2, SPAN, SPAN, 0, 0, L, L);
+    lg.strokeStyle = 'rgba(255,255,255,.85)'; lg.lineWidth = 1;
+    lg.beginPath(); lg.moveTo(L / 2, 0); lg.lineTo(L / 2, L); lg.moveTo(0, L / 2); lg.lineTo(L, L / 2); lg.stroke();
+    lg.strokeStyle = 'rgba(0,0,0,.6)';
+    lg.strokeRect(L / 2 - ZOOM / 2, L / 2 - ZOOM / 2, ZOOM, ZOOM);
+    ltx.textContent = Math.round(cx * k) + ', ' + Math.round(cy * k);
+    // Keep it beside the cursor but always on-screen.
+    const off = 22, w = L + 4, h = L + 4 + 16;
+    loupe.style.left = Math.max(4, Math.min(innerWidth - w - 4, cx + off)) + 'px';
+    loupe.style.top = Math.max(4, Math.min(innerHeight - h - 4, cy + off)) + 'px';
+    loupe.style.display = 'block';
+  }
   const rectFrom = (e) => ({ x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
                              w: Math.abs(e.clientX - sx), h: Math.abs(e.clientY - sy) });
   function place(r){
@@ -37,7 +67,7 @@
     dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
   }
   function wipe(){
-    sel.style.display = 'none'; dim.style.display = 'none';
+    sel.style.display = 'none'; dim.style.display = 'none'; loupe.style.display = 'none';
     veil.style.display = 'none'; hint.style.display = 'none';
     shot.style.visibility = 'hidden'; shot.removeAttribute('src');
   }
@@ -46,9 +76,10 @@
   // screenshot. 'show' arrives with the frozen frame while the window is still
   // hidden: we paint it, then ACK so the main process shows the window already
   // dimmed — the screen visibly freezes with hover UI intact.
-  window.snap.onOverlayClear(() => { drag = false; armed = false; wipe(); });
+  window.snap.onOverlayClear(() => { drag = false; armed = false; spaceDown = false; wipe(); });
   window.snap.onOverlayShow((d) => {
-    drag = false; armed = true;
+    drag = false; armed = true; spaceDown = false;
+    magnify = d.magnifier !== false;
     wipe();
     shot.onload = () => {
       shot.style.visibility = 'visible';
@@ -60,8 +91,17 @@
   });
 
   addEventListener('mousedown', (e) => { if(!armed || e.button !== 0) return; drag = true; sx = e.clientX; sy = e.clientY;
-    veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block'; place(rectFrom(e)); });
-  addEventListener('mousemove', (e) => { if(drag) place(rectFrom(e)); });
+    veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block'; place(rectFrom(e)); drawLoupe(e.clientX, e.clientY); });
+  addEventListener('mousemove', (e) => {
+    if(!armed) return;
+    if(drag){
+      // Holding Space slides the whole marquee instead of resizing it — the
+      // standard rescue for "I started the drag two pixels off".
+      if(spaceDown){ sx += e.movementX; sy += e.movementY; }
+      place(rectFrom(e));
+    }
+    drawLoupe(e.clientX, e.clientY);
+  });
   addEventListener('mouseup', (e) => {
     if(!armed || !drag) return; drag = false; armed = false;
     const r = rectFrom(e);
@@ -69,7 +109,15 @@
     const W = innerWidth, H = innerHeight;
     window.snap.commit({ x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H });   // normalised → DPI-safe
   });
-  addEventListener('keydown', (e) => { if(e.key === 'Escape' && armed){ armed = false; window.snap.cancel(); } });
+  addEventListener('keydown', (e) => {
+    if(!armed) return;
+    if(e.key === 'Escape'){ armed = false; window.snap.cancel(); return; }
+    if(e.key === ' ' || e.code === 'Space'){ e.preventDefault(); spaceDown = true; return; }
+    // Z hides the loupe for this grab when it's sitting over the thing you're
+    // trying to see. Settings has the permanent switch.
+    if(e.key.toLowerCase() === 'z'){ magnify = !magnify; if(!magnify) loupe.style.display = 'none'; }
+  });
+  addEventListener('keyup', (e) => { if(e.key === ' ' || e.code === 'Space') spaceDown = false; });
 })();
 </script>
 </body>
