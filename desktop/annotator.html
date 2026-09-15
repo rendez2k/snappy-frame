@@ -36,11 +36,16 @@
 <body>
   <div id="bar">
     <div class="grp" id="tools">
-      <button class="t on" data-tool="arrow" title="Arrow (A)">↗</button>
-      <button class="t" data-tool="box" title="Box (B)">▢</button>
-      <button class="t" data-tool="ellipse" title="Ellipse (O)">◯</button>
+      <button class="t" data-tool="pencil" title="Pencil — freehand (P)">✎</button>
+      <button class="t" data-tool="line" title="Line (L) — Shift snaps to 45°">╱</button>
+      <button class="t on" data-tool="arrow" title="Arrow (A) — Shift snaps to 45°">↗</button>
+      <button class="t" data-tool="box" title="Box (B) — Shift for a square">▢</button>
+      <button class="t" data-tool="fill" title="Filled box (F)">■</button>
+      <button class="t" data-tool="ellipse" title="Ellipse (O) — Shift for a circle">◯</button>
       <button class="t" data-tool="highlight" title="Highlighter (H)">🖍️</button>
       <button class="t" data-tool="text" title="Text (T)">T</button>
+      <button class="t" data-tool="counter" title="Numbered step (N) — click to drop 1, 2, 3…">①</button>
+      <button class="t" data-tool="pixelate" title="Pixelate (M)">▦</button>
       <button class="t" data-tool="blur" title="Blur / redact (X)">🔲</button>
       <button class="t" data-tool="move" title="Move / select (V) — drag to move, Delete to remove, arrows to nudge">✥</button>
     </div>
@@ -54,8 +59,11 @@
     </div>
     <div class="sep"></div>
     <button class="t" id="undo" title="Undo (Ctrl+Z)">↶</button>
+    <button class="t" id="redo" title="Redo (Ctrl+Y)">↷</button>
     <span class="hint">Esc cancel</span>
     <div class="spacer"></div>
+    <button class="act" id="pin" title="Pin the marked-up image on top of everything">📌 Pin</button>
+    <button class="act" id="share" title="Upload and copy a 7-day link">🔗 Link</button>
     <button class="act" id="beautify" title="Open in Snappy Frame">✨ Beautify</button>
     <button class="act primary" id="done" title="Copy &amp; save (Enter)">✓ Copy &amp; Done</button>
   </div>
@@ -85,6 +93,7 @@
   const SIZES = { s: 3, m: 6, l: 11 };
   let tool = 'arrow', colour = COLOURS[0], sizeKey = 'm';
   const shapes = [];                 // committed annotations, in draw order
+  const redoStack = [];              // shapes undone, newest last; cleared by any new shape
   let draft = null;                  // shape being dragged
   let selected = null;               // shape picked with the move tool (or just placed)
   let moving = null;                 // { s, dx, dy } while dragging a selected shape
@@ -104,8 +113,31 @@
 
   // ---- drawing -----------------------------------------------------------
   function lineW(s){ return SIZES[s.size || sizeKey] || 6; }
+  function rectOf(s){ return { x: Math.min(s.x1, s.x2), y: Math.min(s.y1, s.y2), w: Math.abs(s.x2 - s.x1), h: Math.abs(s.y2 - s.y1) }; }
+  // Counters are numbered by their order among counters, so deleting step 2
+  // turns 3 into 2 — you never have to re-place a sequence.
+  function counterNo(s){ let n = 0; for(const t of shapes){ if(t.tool === 'counter'){ n++; if(t === s) return n; } } return n + 1; }
+  function counterR(s){ return Math.round(lineW(s) * 2.2 + 8); }
   function drawShape(s){
     ctx.save();
+    if(s.tool === 'pixelate'){
+      const r = rectOf(s);
+      if(r.w > 1 && r.h > 1){
+        // Mosaic: shrink the region to coarse cells and blow it back up with
+        // smoothing off — the classic redaction look, and unlike a blur it
+        // can't be "un-blurred" by deconvolution.
+        // Cell size follows the thickness buttons, so · is a fine mosaic and ●
+        // a chunky one — the same control that sets line weight everywhere else.
+        const cell = Math.max(8, Math.round(lineW(s) * 2));
+        const cw = Math.max(1, Math.round(r.w / cell)), ch = Math.max(1, Math.round(r.h / cell));
+        const t = document.createElement('canvas'); t.width = cw; t.height = ch;
+        const tg = t.getContext('2d'); tg.imageSmoothingEnabled = true;
+        tg.drawImage(base, r.x, r.y, r.w, r.h, 0, 0, cw, ch);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(t, 0, 0, cw, ch, r.x, r.y, r.w, r.h);
+      }
+      ctx.restore(); return;
+    }
     if(s.tool === 'blur'){
       const x = Math.min(s.x1, s.x2), y = Math.min(s.y1, s.y2), w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1);
       if(w > 1 && h > 1){
@@ -120,7 +152,26 @@
     }
     ctx.strokeStyle = s.colour; ctx.fillStyle = s.colour; ctx.lineWidth = lineW(s);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    if(s.tool === 'arrow'){
+    if(s.tool === 'pencil'){
+      const pts = s.pts; if(pts.length){
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+        for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        if(pts.length === 1) ctx.lineTo(pts[0].x + 0.01, pts[0].y);
+        ctx.stroke();
+      }
+    } else if(s.tool === 'line'){
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
+    } else if(s.tool === 'fill'){
+      const r = rectOf(s); ctx.fillRect(r.x, r.y, r.w, r.h);
+    } else if(s.tool === 'counter'){
+      const R = counterR(s), n = String(counterNo(s));
+      ctx.beginPath(); ctx.arc(s.x, s.y, R, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+      ctx.fillStyle = (s.colour === '#ffffff' || s.colour === '#ffcc00') ? '#111111' : '#ffffff';
+      ctx.font = '700 ' + Math.round(R * 1.15) + 'px -apple-system,"Segoe UI",Roboto,sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(n, s.x, s.y + R * 0.05);
+    } else if(s.tool === 'arrow'){
       const dx = s.x2 - s.x1, dy = s.y2 - s.y1, ang = Math.atan2(dy, dx);
       const len = Math.hypot(dx, dy), head = Math.max(12, lineW(s) * 3.2);
       ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke();
@@ -155,7 +206,13 @@
       ctx.restore();
       return { x: s.x, y: s.y, w, h: lines.length * s.px * 1.2 };
     }
-    return { x: Math.min(s.x1, s.x2), y: Math.min(s.y1, s.y2), w: Math.abs(s.x2 - s.x1), h: Math.abs(s.y2 - s.y1) };
+    if(s.tool === 'counter'){ const R = counterR(s); return { x: s.x - R, y: s.y - R, w: R * 2, h: R * 2 }; }
+    if(s.tool === 'pencil'){
+      let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      for(const p of s.pts){ x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x); y2 = Math.max(y2, p.y); }
+      return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    return rectOf(s);
   }
   function distToSeg(px, py, x1, y1, x2, y2){
     const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
@@ -168,6 +225,10 @@
       const s = shapes[i], pad = 8;
       if(s.tool === 'arrow' || s.tool === 'line'){
         if(distToSeg(p.x, p.y, s.x1, s.y1, s.x2, s.y2) <= Math.max(pad, lineW(s))) return s;
+      } else if(s.tool === 'pencil'){
+        const tol = Math.max(pad, lineW(s)), q = s.pts;
+        for(let k = 1; k < q.length; k++) if(distToSeg(p.x, p.y, q[k-1].x, q[k-1].y, q[k].x, q[k].y) <= tol) return s;
+        if(q.length === 1 && Math.hypot(p.x - q[0].x, p.y - q[0].y) <= tol) return s;
       } else {
         const b = bboxOf(s);
         if(p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad) return s;
@@ -176,9 +237,11 @@
     return null;
   }
   function moveShape(s, dx, dy){
-    if(s.tool === 'text'){ s.x += dx; s.y += dy; }
+    if(s.tool === 'text' || s.tool === 'counter'){ s.x += dx; s.y += dy; }
+    else if(s.tool === 'pencil'){ for(const p of s.pts){ p.x += dx; p.y += dy; } }
     else { s.x1 += dx; s.x2 += dx; s.y1 += dy; s.y2 += dy; }
   }
+  function commit(s){ shapes.push(s); redoStack.length = 0; selected = s; }
   function drawSelection(s){
     const b = bboxOf(s), pad = 6;
     ctx.save(); ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
@@ -212,9 +275,14 @@
       moving = hit ? { s: hit, lx: p.x, ly: p.y } : null;
       redraw(); return;
     }
-    if(tool === 'text'){ startText(p, e); return; }
+    // preventDefault stops the browser moving focus to the canvas AFTER this
+    // handler returns, which is what stole the first characters of every
+    // caption (they reached the document handler and switched tools instead).
+    if(tool === 'text'){ e.preventDefault(); startText(p, e); return; }
+    if(tool === 'counter'){ commit({ tool, colour, size: sizeKey, x: p.x, y: p.y }); redraw(); return; }
     drawing = true;
-    draft = { tool, colour, size: sizeKey, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+    draft = tool === 'pencil' ? { tool, colour, size: sizeKey, pts: [{ x: p.x, y: p.y }] }
+                              : { tool, colour, size: sizeKey, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
   });
   // Hold Shift to constrain: arrows and lines snap to 45°, everything else
   // becomes square. Freehand-straight arrows are the usual reason a mark-up
@@ -237,13 +305,22 @@
     }
     if(!drawing) return;
     const p = toCanvas(e);
+    if(draft.tool === 'pencil'){
+      const l = draft.pts[draft.pts.length - 1];
+      if(Math.hypot(p.x - l.x, p.y - l.y) >= 1.5) draft.pts.push({ x: p.x, y: p.y });   // skip jitter-sized steps
+      redraw(); return;
+    }
     const q = e.shiftKey ? constrain(draft, p.x, p.y) : p;
     draft.x2 = q.x; draft.y2 = q.y; redraw();
   });
   addEventListener('mouseup', () => {
     if(moving){ moving = null; return; }
     if(!drawing) return; drawing = false;
-    if(draft && (Math.abs(draft.x2 - draft.x1) > 2 || Math.abs(draft.y2 - draft.y1) > 2)){ shapes.push(draft); selected = draft; }
+    if(draft){
+      const keep = draft.tool === 'pencil' ? draft.pts.length > 1
+                 : (Math.abs(draft.x2 - draft.x1) > 2 || Math.abs(draft.y2 - draft.y1) > 2);
+      if(keep) commit(draft);
+    }
     draft = null; redraw();
   });
 
@@ -258,11 +335,17 @@
     tin.style.top = (e.clientY - wrap.getBoundingClientRect().top) + 'px';
     tin.style.color = colour; tin.style.fontSize = (px * disp) + 'px';
     tin.value = ''; tin._px = px;
-    setTimeout(() => tin.focus(), 0);
+    // Focus NOW, not on a timer: anything typed before focus lands goes to the
+    // document handler instead, which eats the first characters AND switches
+    // tools behind your back ("Look here" arrived as "here", via the line and
+    // ellipse tools). Paired with preventDefault on the mousedown, which stops
+    // the browser handing focus back to the canvas a moment later. The timeout
+    // stays as a belt-and-braces retry.
+    tin.focus(); setTimeout(() => { if(tin.style.display === 'block' && document.activeElement !== tin) tin.focus(); }, 0);
   }
   function commitText(){
     const v = tin.value.replace(/\s+$/, '');
-    if(v && textAt){ const t = { tool: 'text', colour, x: textAt.x, y: textAt.y, px: tin._px, text: v }; shapes.push(t); selected = t; }
+    if(v && textAt){ commit({ tool: 'text', colour, x: textAt.x, y: textAt.y, px: tin._px, text: v }); }
     tin.style.display = 'none'; tin.value = ''; textAt = null; redraw();
   }
   tin.addEventListener('keydown', (e) => {
@@ -273,7 +356,9 @@
   tin.addEventListener('blur', () => { if(tin.style.display === 'block') commitText(); });
 
   // ---- toolbar actions ---------------------------------------------------
-  $('undo').onclick = () => { const g = shapes.pop(); if(g === selected) selected = null; redraw(); };
+  function undo(){ const g = shapes.pop(); if(!g) return; redoStack.push(g); if(g === selected) selected = null; redraw(); }
+  function redo(){ const g = redoStack.pop(); if(!g) return; shapes.push(g); selected = g; redraw(); }
+  $('undo').onclick = undo; $('redo').onclick = redo;
   function sendDone(payload){
     if(!(window.snap && window.snap.annotateDone)){ report('Bridge missing — reinstall may be incomplete'); return; }
     window.snap.annotateDone(payload);
@@ -296,22 +381,25 @@
   }
   $('done').onclick = () => finish('done');
   $('beautify').onclick = () => finish('beautify');
+  $('pin').onclick = () => finish('pin');
+  $('share').onclick = () => finish('share');
 
   // ---- keyboard ----------------------------------------------------------
   addEventListener('keydown', (e) => {
     if(document.activeElement === tin) return;
     if(e.key === 'Escape'){ window.snap.annotateCancel(); return; }
-    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){ e.preventDefault(); const g = shapes.pop(); if(g === selected) selected = null; redraw(); return; }
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y'){ e.preventDefault(); redo(); return; }
     if(e.key === 'Enter'){ e.preventDefault(); finish('done'); return; }
     if(selected && (e.key === 'Delete' || e.key === 'Backspace')){
-      e.preventDefault(); const k = shapes.indexOf(selected); if(k >= 0) shapes.splice(k, 1); selected = null; redraw(); return;
+      e.preventDefault(); const k = shapes.indexOf(selected); if(k >= 0){ redoStack.push(shapes.splice(k, 1)[0]); } selected = null; redraw(); return;
     }
     if(selected && /^Arrow(Up|Down|Left|Right)$/.test(e.key)){
       e.preventDefault(); const st = e.shiftKey ? 10 : 1;
       moveShape(selected, e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0, e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0);
       redraw(); return;
     }
-    const map = { a: 'arrow', b: 'box', o: 'ellipse', h: 'highlight', t: 'text', x: 'blur', v: 'move' };
+    const map = { p: 'pencil', l: 'line', a: 'arrow', b: 'box', f: 'fill', o: 'ellipse', h: 'highlight', t: 'text', n: 'counter', m: 'pixelate', x: 'blur', v: 'move' };
     if(map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
   });
 })();

@@ -324,6 +324,8 @@ ipcMain.on('annotator:done', async (e, payload) => {
     const img = payload.bytes ? nativeImage.createFromBuffer(Buffer.from(payload.bytes))
                               : nativeImage.createFromDataURL(payload.dataUrl);
     if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); returnBar(); return; }
+    if(payload.action === 'pin'){ openPin(img); returnBar(); return; }
+    if(payload.action === 'share'){ await shareAndCopy(img); returnBar(); return; }
     await handleResult(img, { markup: true, forceCopy: true });
     returnBar();
   }catch(err){

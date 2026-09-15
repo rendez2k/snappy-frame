@@ -34,7 +34,7 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 |---|---|
 | `Ctrl+Shift+1` | **Region** — freeze the screen, drag a rectangle |
 | `Ctrl+Shift+2` | **Active window** — grab the focused window, no dragging |
-| `Ctrl+Shift+3` | **Mark up** — grab a region, then draw arrows, boxes, text or blur |
+| `Ctrl+Shift+3` | **Mark up** — grab a region, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate, blur; move/nudge/delete anything, undo/redo; finish to clipboard, Pin, a 7-day Link, or Beautify |
 | `Ctrl+Shift+4` | **Terminal text** — the focused terminal's whole scrollback, as text |
 | `Ctrl+Shift+5` | **Batch** — collect several grabs and hand them over together |
 | `Ctrl+Shift+O` | **Copy text** — OCR a region straight to the clipboard |
