@@ -7,8 +7,14 @@
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font-family:-apple-system,"Segoe UI",Roboto,sans-serif;user-select:none;-webkit-user-select:none;overflow:hidden;}
+  /* Grid, not a hardcoded canvas offset: the toolbar wraps to two rows on a
+     narrow capture and a fixed `top` put it over the image. A 1fr grid track is
+     a DEFINITE height, so the canvas's max-height:100% actually resolves —
+     inside a plain flex column it doesn't, and the image overflowed instead of
+     scaling down. */
+  body{display:grid;grid-template-rows:auto 1fr;}
   #bar{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bar);
-    border-bottom:1px solid var(--line);flex-wrap:wrap;}
+    border-bottom:1px solid var(--line);flex-wrap:wrap;flex:0 0 auto;}
   .grp{display:flex;align-items:center;gap:4px;}
   .sep{width:1px;height:24px;background:var(--line);margin:0 4px;}
   button.t{width:34px;height:32px;border:1px solid var(--line);background:#2b3040;color:var(--ink);
@@ -18,13 +24,18 @@
   .sw{width:22px;height:22px;border-radius:50%;border:2px solid rgba(255,255,255,.25);cursor:pointer;padding:0;}
   .sw.on{border-color:#fff;box-shadow:0 0 0 2px var(--acc);}
   .spacer{flex:1;}
+  /* The finish actions travel as one block, so a wrap never strands "Pin" on
+     the tool row while its neighbours drop to the next. */
+  #acts{display:flex;align-items:center;gap:6px;}
   button.act{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);
     background:#2b3040;color:var(--ink);font-weight:600;font-size:13px;cursor:pointer;}
   button.act:hover{border-color:#48506a;}
   button.act.primary{background:var(--acc);border-color:var(--acc);color:#fff;}
-  #stage{position:absolute;top:49px;left:0;right:0;bottom:0;display:flex;align-items:center;
+  #stage{position:relative;min-height:0;min-width:0;display:flex;align-items:center;
     justify-content:center;overflow:hidden;padding:12px;}
+  #wrap{max-width:100%;max-height:100%;}
   #wrap{position:relative;line-height:0;}
+  #wrap{display:flex;}
   canvas{max-width:100%;max-height:100%;box-shadow:0 10px 40px rgba(0,0,0,.5);border-radius:4px;cursor:crosshair;}
   canvas.mv{cursor:move;}
   #tin{position:absolute;display:none;z-index:5;background:transparent;border:1px dashed var(--acc);
@@ -72,10 +83,12 @@
     <button class="t" id="redo" title="Redo (Ctrl+Y)">↷</button>
     <span class="hint">Esc cancel</span>
     <div class="spacer"></div>
-    <button class="act" id="pin" title="Pin the marked-up image on top of everything">📌 Pin</button>
-    <button class="act" id="share" title="Upload and copy a 7-day link">🔗 Link</button>
-    <button class="act" id="beautify" title="Open in Snappy Frame">✨ Beautify</button>
-    <button class="act primary" id="done" title="Copy &amp; save (Enter)">✓ Copy &amp; Done</button>
+    <div id="acts">
+      <button class="act" id="pin" title="Pin the marked-up image on top of everything">📌 Pin</button>
+      <button class="act" id="share" title="Upload and copy a 7-day link">🔗 Link</button>
+      <button class="act" id="beautify" title="Open in Snappy Frame">✨ Beautify</button>
+      <button class="act primary" id="done" title="Copy &amp; save (Enter)">✓ Copy &amp; Done</button>
+    </div>
   </div>
   <div id="stage"><div id="wrap"><canvas id="c"></canvas><input id="tin" spellcheck="false"></div></div>
 
