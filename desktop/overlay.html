@@ -23,25 +23,53 @@
   #loupe canvas{display:block;image-rendering:pixelated;}
   #loupeTxt{position:absolute;left:0;right:0;bottom:0;background:rgba(18,20,28,.92);
     color:#fff;font-size:10.5px;font-weight:700;text-align:center;padding:2px 0;letter-spacing:.02em;}
+  /* Adjust mode: handles on the released rectangle. They sit OUTSIDE the border
+     so they never cover the pixels you're trying to line up. */
+  .h{position:absolute;width:10px;height:10px;background:#fff;border:1px solid rgba(0,0,0,.55);
+    border-radius:2px;display:none;box-shadow:0 1px 4px rgba(0,0,0,.5);}
+  #sel.adj .h{display:block;}
+  #sel.adj{cursor:move;}
+  .h[data-h="nw"]{left:-6px;top:-6px;cursor:nwse-resize;}
+  .h[data-h="n" ]{left:calc(50% - 5px);top:-6px;cursor:ns-resize;}
+  .h[data-h="ne"]{right:-6px;top:-6px;cursor:nesw-resize;}
+  .h[data-h="e" ]{right:-6px;top:calc(50% - 5px);cursor:ew-resize;}
+  .h[data-h="se"]{right:-6px;bottom:-6px;cursor:nwse-resize;}
+  .h[data-h="s" ]{left:calc(50% - 5px);bottom:-6px;cursor:ns-resize;}
+  .h[data-h="sw"]{left:-6px;bottom:-6px;cursor:nesw-resize;}
+  .h[data-h="w" ]{left:-6px;top:calc(50% - 5px);cursor:ew-resize;}
 </style>
 </head>
 <body>
   <img id="shot" alt="" draggable="false">
   <div id="veil"></div>
-  <div id="sel"><div id="dim"></div></div>
+  <div id="sel"><div id="dim"></div>
+    <i class="h" data-h="nw"></i><i class="h" data-h="n"></i><i class="h" data-h="ne"></i><i class="h" data-h="e"></i>
+    <i class="h" data-h="se"></i><i class="h" data-h="s"></i><i class="h" data-h="sw"></i><i class="h" data-h="w"></i>
+  </div>
   <div id="loupe"><canvas id="loupeC" width="132" height="132"></canvas><div id="loupeTxt"></div></div>
-  <div id="hint">Drag to snap &nbsp;·&nbsp; hold <b>Space</b> to move it &nbsp;·&nbsp; <b>Z</b> loupe &nbsp;·&nbsp; <b>Esc</b> to cancel</div>
+  <div id="hint"></div>
 <script>
 (() => {
   const shot = document.getElementById('shot'), veil = document.getElementById('veil'),
         sel = document.getElementById('sel'), dim = document.getElementById('dim'), hint = document.getElementById('hint');
-  // The window is reused across grabs. `armed` gates input so stray events
-  // between grabs (while hidden) can't fire a commit.
-  let sx = 0, sy = 0, drag = false, armed = false;
   const loupe = document.getElementById('loupe'), lc = document.getElementById('loupeC'),
         lg = lc.getContext('2d'), ltx = document.getElementById('loupeTxt');
   const L = 132, ZOOM = 8, SPAN = L / ZOOM;              // source px shown across the loupe
-  let spaceDown = false, magnify = true;                  // Space = shift the whole marquee
+
+  // The window is reused across grabs. `armed` gates input so stray events
+  // between grabs (while hidden) can't fire a commit.
+  let armed = false, magnify = true, adjust = false;
+  // phase: 'idle' → nothing drawn; 'draw' → dragging out a new rectangle;
+  //        'ready' → released and adjustable (only when `adjust` is on);
+  //        'move' / 'resize' → changing an existing rectangle.
+  let phase = 'idle', sx = 0, sy = 0, spaceDown = false;
+  let rect = { x:0, y:0, w:0, h:0 };                     // the live selection, CSS px
+  let grab = null;                                       // {h, ox, oy, start} while moving/resizing
+
+  const HINT_FAST = 'Drag to snap &nbsp;·&nbsp; hold <b>Space</b> to move it &nbsp;·&nbsp; <b>Z</b> loupe &nbsp;·&nbsp; <b>Esc</b> to cancel';
+  const HINT_ADJ  = 'Drag a region &nbsp;·&nbsp; hold <b>Space</b> to move it &nbsp;·&nbsp; <b>Z</b> loupe &nbsp;·&nbsp; <b>Esc</b> to cancel';
+  const HINT_READY = 'Drag the handles or the box &nbsp;·&nbsp; <b>arrows</b> nudge, <b>Shift</b> resize &nbsp;·&nbsp; <b>Enter</b> to capture &nbsp;·&nbsp; <b>Esc</b> to cancel';
+
   function drawLoupe(cx, cy){
     if(!magnify || !shot.naturalWidth){ loupe.style.display = 'none'; return; }
     const k = shot.naturalWidth / innerWidth;             // frozen frame is at device pixels
@@ -59,63 +87,148 @@
     loupe.style.top = Math.max(4, Math.min(innerHeight - h - 4, cy + off)) + 'px';
     loupe.style.display = 'block';
   }
-  const rectFrom = (e) => ({ x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
-                             w: Math.abs(e.clientX - sx), h: Math.abs(e.clientY - sy) });
-  function place(r){
-    sel.style.left = r.x + 'px'; sel.style.top = r.y + 'px';
-    sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
-    dim.style.display = 'inline-block'; dim.textContent = Math.round(r.w) + ' × ' + Math.round(r.h);
+  function clampRect(r){
+    r.w = Math.max(1, Math.min(r.w, innerWidth));
+    r.h = Math.max(1, Math.min(r.h, innerHeight));
+    r.x = Math.max(0, Math.min(r.x, innerWidth - r.w));
+    r.y = Math.max(0, Math.min(r.y, innerHeight - r.h));
+    return r;
+  }
+  function paint(){
+    sel.style.left = rect.x + 'px'; sel.style.top = rect.y + 'px';
+    sel.style.width = rect.w + 'px'; sel.style.height = rect.h + 'px';
+    // Device pixels, not CSS pixels: on a scaled display those differ, and the
+    // number people want is the size of the file they'll get.
+    const k = shot.naturalWidth ? shot.naturalWidth / innerWidth : 1;
+    dim.style.display = 'inline-block';
+    dim.textContent = Math.round(rect.w * k) + ' × ' + Math.round(rect.h * k);
+    // Flip the readout inside the box when the selection touches the top edge.
+    dim.style.transform = rect.y < 26 ? 'translateY(4px)' : 'translateY(-24px)';
   }
   function wipe(){
-    sel.style.display = 'none'; dim.style.display = 'none'; loupe.style.display = 'none';
+    sel.style.display = 'none'; sel.classList.remove('adj');
+    dim.style.display = 'none'; loupe.style.display = 'none';
     veil.style.display = 'none'; hint.style.display = 'none';
     shot.style.visibility = 'hidden'; shot.removeAttribute('src');
+  }
+  function commit(){
+    const W = innerWidth, H = innerHeight;
+    if(rect.w < 4 || rect.h < 4){ armed = false; window.snap.cancel(); return; }
+    armed = false; phase = 'idle';
+    window.snap.commit({ x: rect.x / W, y: rect.y / H, w: rect.w / W, h: rect.h / H });   // normalised → DPI-safe
   }
   // 'clear' fires as the window hides after a grab, so the frozen shot is long
   // gone before the window is ever shown again — it can't flash the previous
   // screenshot. 'show' arrives with the frozen frame while the window is still
   // hidden: we paint it, then ACK so the main process shows the window already
   // dimmed — the screen visibly freezes with hover UI intact.
-  window.snap.onOverlayClear(() => { drag = false; armed = false; spaceDown = false; wipe(); });
+  window.snap.onOverlayClear(() => { phase = 'idle'; armed = false; spaceDown = false; grab = null; wipe(); });
   window.snap.onOverlayShow((d) => {
-    drag = false; armed = true; spaceDown = false;
+    phase = 'idle'; armed = true; spaceDown = false; grab = null;
     magnify = d.magnifier !== false;
+    adjust = !!d.adjust;
     wipe();
     shot.onload = () => {
       shot.style.visibility = 'visible';
-      veil.style.display = 'block'; hint.style.display = 'block';
+      veil.style.display = 'block';
+      hint.innerHTML = adjust ? HINT_ADJ : HINT_FAST; hint.style.display = 'block';
       window.snap.showReady();
     };
     shot.onerror = () => window.snap.showReady();     // still armed; main's failsafe shows the window
     shot.src = d.dataUrl;
   });
 
-  addEventListener('mousedown', (e) => { if(!armed || e.button !== 0) return; drag = true; sx = e.clientX; sy = e.clientY;
-    veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block'; place(rectFrom(e)); drawLoupe(e.clientX, e.clientY); });
+  addEventListener('mousedown', (e) => {
+    if(!armed || e.button !== 0) return;
+    if(phase === 'ready'){
+      const t = e.target.closest ? e.target.closest('.h') : null;
+      if(t){ phase = 'resize'; grab = { h: t.dataset.h, ox: e.clientX, oy: e.clientY, start: { ...rect } }; return; }
+      const inside = e.clientX >= rect.x && e.clientX <= rect.x + rect.w && e.clientY >= rect.y && e.clientY <= rect.y + rect.h;
+      if(inside){ phase = 'move'; grab = { ox: e.clientX, oy: e.clientY, start: { ...rect } }; return; }
+      // Clicking outside the box starts a fresh rectangle, so a bad drag costs
+      // one more drag rather than a cancel-and-rehotkey.
+      sel.classList.remove('adj');
+    }
+    phase = 'draw'; sx = e.clientX; sy = e.clientY;
+    veil.style.display = 'none'; hint.style.display = 'none'; sel.style.display = 'block';
+    rect = { x: sx, y: sy, w: 0, h: 0 }; paint(); drawLoupe(e.clientX, e.clientY);
+  });
+
   addEventListener('mousemove', (e) => {
     if(!armed) return;
-    if(drag){
+    if(phase === 'draw'){
       // Holding Space slides the whole marquee instead of resizing it — the
       // standard rescue for "I started the drag two pixels off".
       if(spaceDown){ sx += e.movementX; sy += e.movementY; }
-      place(rectFrom(e));
+      rect = { x: Math.min(sx, e.clientX), y: Math.min(sy, e.clientY),
+               w: Math.abs(e.clientX - sx), h: Math.abs(e.clientY - sy) };
+      paint();
+    } else if(phase === 'move'){
+      rect = clampRect({ x: grab.start.x + (e.clientX - grab.ox), y: grab.start.y + (e.clientY - grab.oy),
+                         w: grab.start.w, h: grab.start.h });
+      paint();
+    } else if(phase === 'resize'){
+      const s = grab.start, dx = e.clientX - grab.ox, dy = e.clientY - grab.oy, H = grab.h;
+      let x1 = s.x, y1 = s.y, x2 = s.x + s.w, y2 = s.y + s.h;
+      if(H.includes('w')) x1 += dx;
+      if(H.includes('e')) x2 += dx;
+      if(H.includes('n')) y1 += dy;
+      if(H.includes('s')) y2 += dy;
+      // Ctrl on a corner keeps the original proportions, for a shot that has to
+      // land in a fixed frame.
+      if(e.ctrlKey && H.length === 2 && s.w && s.h){
+        const ar = s.w / s.h, w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+        if(w / h > ar){ const nh = w / ar; if(H.includes('n')) y1 = y2 - nh; else y2 = y1 + nh; }
+        else { const nw = h * ar; if(H.includes('w')) x1 = x2 - nw; else x2 = x1 + nw; }
+      }
+      rect = { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+      paint();
     }
     drawLoupe(e.clientX, e.clientY);
   });
-  addEventListener('mouseup', (e) => {
-    if(!armed || !drag) return; drag = false; armed = false;
-    const r = rectFrom(e);
-    if(r.w < 4 || r.h < 4){ window.snap.cancel(); return; }
-    const W = innerWidth, H = innerHeight;
-    window.snap.commit({ x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H });   // normalised → DPI-safe
+
+  addEventListener('mouseup', () => {
+    if(!armed) return;
+    if(phase === 'move' || phase === 'resize'){ phase = 'ready'; grab = null; return; }
+    if(phase !== 'draw') return;
+    if(rect.w < 4 || rect.h < 4){ armed = false; window.snap.cancel(); return; }
+    if(!adjust){ commit(); return; }
+    // Adjust mode keeps the rectangle live: handles, nudges, then Enter.
+    phase = 'ready'; sel.classList.add('adj');
+    hint.innerHTML = HINT_READY; hint.style.display = 'block';
   });
+
+  // Double-click inside the box is the mouse-only way to say "that one".
+  addEventListener('dblclick', (e) => {
+    if(!armed || phase !== 'ready') return;
+    if(e.clientX >= rect.x && e.clientX <= rect.x + rect.w && e.clientY >= rect.y && e.clientY <= rect.y + rect.h) commit();
+  });
+
   addEventListener('keydown', (e) => {
     if(!armed) return;
     if(e.key === 'Escape'){ armed = false; window.snap.cancel(); return; }
     if(e.key === ' ' || e.code === 'Space'){ e.preventDefault(); spaceDown = true; return; }
     // Z hides the loupe for this grab when it's sitting over the thing you're
     // trying to see. Settings has the permanent switch.
-    if(e.key.toLowerCase() === 'z'){ magnify = !magnify; if(!magnify) loupe.style.display = 'none'; }
+    if(e.key.toLowerCase() === 'z'){ magnify = !magnify; if(!magnify) loupe.style.display = 'none'; return; }
+    if(phase !== 'ready') return;
+    if(e.key === 'Enter'){ e.preventDefault(); commit(); return; }
+    const d = { ArrowLeft:[-1,0], ArrowRight:[1,0], ArrowUp:[0,-1], ArrowDown:[0,1] }[e.key];
+    if(!d) return;
+    e.preventDefault();
+    const step = e.altKey ? 10 : 1;
+    if(e.shiftKey){
+      // Shift resizes from the bottom-right, Ctrl+Shift resizes about the centre.
+      if(e.ctrlKey){
+        rect = clampRect({ x: rect.x - d[0] * step, y: rect.y - d[1] * step,
+                           w: rect.w + d[0] * step * 2, h: rect.h + d[1] * step * 2 });
+      } else {
+        rect = clampRect({ x: rect.x, y: rect.y, w: rect.w + d[0] * step, h: rect.h + d[1] * step });
+      }
+    } else {
+      rect = clampRect({ x: rect.x + d[0] * step, y: rect.y + d[1] * step, w: rect.w, h: rect.h });
+    }
+    paint();
   });
   addEventListener('keyup', (e) => { if(e.key === ' ' || e.code === 'Space') spaceDown = false; });
 })();

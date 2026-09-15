@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#1b1e28;--bar:#232733;--line:#333949;--ink:#e7e9ef;--mut:#9aa0b0;--acc:#6d5efc;--bad:#ff6b6b;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13.5px;}
+  body{display:grid;grid-template-rows:auto 1fr;}
+  header{padding:14px 16px;border-bottom:1px solid var(--line);background:var(--bar);}
+  h1{margin:0 0 4px;font-size:15px;}
+  header p{margin:0;color:var(--mut);font-size:12px;line-height:1.5;}
+  #list{overflow:auto;padding:10px 12px;}
+  .row{display:flex;align-items:center;gap:11px;padding:9px;border:1px solid var(--line);
+    border-radius:10px;margin-bottom:8px;background:#20242e;}
+  .row img{width:64px;height:40px;object-fit:cover;border-radius:5px;background:#12141c;flex:none;}
+  .row .meta{flex:1;min-width:0;}
+  .row .url{font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-family:ui-monospace,Consolas,monospace;}
+  .row .sub{font-size:11px;color:var(--mut);margin-top:3px;}
+  .row .sub.soon{color:#ffc46b;}
+  button{font:inherit;color:var(--ink);background:#2b3040;border:1px solid var(--line);border-radius:8px;
+    padding:6px 10px;cursor:pointer;font-size:12px;}
+  button:hover{border-color:#48506a;}
+  button.danger:hover{border-color:var(--bad);color:var(--bad);}
+  button[disabled]{opacity:.5;cursor:default;}
+  .empty{color:var(--mut);text-align:center;padding:40px 20px;line-height:1.6;}
+  #msg{padding:8px 12px;margin:0 12px 8px;border-radius:8px;background:#3a2530;color:var(--bad);
+    font-size:12px;display:none;}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Share links</h1>
+    <p>Links you have minted from this computer. Each one expires seven days
+      after it was created; revoking deletes the image from the server straight
+      away, so the link stops working for everyone who has it.</p>
+  </header>
+  <div id="list"><div class="empty">Loading…</div></div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const list = $('list');
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+  function tokenOf(url){ return (String(url).split('/s/')[1] || String(url)).replace(/\.png$/, ''); }
+  function when(at){
+    const d = new Date(at), p = n => String(n).padStart(2, '0');
+    return `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ` +
+           `${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  function render(rows){
+    if(!rows || !rows.length){
+      list.innerHTML = '<div class="empty">No live share links.<br>Right-click a shelf tile, or press 🔗 in the mark-up editor, to make one.</div>';
+      return;
+    }
+    list.innerHTML = rows.map((r, i) => {
+      const days = r.daysLeft === 1 ? '1 day left' : r.daysLeft + ' days left';
+      return '<div class="row" data-i="' + i + '">' +
+        (r.thumb ? '<img src="' + esc(r.thumb) + '" alt="">' : '<img alt="">') +
+        // Show the token, not the origin: every link shares the same prefix, so
+        // truncating from the right hid the only part that tells them apart.
+        '<div class="meta"><div class="url" title="' + esc(r.url) + '">/s/' + esc(tokenOf(r.url)) + '</div>' +
+        '<div class="sub' + (r.daysLeft <= 1 ? ' soon' : '') + '">' + esc(when(r.at)) + ' · ' + days + '</div></div>' +
+        '<button data-act="copy">Copy</button>' +
+        '<button data-act="open">Open</button>' +
+        '<button data-act="revoke" class="danger">Revoke</button></div>';
+    }).join('');
+    [...list.querySelectorAll('button')].forEach(b => {
+      b.onclick = async () => {
+        const row = b.closest('.row'), r = rows[+row.dataset.i];
+        if(b.dataset.act === 'copy'){ window.snap.sharesCopy(r.url); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy', 1200); return; }
+        if(b.dataset.act === 'open'){ window.snap.sharesOpen(r.url); return; }
+        // Revoke is destructive and can fail (offline, no code) — say which,
+        // and leave the row in place so it can be retried.
+        b.disabled = true; b.textContent = 'Revoking…';
+        const res = await window.snap.sharesRevoke(r.url);
+        if(res && res.ok){ show(''); render(res.list); }
+        else { b.disabled = false; b.textContent = 'Revoke'; show((res && res.error) || 'Revoke failed'); if(res && res.list) render(res.list); }
+      };
+    });
+  }
+  function show(err){
+    let m = $('msg');
+    if(!m){ m = document.createElement('div'); m.id = 'msg'; document.body.insertBefore(m, list); }
+    m.textContent = err || ''; m.style.display = err ? 'block' : 'none';
+  }
+  window.snap.sharesOnList(render);
+  window.snap.sharesGet().then(render).catch(() => render([]));
+})();
+</script>
+</body>
+</html>

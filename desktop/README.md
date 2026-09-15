@@ -35,6 +35,7 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 | `Ctrl+Shift+1` | **Region** — freeze the screen, drag a rectangle |
 | `Ctrl+Shift+2` | **Active window** — grab the focused window, no dragging |
 | `Ctrl+Shift+6` | **Whole screen** — the screen your cursor is on, no rectangle to drag |
+| *(set your own)* | **All monitors** — every screen stitched into one image, laid out as they sit on your desk |
 | `Ctrl+Shift+3` | **Mark up** — grab a region, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate, blur; move/nudge/delete anything, undo/redo; finish to clipboard, Pin, a 7-day Link, or Beautify |
 | `Ctrl+Shift+4` | **Terminal text** — the focused terminal's whole scrollback, as text |
 | `Ctrl+Shift+5` | **Batch** — collect several grabs and hand them over together |
@@ -51,6 +52,22 @@ pixels and the exact coordinate, so you can land an edge instead of guessing
 through the dimming veil. Hold **Space** to slide the whole rectangle without
 resizing it — the rescue for a drag started a few pixels off. **Z** hides the
 magnifier for that grab; Settings has the permanent switch.
+
+**Turn on "Adjust the region before capturing"** in Settings and the rectangle
+stays live when you let go: drag its handles or the box itself, nudge with the
+arrow keys (**Shift** resizes, **Ctrl+Shift** resizes about the centre, **Alt**
+moves ten pixels at a time), **Ctrl**-drag a corner to keep the proportions, then
+**Enter** or double-click to capture. Off by default, because capturing the
+moment you release is faster when your aim was good.
+
+**Name your files** with a template in Settings: `{date}` `{time}` `{datetime}`
+`{year}` `{month}` `{day}` `{hour}` `{minute}` `{second}` `{app}` `{width}`
+`{height}`. Anything else in the box is kept as typed, and Settings previews the
+result as you type. Leave it empty for the built-in naming.
+
+**Share links can be revoked.** Tray → *Share links…* lists every link this
+computer has minted, when it was made and how long it has left. Revoking deletes
+the image server-side, so the link dies for everyone holding it.
 
 **The session shelf** holds everything you've captured. Drag a thumbnail
 straight into Claude Desktop, Slack or an editor — it's a real OS file drag, not
@@ -90,6 +107,30 @@ Snaps land in **Pictures → Snappy Snaps**, in a folder per day
 (`2026-07-29 › Snap 16.15.26.png`). Window grabs also file under the app's name.
 An optional **online inbox** can upload each snap to the web app — off by
 default, and the only time an image leaves your PC.
+
+## Command line
+
+The app lives in the tray, so launching it again is a remote control rather than
+a second copy: the running instance performs the capture and the new process
+exits. That makes every mode scriptable, and bindable to whatever shortcut
+manager you already use.
+
+```
+"Snappy Snap.exe" --region                      # the marquee (also the default)
+"Snappy Snap.exe" --window                      # the active window
+"Snappy Snap.exe" --screen                      # the screen under the cursor
+"Snappy Snap.exe" --all                         # every monitor, stitched
+"Snappy Snap.exe" --markup                      # region, then the editor
+"Snappy Snap.exe" --ocr | --pin | --batch       # the other capture modes
+"Snappy Snap.exe" --bar | --shelf               # show/hide the bar or the shelf
+
+"Snappy Snap.exe" --screen --delay 3000         # wait 3s first (max 60s)
+"Snappy Snap.exe" --region --path "D:\Shots"    # save this one somewhere else
+"Snappy Snap.exe" --region --clipboard --no-save
+```
+
+Options with no mode still mean *capture a region*. `--path` implies saving.
+Unknown flags are ignored, and a launch with no flags at all just starts the app.
 
 ## Build an installer
 

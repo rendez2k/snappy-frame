@@ -55,4 +55,11 @@ contextBridge.exposeInMainWorld('snap', {
   openFolder: () => ipcRenderer.send('settings:openFolder'),
   getAutoStart: () => ipcRenderer.invoke('autostart:get'),
   setAutoStart: (on) => ipcRenderer.invoke('autostart:set', on),
+  // share links
+  sharesGet: () => ipcRenderer.invoke('shares:get'),
+  sharesOnList: (cb) => ipcRenderer.on('shares:list', (e, list) => cb(list)),
+  sharesRevoke: (url) => ipcRenderer.invoke('shares:revoke', url),
+  sharesCopy: (url) => ipcRenderer.send('shares:copy', url),
+  sharesOpen: (url) => ipcRenderer.send('shares:open', url),
+  sharesForget: (url) => ipcRenderer.send('shares:forget', url),
 });

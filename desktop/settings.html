@@ -36,6 +36,8 @@
     <input type="text" id="windowHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Whole screen</b> — the screen your cursor is on, grabbed instantly with no rectangle to drag.</p>
     <input type="text" id="screenHotkey" spellcheck="false" style="margin-top:6px">
+    <p style="margin-top:12px"><b>All monitors</b> — every screen stitched into one image, laid out the way they are on your desk. Empty for none.</p>
+    <input type="text" id="allHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+7" style="margin-top:6px">
     <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate and blur. Great for flagging a fix to paste into a chat.</p>
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
@@ -74,6 +76,7 @@
     <label class="sw"><input type="checkbox" id="warnSecrets"> Warn me if I snip a terminal that has a key on screen</label>
     <label class="sw"><input type="checkbox" id="hideOwn"> Keep Snappy's own windows out of the shot <span style="color:var(--mut)">(shelf, pins, batch)</span></label>
     <label class="sw"><input type="checkbox" id="magnifier"> Show the pixel magnifier while dragging a region <span style="color:var(--mut)">(Z toggles it mid-capture)</span></label>
+    <label class="sw"><input type="checkbox" id="adjustRegion"> Adjust the region before capturing <span style="color:var(--mut)">(handles, arrow-key nudges, then Enter — instead of capturing the moment you let go)</span></label>
   </div>
 
   <div class="row">
@@ -112,6 +115,12 @@
     <div class="folder"><code id="folder">…</code>
       <button id="choose">Change…</button><button id="open">Open</button></div>
     <label class="sw" style="margin-top:10px"><input type="checkbox" id="dailyFolders"> Organise into a folder per day <span style="color:var(--mut)">(e.g. 2026-07-29 › Snap 16.15.26.png)</span></label>
+    <p style="margin-top:12px"><b>File name</b> — leave empty for the built-in naming. Tokens:
+      <code>{date}</code> <code>{time}</code> <code>{datetime}</code> <code>{year}</code> <code>{month}</code>
+      <code>{day}</code> <code>{hour}</code> <code>{minute}</code> <code>{second}</code> <code>{app}</code>
+      <code>{width}</code> <code>{height}</code>. Anything else is kept as typed.</p>
+    <input type="text" id="namePattern" spellcheck="false" placeholder="Snap {date} {time}" style="margin-top:6px">
+    <p id="namePreview" style="color:var(--mut);margin-top:6px"></p>
   </div>
 
   <div class="row">
@@ -136,6 +145,9 @@
     $('hotkey').value = s.hotkey;
     $('windowHotkey').value = s.windowHotkey || '';
     $('screenHotkey').value = s.screenHotkey || '';
+    $('allHotkey').value = s.allHotkey || '';
+    $('namePattern').value = s.namePattern || '';
+    previewName();
     $('markupHotkey').value = s.markupHotkey || '';
     $('batchHotkey').value = s.batchHotkey || '';
     $('termHotkey').value = s.termHotkey || '';
@@ -144,7 +156,7 @@
     $('ocrHotkey').value = s.ocrHotkey || '';
     $('pinHotkey').value = s.pinHotkey || '';
     $('folder').textContent = s.saveFolder;
-    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier'].forEach(k => $(k).checked = !!s[k]);
+    ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier','adjustRegion'].forEach(k => $(k).checked = !!s[k]);
     $('inboxCode').value = s.inboxCode || '';
     $('m-save').classList.toggle('on', s.defaultAction === 'save');
     $('m-beautify').classList.toggle('on', s.defaultAction === 'beautify');
@@ -159,6 +171,25 @@
   $('hotkey').addEventListener('change', e => set({ hotkey: e.target.value.trim() || 'CommandOrControl+Shift+1' }));
   $('windowHotkey').addEventListener('change', e => set({ windowHotkey: e.target.value.trim() }));
   $('screenHotkey').addEventListener('change', e => set({ screenHotkey: e.target.value.trim() }));
+  $('allHotkey').addEventListener('change', e => set({ allHotkey: e.target.value.trim() }));
+  $('namePattern').addEventListener('input', previewName);
+  $('namePattern').addEventListener('change', e => set({ namePattern: e.target.value.trim() }));
+  // Show what the template actually produces. The same substitution as the main
+  // process, kept deliberately small — it only has to be right about the shape.
+  function previewName(){
+    const p = $('namePattern').value.trim();
+    if(!p){ $('namePreview').textContent = 'Using the built-in naming.'; return; }
+    const d = new Date(), z = n => String(n).padStart(2, '0');
+    const map = { date:`${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`,
+      time:`${z(d.getHours())}.${z(d.getMinutes())}.${z(d.getSeconds())}`,
+      datetime:`${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}.${z(d.getMinutes())}.${z(d.getSeconds())}`,
+      year:String(d.getFullYear()), month:z(d.getMonth()+1), day:z(d.getDate()),
+      hour:z(d.getHours()), minute:z(d.getMinutes()), second:z(d.getSeconds()),
+      app:'Chrome', width:'1920', height:'1080', n:'' };
+    const out = p.replace(/\{(\w+)\}/g, (m, k) => map[k.toLowerCase()] === undefined ? m : map[k.toLowerCase()])
+                 .replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').replace(/^[.\s]+/, '').trim().slice(0, 120);
+    $('namePreview').textContent = 'Example: ' + (out || 'Snap') + '.png';
+  }
   $('markupHotkey').addEventListener('change', e => set({ markupHotkey: e.target.value.trim() }));
   $('batchHotkey').addEventListener('change', e => set({ batchHotkey: e.target.value.trim() }));
   $('termHotkey').addEventListener('change', e => set({ termHotkey: e.target.value.trim() }));
@@ -172,7 +203,7 @@
   $('e-claude').onclick = () => set({ ocrEngine:'claude' });
   $('anthropicKey').addEventListener('change', e => set({ anthropicKey: e.target.value.trim() }));
   $('ocrModel').addEventListener('change', e => set({ ocrModel: e.target.value.trim() || 'claude-opus-5' }));
-  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
+  ['copyToClipboard','saveToFolder','notify','revealAfter','sendToInbox','dailyFolders','terminalAsText','warnSecrets','shelf','shelfAutoShow','shelfLock','hideOwn','magnifier','adjustRegion'].forEach(k => $(k).addEventListener('change', e => set({ [k]: e.target.checked })));
   $('inboxCode').addEventListener('change', e => set({ inboxCode: e.target.value.trim() }));
   $('choose').onclick = async () => { const f = await window.snap.chooseFolder(); s.saveFolder = f; paint(); };
   $('open').onclick = () => window.snap.openFolder();

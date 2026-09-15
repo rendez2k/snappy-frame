@@ -21,7 +21,10 @@ const DEFAULTS = {
   ocrHotkey: 'CommandOrControl+Shift+O',           // grab a region and copy its TEXT, not its pixels
   pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
   screenHotkey: 'CommandOrControl+Shift+6',        // the whole screen, no marquee
+  allHotkey: '',                                   // every monitor stitched into one image (off by default)
   magnifier: true,                                 // pixel loupe while dragging the marquee
+  adjustRegion: false,                             // hold the marquee after the drag so it can be nudged/resized
+  namePattern: '',                                 // '' = the built-in naming; else a {token} template
   hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
   ocrEngine: 'windows',                            // 'windows' (local, private) | 'claude' (cloud, best)
   anthropicKey: '',                                // BYOK for the Claude OCR engine
@@ -149,7 +152,7 @@ async function startCapture(mode){
     // no live-transparent phase. Focus is safe now: the frame is captured.
     const ready = new Promise(r => { readyResolve = r; });
     overlayWin.webContents.send('overlay:show', { dataUrl: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64'),
-      magnifier: settings.magnifier !== false });
+      magnifier: settings.magnifier !== false, adjust: !!settings.adjustRegion });
     await Promise.race([ready, new Promise(r => setTimeout(r, 400))]);
     readyResolve = null;
     if(seq !== grabSeq){ return; }                   // superseded while waiting
@@ -182,18 +185,28 @@ ipcMain.on('overlay:commit', async (e, rect) => {
 function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); }
 
 async function handleResult(image, ctx){
-  if(settings.copyToClipboard || (ctx && ctx.forceCopy)){ try{ clipboard.writeImage(image); }catch(e){} }
+  // A command-line capture can override copy/save/folder for this one shot.
+  const cli = cliOverride; cliOverride = null;
+  const wantCopy = cli && cli.clipboard !== null && cli.clipboard !== undefined ? cli.clipboard
+                 : (settings.copyToClipboard || (ctx && ctx.forceCopy));
+  const wantSave = cli && cli.save !== null && cli.save !== undefined ? cli.save
+                 : (settings.saveToFolder || (ctx && ctx.forceSave) || !!(cli && cli.dir));
+  if(wantCopy){ try{ clipboard.writeImage(image); }catch(e){} }
   let savedPath = null;
   // forceSave: the user pressed Save on a pin, so honour that even when the
   // 'save every capture' setting is off.
-  if(settings.saveToFolder || (ctx && ctx.forceSave)){
+  if(wantSave){
     ensureFolder();
     const n = nameParts();
-    let dir = settings.saveFolder, base;
+    let dir = (cli && cli.dir) || settings.saveFolder, base;
     // window grabs know the app → file under <App>\; marquee grabs don't.
     const appDir = ctx && ctx.appName ? sanitizeName(ctx.appName) : '';
     if(appDir) dir = path.join(dir, appDir);
-    if(settings.dailyFolders){                    // …\[App\]\YYYY-MM-DD\Snap 16.15.26.png
+    const sz = (() => { try{ return image.getSize(); }catch(e){ return { width:0, height:0 }; } })();
+    if(settings.namePattern){                      // a template wins over both built-in shapes
+      if(settings.dailyFolders) dir = path.join(dir, n.day);
+      base = applyNamePattern(settings.namePattern, { app: appDir, width: sz.width, height: sz.height });
+    } else if(settings.dailyFolders){              // …\[App\]\YYYY-MM-DD\Snap 16.15.26.png
       dir = path.join(dir, n.day);
       base = `Snap ${n.time}`;
     } else {                                       // …\[App\]\Snap 29 Jul 2026 16.15.26.png
@@ -250,6 +263,35 @@ function nameParts(){
     time: `${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`,       // 16.15.26 (dots — valid on Windows)
     readable: `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`,      // 29 Jul 2026 (day-first, month name)
   };
+}
+
+// A name template, so files can be called what you want them to be called.
+// Tokens are {braced} rather than %-escapes: on Windows a path is full of
+// percent signs from environment variables, and %H for hour next to %H for
+// height is exactly the sort of collision that makes strftime patterns a
+// support burden. Anything unrecognised is left alone, so a stray brace is
+// harmless rather than silently eaten. Exported for the test harness.
+const NAME_TOKENS = ['date','time','datetime','year','month','day','hour','minute','second','app','width','height','n'];
+function applyNamePattern(pattern, ctx){
+  const d = (ctx && ctx.now) || new Date(), p = n => String(n).padStart(2, '0');
+  const map = {
+    date:     `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`,
+    time:     `${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`,
+    datetime: `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`,
+    year: String(d.getFullYear()), month: p(d.getMonth()+1), day: p(d.getDate()),
+    hour: p(d.getHours()), minute: p(d.getMinutes()), second: p(d.getSeconds()),
+    app: (ctx && ctx.app) || '', width: String((ctx && ctx.width) || ''), height: String((ctx && ctx.height) || ''),
+    n: String((ctx && ctx.n) || ''),
+  };
+  let out = String(pattern || '').replace(/\{(\w+)\}/g, (m, k) => {
+    const v = map[k.toLowerCase()];
+    return v === undefined ? m : v;                       // unknown token survives verbatim
+  });
+  // A template that resolves to nothing (e.g. "{app}" on a marquee grab) must
+  // still produce a file, and one that collapses to spaces or dots must not
+  // produce a hidden or path-traversing name.
+  out = out.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').replace(/^[.\s]+/, '').trim().slice(0, 120);
+  return out || 'Snap';
 }
 
 function notify(savedPath, inboxOk){
@@ -486,10 +528,79 @@ async function shareImage(image){
   if(!res.ok || !j.url) throw new Error(j.error || ('upload failed (' + res.status + ')'));
   return j.url;
 }
+// Links you have minted, so they can be found and revoked later. Server-side a
+// share is only addressable by its token, and the token is in the link you have
+// already sent someone — so if the app doesn't remember it, "un-share that"
+// becomes impossible. Kept local: it is a list of your own links, not a second
+// copy of the images.
+const SHARES_PATH = () => path.join(app.getPath('userData'), 'shares.json');
+let shares = [];
+function loadShares(){
+  try{ const r = JSON.parse(fs.readFileSync(SHARES_PATH(), 'utf8')); if(Array.isArray(r)) shares = r; }catch(e){}
+  pruneShares();
+}
+function saveShares(){ try{ fs.writeFileSync(SHARES_PATH(), JSON.stringify(shares.slice(0, 200))); }catch(e){} }
+// A share is dead after 7 days whatever we think, so stop listing it.
+const SHARE_TTL_MS = 7 * 24 * 3600 * 1000;
+function pruneShares(){
+  const cut = Date.now() - SHARE_TTL_MS;
+  const before = shares.length;
+  shares = shares.filter(x => x && x.url && (x.at || 0) > cut);
+  if(shares.length !== before) saveShares();
+}
+function rememberShare(url, image){
+  let thumb = '';
+  try{ if(image) thumb = image.resize({ height: 64, quality: 'good' }).toDataURL(); }catch(e){}
+  const token = (String(url).split('/s/')[1] || '').replace(/\.png$/, '');
+  shares.unshift({ url, token, at: Date.now(), thumb });
+  if(shares.length > 200) shares.length = 200;
+  saveShares();
+  if(sharesWin && !sharesWin.isDestroyed()) sharesWin.webContents.send('shares:list', sharesPayload());
+}
+function sharesPayload(){
+  pruneShares();
+  return shares.map(x => ({ url: x.url, thumb: x.thumb || '', at: x.at,
+    daysLeft: Math.max(0, Math.ceil((x.at + SHARE_TTL_MS - Date.now()) / 86400000)) }));
+}
+async function revokeShare(url){
+  const code = (settings.inboxCode || '').trim();
+  const token = (String(url).split('/s/')[1] || '').replace(/\.png$/, '');
+  if(!token) throw new Error('that link has no token');
+  if(!code) throw new Error('needs your inbox code');
+  const origin = new URL(settings.beautifyUrl).origin;
+  const res = await fetch(origin + '/.netlify/functions/inbox?op=unshare', {
+    method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ code, token }),
+  });
+  const j = await res.json().catch(() => ({}));
+  // A link the server no longer has is already revoked as far as anyone
+  // clicking it is concerned, so drop it from the list rather than erroring.
+  if(!res.ok && res.status !== 404) throw new Error(j.error || ('revoke failed (' + res.status + ')'));
+  shares = shares.filter(x => x.url !== url);
+  saveShares();
+}
+let sharesWin = null;
+function openShares(){
+  if(sharesWin && !sharesWin.isDestroyed()){ sharesWin.show(); sharesWin.focus(); return; }
+  sharesWin = new BrowserWindow({ width: 560, height: 620, title: 'Snappy Snap — Share links',
+    autoHideMenuBar: true, backgroundColor: '#1b1e28', minWidth: 420, minHeight: 320,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
+  sharesWin.loadFile('shares.html');
+  sharesWin.on('closed', () => { sharesWin = null; });
+}
+ipcMain.handle('shares:get', () => sharesPayload());
+ipcMain.handle('shares:revoke', async (e, url) => {
+  try{ await revokeShare(url); return { ok: true, list: sharesPayload() }; }
+  catch(err){ return { ok: false, error: String(err && err.message || err), list: sharesPayload() }; }
+});
+ipcMain.on('shares:copy', (e, url) => { try{ clipboard.writeText(url); }catch(e2){} });
+ipcMain.on('shares:open', (e, url) => { try{ shell.openExternal(url); }catch(e2){} });
+ipcMain.on('shares:forget', (e, url) => { shares = shares.filter(x => x.url !== url); saveShares(); });
+
 async function shareAndCopy(image){
   try{
     const url = await shareImage(image);
     if(!url) return;
+    rememberShare(url, image);
     clipboard.writeText(url);
     try{ new Notification({ title:'Snappy Snap — Link copied', body: url + '\nAnyone with the link can view it. Expires in 7 days.' }).show(); }catch(e){}
   }catch(e){
@@ -793,6 +904,7 @@ function refreshTrayMenu(){
     { label: 'Capture region   (' + settings.hotkey + ')', click: () => startCapture() },
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { label: 'Capture whole screen   (' + (settings.screenHotkey || '—') + ')', click: () => captureWholeScreen().catch((e) => console.error(e)) },
+    { label: 'Capture all monitors   (' + (settings.allHotkey || '—') + ')', click: () => captureAllScreens().catch((e) => console.error(e)) },
     { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
@@ -801,6 +913,7 @@ function refreshTrayMenu(){
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
+    { label: 'Share links…', click: () => openShares() },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
@@ -831,7 +944,7 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (e, patch) => {
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   refreshTrayMenu();
   return settings;
@@ -957,7 +1070,10 @@ function ocrPreprocess(bgra, width, height){
   }
   return { changed: true, invert, lo, hi, mean: Math.round(mean) };
 }
-if(typeof module !== 'undefined' && module.exports) module.exports.ocrPreprocess = ocrPreprocess;
+if(typeof module !== 'undefined' && module.exports){ module.exports.ocrPreprocess = ocrPreprocess;
+  module.exports.compositeDisplays = compositeDisplays;
+  module.exports.applyNamePattern = applyNamePattern;
+  module.exports.parseCli = parseCli; }
 function ocrImage(image){
   return new Promise((resolve, reject) => {
     let tmp = '';
@@ -1170,6 +1286,76 @@ async function captureWholeScreen(){
   }finally{ overlayBusy = false; returnBar(); }
 }
 
+// ---- every monitor, composited into one image ----------------------------
+// Blit each display's frame into one BGRA canvas laid out the way the desktop
+// actually is. Everything is scaled to the SHARPEST display's pixel density, so
+// a 4K screen beside a 1080p one keeps its detail instead of the whole shot
+// being dragged down to the coarser grid. Exported for the test harness.
+function compositeDisplays(parts, W, H){
+  // Opaque black where no monitor reaches. A non-rectangular desktop leaves
+  // gaps, and transparency there reads as black in some apps and as the card
+  // colour in others — so make it black everywhere, deliberately.
+  const out = Buffer.alloc(W * H * 4);
+  for(let i = 3; i < out.length; i += 4) out[i] = 255;
+  for(const p of parts){
+    const { bitmap, w, h, x, y } = p;
+    for(let row = 0; row < h; row++){
+      const dy = y + row;
+      if(dy < 0 || dy >= H) continue;
+      const sxPx = Math.max(0, -x), n = Math.min(w - sxPx, W - Math.max(0, x));
+      if(n <= 0) continue;
+      bitmap.copy(out, ((dy * W) + Math.max(0, x)) * 4, (row * w + sxPx) * 4, (row * w + sxPx + n) * 4);
+    }
+  }
+  return out;
+}
+async function captureAllScreens(){
+  if(overlayBusy) return;
+  const displays = screen.getAllDisplays();
+  if(displays.length < 2){ return captureWholeScreen(); }   // nothing to stitch
+  overlayBusy = true;
+  try{
+    const scale = Math.max(...displays.map(d => d.scaleFactor || 1));
+    const minX = Math.min(...displays.map(d => d.bounds.x)), minY = Math.min(...displays.map(d => d.bounds.y));
+    const maxX = Math.max(...displays.map(d => d.bounds.x + d.bounds.width));
+    const maxY = Math.max(...displays.map(d => d.bounds.y + d.bounds.height));
+    const W = Math.round((maxX - minX) * scale), H = Math.round((maxY - minY) * scale);
+    if(W < 1 || H < 1 || W * H > 200e6){                    // ~200 Mpx of BGRA is already 800 MB
+      try{ new Notification({ title:'Snappy Snap', body:'That desktop is too large to stitch into one image' }).show(); }catch(e){}
+      return;
+    }
+    await hideOwnWindows();
+    const sources = await desktopCapturer.getSources({ types:['screen'],
+      thumbnailSize: { width: Math.round((maxX - minX) * scale), height: Math.round((maxY - minY) * scale) } });
+    restoreOwnWindows();
+    const parts = [];
+    displays.forEach((d, i) => {
+      const src = sources.find(s => String(s.display_id) === String(d.id)) || sources[i];
+      if(!src || src.thumbnail.isEmpty()) return;
+      // thumbnailSize is a MAXIMUM and preserves aspect, so each display comes
+      // back at its own size — resize it to the slot it occupies on the canvas.
+      const tw = Math.round(d.bounds.width * scale), th = Math.round(d.bounds.height * scale);
+      const sz = src.thumbnail.getSize();
+      const img = (sz.width === tw && sz.height === th) ? src.thumbnail
+                : src.thumbnail.resize({ width: tw, height: th, quality: 'best' });
+      parts.push({ bitmap: img.toBitmap(), w: tw, h: th,
+                   x: Math.round((d.bounds.x - minX) * scale), y: Math.round((d.bounds.y - minY) * scale) });
+    });
+    if(!parts.length){
+      try{ new Notification({ title:'Snappy Snap', body:'Couldn’t read the screens' }).show(); }catch(e){}
+      return;
+    }
+    const img = nativeImage.createFromBuffer(compositeDisplays(parts, W, H), { width: W, height: H });
+    if(img.isEmpty()){
+      try{ new Notification({ title:'Snappy Snap', body:'Couldn’t stitch the screens' }).show(); }catch(e){}
+      return;
+    }
+    await handleResult(img);
+  }catch(e){
+    console.error('captureAllScreens failed', e); restoreOwnWindows();
+  }finally{ overlayBusy = false; returnBar(); }
+}
+
 // ---- terminal scrollback capture (text, not pixels) ----------------------
 // A terminal's scrollback is text, so instead of scroll-and-stitching pixels
 // we read the buffer itself and hand it to Snappy Frame's Text cards, which
@@ -1334,6 +1520,10 @@ function registerHotkey(){
     try{ globalShortcut.register(settings.screenHotkey, () => captureWholeScreen().catch(e => console.error(e))); }
     catch(e){ console.error('screen hotkey failed', e); }
   }
+  if(settings.allHotkey){
+    try{ globalShortcut.register(settings.allHotkey, () => captureAllScreens().catch(e => console.error(e))); }
+    catch(e){ console.error('all-monitors hotkey failed', e); }
+  }
   if(settings.batchHotkey){
     try{ globalShortcut.register(settings.batchHotkey, () => startCapture('batch')); }
     catch(e){ console.error('batch hotkey failed', e); }
@@ -1360,11 +1550,66 @@ function registerHotkey(){
   }
 }
 
-app.whenReady().then(() => {
-  loadSettings(); loadHistory(); ensureFolder(); buildTray(); registerHotkey(); ensureOverlay();
-  if(process.platform === 'darwin' && app.dock) app.dock.hide();   // tray-only
-  // Prime the screen-capture pipeline so the first grab isn't a cold start.
-  setTimeout(() => { desktopCapturer.getSources({ types:['screen'], thumbnailSize:{ width:1, height:1 } }).catch(() => {}); }, 600);
-});
+// ---- command line ---------------------------------------------------------
+// The app lives in the tray, so a second launch is a REMOTE CONTROL, not a
+// second copy: Electron hands its argv to the running instance, which performs
+// the capture. That makes every mode scriptable and bindable to whatever
+// shortcut manager you already use. Pure parser, exported for the tests.
+const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','bar','shelf'];
+function parseCli(argv){
+  // argv arrives as the full process argv; drop the exe and any Electron/Chromium
+  // switches so `snappy-snap.exe --region` and `electron . --region` parse alike.
+  const args = (argv || []).slice(1).filter(a => typeof a === 'string' && !a.startsWith('--inspect') && a !== '.');
+  const out = { mode: null, delay: 0, dir: null, clipboard: null, save: null };
+  let seen = false;
+  for(let i = 0; i < args.length; i++){
+    const a = args[i];
+    if(!a.startsWith('--')) continue;
+    const [kRaw, inlineVal] = a.slice(2).split('=');
+    const k = kRaw.toLowerCase();
+    const val = () => (inlineVal !== undefined ? inlineVal : (args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : ''));
+    if(CLI_MODES.includes(k)){ out.mode = k; seen = true; }
+    else if(k === 'delay'){ out.delay = Math.max(0, Math.min(60000, parseInt(val(), 10) || 0)); seen = true; }
+    else if(k === 'path'){ const v = val(); if(v){ out.dir = v; seen = true; } }
+    else if(k === 'clipboard'){ out.clipboard = true; seen = true; }
+    else if(k === 'no-clipboard'){ out.clipboard = false; seen = true; }
+    else if(k === 'save'){ out.save = true; seen = true; }
+    else if(k === 'no-save'){ out.save = false; seen = true; }
+  }
+  if(!seen) return null;                                   // an ordinary launch, not a command
+  if(!out.mode) out.mode = 'region';                       // options with no mode still mean "capture a region"
+  return out;
+}
+// Per-capture overrides live here for exactly one capture. Captures are
+// serialised by overlayBusy, so there is no second command to race with.
+let cliOverride = null;
+async function runCli(cmd){
+  if(!cmd) return;
+  if(cmd.mode === 'bar'){ toggleBar(); return; }
+  if(cmd.mode === 'shelf'){ toggleShelf(); return; }
+  if(cmd.delay) await new Promise(r => setTimeout(r, cmd.delay));
+  cliOverride = { dir: cmd.dir, clipboard: cmd.clipboard, save: cmd.save };
+  try{
+    if(cmd.mode === 'window') await captureActiveWindow();
+    else if(cmd.mode === 'screen') await captureWholeScreen();
+    else if(cmd.mode === 'all') await captureAllScreens();
+    else startCapture(['markup','ocr','pin','batch'].includes(cmd.mode) ? cmd.mode : 'normal');
+  }catch(e){ console.error('cli capture failed', e); cliOverride = null; }
+}
+
+if(!app.requestSingleInstanceLock()){
+  app.quit();                                    // the running copy handles the argv below
+} else {
+  app.on('second-instance', (e, argv) => { try{ runCli(parseCli(argv)); }catch(err){ console.error('cli failed', err); } });
+  app.whenReady().then(() => {
+    loadSettings(); loadHistory(); loadShares(); ensureFolder(); buildTray(); registerHotkey(); ensureOverlay();
+    if(process.platform === 'darwin' && app.dock) app.dock.hide();   // tray-only
+    // Prime the screen-capture pipeline so the first grab isn't a cold start.
+    setTimeout(() => { desktopCapturer.getSources({ types:['screen'], thumbnailSize:{ width:1, height:1 } }).catch(() => {}); }, 600);
+    // A first launch can carry a command too (someone scripting a cold start).
+    const first = parseCli(process.argv);
+    if(first) setTimeout(() => runCli(first), 900);
+  });
+}
 app.on('window-all-closed', () => { /* keep running in the tray */ });
 app.on('will-quit', () => globalShortcut.unregisterAll());
