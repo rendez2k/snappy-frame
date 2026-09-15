@@ -44,7 +44,10 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 | `Ctrl+Shift+P` | **Pin** — float a region on top as a reference |
 | `Ctrl+Shift+S` | **Session shelf** — show/hide the strip of recent snaps |
 
-`Esc` cancels a capture. All of them are editable in **Settings…**.
+`Esc` cancels a capture. All of them are editable in **Settings…**. Every other
+shortcut — the region overlay, the capture bar, the mark-up editor, pins, the
+shelf, the command line and the filename tokens — is in
+[SHORTCUTS.md](SHORTCUTS.md).
 
 ## Things worth knowing
 
