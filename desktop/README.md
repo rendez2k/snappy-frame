@@ -37,6 +37,7 @@ moment anything else takes focus, so start the timer, open the menu, let it fire
 | `Ctrl+Shift+6` | **Whole screen** — the screen your cursor is on, no rectangle to drag |
 | *(set your own)* | **All monitors** — every screen stitched into one image, laid out as they sit on your desk |
 | *(set your own)* | **Idea board** — a region pinned straight to your AI Launchpad board |
+| *(set your own)* | **Google Photos** — a region uploaded straight to your Photos library |
 | `Ctrl+Shift+3` | **Mark up** — grab a region, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate, blur; move/nudge/delete anything, undo/redo; finish to clipboard, Pin, a 7-day Link, or Beautify |
 | `Ctrl+Shift+4` | **Terminal text** — the focused terminal's whole scrollback, as text |
 | `Ctrl+Shift+5` | **Batch** — collect several grabs and hand them over together |
@@ -68,6 +69,19 @@ moment you release is faster when your aim was good.
 `{year}` `{month}` `{day}` `{hour}` `{minute}` `{second}` `{app}` `{width}`
 `{height}`. Anything else in the box is kept as typed, and Settings previews the
 result as you type. Leave it empty for the built-in naming.
+
+**Upload straight to Google Photos.** Google closed both folder-backup routes —
+Drive for desktop stopped syncing to Photos on 10 August 2026, and the Photos
+website's own folder backup only runs while that tab is open — so this talks to
+the Photos API. Put your own Google client in Settings (the panel walks through
+making one) and a hotkey, a bar button, **🖼 Photos** in the mark-up editor or a
+shelf tile's right-click menu puts a capture in your library, in an album of
+your choosing. The only scope requested is *append*: the app can add photos and
+can see nothing else in your library. The sign-in is sealed with the Windows
+keystore where that is available, and is never handed to any window of the app.
+
+One trap worth knowing: while your Google consent screen says **Testing**,
+Google expires the sign-in every seven days. Publish it and it lasts.
 
 **Pin captures to your AI Launchpad.** Put your Launchpad's address and owner
 passphrase in Settings and captures can go straight to its private idea board:
@@ -136,6 +150,7 @@ manager you already use.
 "Snappy Snap.exe" --markup                      # region, then the editor
 "Snappy Snap.exe" --ocr | --pin | --batch       # the other capture modes
 "Snappy Snap.exe" --board                       # a region, pinned to the idea board
+"Snappy Snap.exe" --photos                      # a region, uploaded to Google Photos
 "Snappy Snap.exe" --bar | --shelf               # show/hide the bar or the shelf
 
 "Snappy Snap.exe" --screen --delay 3000         # wait 3s first (max 60s)

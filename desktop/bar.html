@@ -79,14 +79,18 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/>
       </svg></button>
+    <button class="mode" data-m="batch" title="Add this grab to a batch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="8" y="3" width="13" height="13" rx="2"/><path d="M16 19v0a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h0"/>
+      </svg></button>
     <button class="mode" data-m="board" title="Send this grab straight to your AI Launchpad idea board">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>
         <rect x="3" y="16" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/>
       </svg></button>
-    <button class="mode" data-m="batch" title="Add this grab to a batch">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-        <rect x="8" y="3" width="13" height="13" rx="2"/><path d="M16 19v0a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h0"/>
+    <button class="mode" data-m="photos" title="Upload this grab straight to Google Photos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3a4 4 0 0 1 4 4v5h-4V3ZM21 12a4 4 0 0 1-4 4h-5v-4h9ZM12 21a4 4 0 0 1-4-4v-5h4v9ZM3 12a4 4 0 0 1 4-4h5v4H3Z"/>
       </svg></button>
     <div class="sep"></div>
     <button id="opts">Options <span style="font-size:9px">▾</span></button>
@@ -101,10 +105,26 @@
                   screen:'Capture the whole screen', markup:'Capture and mark up',
                   terminal:'Capture terminal text',
                   ocr:'Copy text from a region', pin:'Pin on top',
-                  board:'Send to the idea board', batch:'Add to batch' };
+                  board:'Send to the idea board', photos:'Upload to Google Photos',
+                  batch:'Add to batch' };
   let mode = 'region', s = {};
 
-  window.snap.barOnState(v => { s = v || {}; paintMenu(); });
+  window.snap.barOnState(v => { s = v || {}; syncOptional(); paintMenu(); });
+  // The idea board and Google Photos are opt-in integrations. Showing their
+  // buttons before they are set up is nine icons of which two only ever say
+  // "configure me", so they appear once they can actually do something.
+  function syncOptional(){
+    const on = { board: !!s.launchpadUrl, photos: !!(s.gphotosClientId && s.gphotosRefresh) };
+    let hidCurrent = false;
+    for(const k of Object.keys(on)){
+      const b = document.querySelector('[data-m="' + k + '"]');
+      if(!b) continue;
+      b.style.display = on[k] ? '' : 'none';
+      if(!on[k] && mode === k) hidCurrent = true;
+    }
+    if(hidCurrent) setMode('region');
+    reportSize();
+  }
   // Coming back after a grab, resume the mode you were using — resetting to
   // region every time defeats the point of keeping it open.
   window.snap.barOnMode(m => { if(m) setMode(m); });
@@ -186,8 +206,12 @@
   addEventListener('keydown', e => {
     if(e.key === 'Escape'){ open ? closeMenu() : window.snap.barClose(); }
     else if(e.key === 'Enter'){ go(); }
-    else if(e.key >= '1' && e.key <= '9'){
-      const b = document.querySelectorAll('.mode')[+e.key - 1]; if(b) setMode(b.dataset.m);
+    else if(/^[0-9]$/.test(e.key)){
+      // Count only what is on screen, or the numbers would skip past a hidden
+      // integration and pick the wrong mode. 0 is the tenth, so every mode has
+      // a key even with both optional integrations switched on.
+      const vis = [...document.querySelectorAll('.mode')].filter(b => b.style.display !== 'none');
+      const b = vis[e.key === '0' ? 9 : +e.key - 1]; if(b) setMode(b.dataset.m);
     }
   });
 })();

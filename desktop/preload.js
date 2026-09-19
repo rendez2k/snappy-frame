@@ -62,4 +62,8 @@ contextBridge.exposeInMainWorld('snap', {
   sharesCopy: (url) => ipcRenderer.send('shares:copy', url),
   sharesOpen: (url) => ipcRenderer.send('shares:open', url),
   sharesForget: (url) => ipcRenderer.send('shares:forget', url),
+  // google photos
+  photosStatus: () => ipcRenderer.invoke('photos:status'),
+  photosConnect: () => ipcRenderer.invoke('photos:connect'),
+  photosDisconnect: () => ipcRenderer.invoke('photos:disconnect'),
 });

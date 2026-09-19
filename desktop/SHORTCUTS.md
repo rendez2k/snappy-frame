@@ -1,6 +1,6 @@
 # Snappy Snap — every shortcut
 
-Version 0.25.0. Everything in the first table is editable in **Settings…**
+Version 0.26.0. Everything in the first table is editable in **Settings…**
 (tray icon → Settings). The rest are fixed.
 
 On a Mac build, `Ctrl` means `Cmd`.
@@ -25,9 +25,10 @@ These work from anywhere, whatever app you are in.
 | `Ctrl+Shift+Space` | **Capture bar** — show or hide the floating bar |
 | *not set* | **All monitors** — every screen stitched into one image |
 | *not set* | **Idea board** — a region pinned straight to your AI Launchpad board |
+| *not set* | **Google Photos** — a region uploaded straight to your Photos library |
 
-The last two have no default because they are not wanted by everyone. Give them
-a shortcut in Settings if you want them.
+The last three have no default because they are not wanted by everyone. Give
+them a shortcut in Settings if you want them.
 
 ---
 
@@ -64,13 +65,16 @@ The rectangle stays live when you let go, instead of capturing immediately.
 
 | Shortcut | What it does |
 |---|---|
-| `1` … `9` | Pick a mode, left to right |
+| `1` … `9`, then `0` | Pick a mode, left to right; `0` is the tenth |
 | `Enter` | Capture in the current mode |
 | *double-click a mode* | Pick it and capture at once |
 | `Esc` | Close the bar, or close the Options menu if it is open |
 
 The modes in order: region, window, whole screen, mark up, terminal, copy text,
-pin, idea board, batch.
+pin, batch, then idea board and Google Photos.
+
+The last two only appear once you have set them up, so the numbers for
+everything else never move.
 
 ---
 
@@ -111,7 +115,8 @@ A shape is selected the moment you place it, so you can nudge it straight away
 without switching to the move tool. Numbered steps renumber themselves when you
 delete one.
 
-Finish buttons: **Board** pins it to your idea board, **Pin** floats it on top,
+Finish buttons: **Photos** uploads it to Google Photos, **Board** pins it to
+your idea board, **Pin** floats it on top,
 **Link** uploads it and copies a seven-day URL, **Beautify** opens it in Snappy
 Frame, **Copy & Done** copies and saves.
 
@@ -141,7 +146,7 @@ Mouse only.
 | *drag a thumbnail out* | Drop the real file into any app that takes one |
 | *drag the header* | Move the shelf, including onto another monitor |
 | *double-click a thumbnail* | Show that file in Explorer |
-| *right-click a thumbnail* | Share link, copy, pin on top, send to idea board, open with, show in folder, remove |
+| *right-click a thumbnail* | Share link, copy, pin on top, send to idea board, upload to Google Photos, open with, show in folder, remove |
 | *middle-click a thumbnail* | Remove it from the shelf |
 | **S** button | Cycle the thumbnail size: small, medium, large |
 | 🔓 button | Lock the shelf so it cannot be dragged |
@@ -165,6 +170,7 @@ the one in your tray, which performs the capture.
 "Snappy Snap.exe" --pin                         # region, floated on top
 "Snappy Snap.exe" --batch                       # region, added to the batch
 "Snappy Snap.exe" --board                       # region, pinned to the idea board
+"Snappy Snap.exe" --photos                      # region, uploaded to Google Photos
 "Snappy Snap.exe" --bar                         # show or hide the capture bar
 "Snappy Snap.exe" --shelf                       # show or hide the shelf
 ```

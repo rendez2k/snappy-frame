@@ -38,6 +38,8 @@
     <input type="text" id="screenHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>All monitors</b> — every screen stitched into one image, laid out the way they are on your desk. Empty for none.</p>
     <input type="text" id="allHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+7" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Google Photos</b> — drag a rectangle and it goes straight into your Google Photos library. Empty for none.</p>
+    <input type="text" id="photosHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+G" style="margin-top:6px">
     <p style="margin-top:12px"><b>Idea board</b> — drag a rectangle and it goes straight to your AI Launchpad board. Empty for none.</p>
     <input type="text" id="boardHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+I" style="margin-top:6px">
     <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate and blur. Great for flagging a fix to paste into a chat.</p>
@@ -138,6 +140,40 @@
   </div>
 
   <div class="row">
+    <h3>Google Photos <span style="font-weight:400;color:var(--mut)">(optional · uploads)</span></h3>
+    <p>A hotkey that puts a capture straight into your Google Photos library.
+      Google closed the old "back up this folder" routes, so this talks to the
+      Photos API with <b>your own</b> Google client — the app can only add photos,
+      never read your library.</p>
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer;color:var(--acc)">One-time setup (about five minutes)</summary>
+      <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7;color:var(--mut)">
+        <li>Open <b>console.cloud.google.com</b> and make a project.</li>
+        <li><i>APIs &amp; Services → Library</i> → enable <b>Photos Library API</b>.</li>
+        <li><i>OAuth consent screen</i> → External → fill in the basics → add
+          yourself as a user. <b>Publish it</b> when you're done: while it says
+          <i>Testing</i>, Google expires the sign-in every 7 days.</li>
+        <li><i>Credentials → Create credentials → OAuth client ID → Desktop app</i>.</li>
+        <li>Paste the client ID and secret below, then press Connect.</li>
+      </ol>
+      <p style="margin-top:8px">Google will warn that the app is unverified — it is
+        yours and unpublished to anyone else, so choose <i>Advanced → Go to
+        Snappy Snap</i>. Only the "add to library" permission is requested.</p>
+    </details>
+    <p style="margin-top:12px">Client ID</p>
+    <input type="text" id="gphotosClientId" spellcheck="false" placeholder="…apps.googleusercontent.com" style="margin-top:6px">
+    <p style="margin-top:10px">Client secret</p>
+    <input type="password" id="gphotosClientSecret" spellcheck="false" placeholder="GOCSPX-…" style="margin-top:6px">
+    <p style="margin-top:10px">Album <span style="color:var(--mut)">(leave empty to upload with no album)</span></p>
+    <input type="text" id="gphotosAlbum" spellcheck="false" placeholder="Snappy Snap" style="margin-top:6px">
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+      <button id="gphotosConnect">Connect…</button>
+      <button id="gphotosDisconnect">Disconnect</button>
+      <span id="gphotosState" style="color:var(--mut);font-size:12px"></span>
+    </div>
+  </div>
+
+  <div class="row">
     <h3>Online inbox <span style="font-weight:400;color:var(--mut)">(optional · uploads)</span></h3>
     <p>Also send each snap to your web inbox. Get a code at
       <b>snappy-frame.netlify.app/inbox</b> and paste it here. This is the only
@@ -161,6 +197,10 @@
     $('screenHotkey').value = s.screenHotkey || '';
     $('allHotkey').value = s.allHotkey || '';
     $('boardHotkey').value = s.boardHotkey || '';
+    $('photosHotkey').value = s.photosHotkey || '';
+    $('gphotosClientId').value = s.gphotosClientId || '';
+    $('gphotosClientSecret').value = s.gphotosClientSecret || '';
+    $('gphotosAlbum').value = s.gphotosAlbum === undefined ? 'Snappy Snap' : s.gphotosAlbum;
     $('launchpadUrl').value = s.launchpadUrl || '';
     $('launchpadPass').value = s.launchpadPass || '';
     $('namePattern').value = s.namePattern || '';
@@ -190,6 +230,30 @@
   $('screenHotkey').addEventListener('change', e => set({ screenHotkey: e.target.value.trim() }));
   $('allHotkey').addEventListener('change', e => set({ allHotkey: e.target.value.trim() }));
   $('boardHotkey').addEventListener('change', e => set({ boardHotkey: e.target.value.trim() }));
+  $('photosHotkey').addEventListener('change', e => set({ photosHotkey: e.target.value.trim() }));
+  $('gphotosClientId').addEventListener('change', e => set({ gphotosClientId: e.target.value.trim() }).then(photosState));
+  $('gphotosClientSecret').addEventListener('change', e => set({ gphotosClientSecret: e.target.value.trim() }).then(photosState));
+  $('gphotosAlbum').addEventListener('change', e => set({ gphotosAlbum: e.target.value.trim() }));
+  async function photosState(){
+    const st = await window.snap.photosStatus();
+    const el = $('gphotosState');
+    el.textContent = st.connected ? (st.sealed ? 'Connected. The sign-in is encrypted by Windows.' : 'Connected.')
+                   : st.configured ? 'Not connected yet.'
+                   : 'Paste a client ID and secret first.';
+    el.style.color = st.connected ? '#5ad07a' : 'var(--mut)';
+    $('gphotosConnect').disabled = !st.configured;
+    $('gphotosDisconnect').disabled = !st.connected;
+  }
+  $('gphotosConnect').addEventListener('click', async () => {
+    const b = $('gphotosConnect'); b.disabled = true; b.textContent = 'Waiting for Google…';
+    $('gphotosState').textContent = 'Your browser is open — approve it there.'; $('gphotosState').style.color = 'var(--mut)';
+    const r = await window.snap.photosConnect();
+    b.textContent = 'Connect…';
+    await photosState();
+    if(!r.ok){ $('gphotosState').textContent = r.error; $('gphotosState').style.color = '#ff6b6b'; }
+  });
+  $('gphotosDisconnect').addEventListener('click', async () => { await window.snap.photosDisconnect(); photosState(); });
+  photosState();
   $('launchpadUrl').addEventListener('change', e => set({ launchpadUrl: e.target.value.trim() }));
   $('launchpadPass').addEventListener('change', e => set({ launchpadPass: e.target.value }));
   $('namePattern').addEventListener('input', previewName);

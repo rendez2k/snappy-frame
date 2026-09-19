@@ -2,7 +2,9 @@
 // Hotkey → freeze the screen under the cursor → drag a rectangle → save to a
 // folder + copy to clipboard (raw, no frame), or open it in Snappy Frame.
 const { app, BrowserWindow, globalShortcut, desktopCapturer, screen, clipboard,
-  nativeImage, Tray, Menu, ipcMain, Notification, shell, dialog } = require('electron');
+  nativeImage, Tray, Menu, ipcMain, Notification, shell, dialog, safeStorage } = require('electron');
+const crypto = require('crypto');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -28,6 +30,12 @@ const DEFAULTS = {
   launchpadUrl: '',                                // your AI Launchpad origin, e.g. https://my-launchpad.netlify.app
   launchpadPass: '',                               // its owner passphrase — swapped for a 7-day bearer token
   boardHotkey: '',                                 // grab a region and pin it straight to the idea board
+  photosHotkey: '',                                // grab a region and upload it to Google Photos
+  gphotosClientId: '',                             // your own Google OAuth "Desktop app" client
+  gphotosClientSecret: '',                         // not really secret for an installed app, but Google requires it
+  gphotosRefresh: '',                              // the long-lived token, DPAPI-encrypted where the OS allows
+  gphotosAlbum: 'Snappy Snap',                     // '' uploads straight to the library with no album
+  gphotosAlbumId: '' ,                             // remembered so the album is created once
   hideOwn: true,                                   // keep Snappy's own floating windows out of the shot
   ocrEngine: 'windows',                            // 'windows' (local, private) | 'claude' (cloud, best)
   anthropicKey: '',                                // BYOK for the Claude OCR engine
@@ -56,6 +64,12 @@ let settings = { ...DEFAULTS };
 function loadSettings(){ try{ settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH(), 'utf8')) }; }catch(e){ settings = { ...DEFAULTS }; } }
 function saveSettings(){ try{ fs.mkdirSync(path.dirname(SETTINGS_PATH()), { recursive:true }); fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2)); }catch(e){ console.error(e); } }
 function ensureFolder(){ try{ fs.mkdirSync(settings.saveFolder, { recursive:true }); }catch(e){} }
+// What a renderer is allowed to see. The sealed Google refresh token never
+// crosses the bridge — a window only needs to know whether one exists, and
+// photos:status says so. Everything else is already the user's own text.
+function publicSettings(){
+  return { ...settings, gphotosRefresh: settings.gphotosRefresh ? '__set__' : '' };
+}
 
 let shelfWin = null;
 let tray = null, overlayWin = null, settingsWin = null, beautifyWin = null, annotatorWin = null, batchWin = null, barWin = null;
@@ -120,7 +134,7 @@ async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
   const seq = ++grabSeq;
-  captureMode = ['markup','batch','ocr','pin','board'].includes(mode) ? mode : 'normal';
+  captureMode = ['markup','batch','ocr','pin','board','photos'].includes(mode) ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
@@ -179,6 +193,7 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   if(captureMode === 'ocr'){ await deliverOcr(crop); returnBar(); return; }
   if(captureMode === 'pin'){ openPin(crop); returnBar(); return; }
   if(captureMode === 'board'){ await sendToBoard(crop); returnBar(); return; }
+  if(captureMode === 'photos'){ await sendToPhotos(crop); returnBar(); return; }
   if(captureMode === 'batch'){ addToBatch(crop.toDataURL()); returnBar(); return; }
   if(captureMode === 'markup'){ openAnnotator(crop.toDataURL()); return; }   // returns when the editor closes
   await handleResult(crop);
@@ -375,6 +390,7 @@ ipcMain.on('annotator:done', async (e, payload) => {
     if(payload.action === 'beautify'){ try{ clipboard.writeImage(img); }catch(e2){} openBeautify(img.toDataURL()); returnBar(); return; }
     if(payload.action === 'pin'){ openPin(img); returnBar(); return; }
     if(payload.action === 'board'){ await sendToBoard(img); returnBar(); return; }
+    if(payload.action === 'photos'){ await sendToPhotos(img); returnBar(); return; }
     if(payload.action === 'share'){ await shareAndCopy(img); returnBar(); return; }
     await handleResult(img, { markup: true, forceCopy: true });
     returnBar();
@@ -703,6 +719,200 @@ async function sendToBoard(image, ctx){
   }
 }
 
+// ---- Google Photos --------------------------------------------------------
+// Google shut the Drive-for-desktop "back up this folder to Photos" route down
+// on 10 August 2026, and the Photos website's own folder backup only runs while
+// that tab is open — so a hotkey has to talk to the API. The only upload scope
+// left after the March 2025 cull is photoslibrary.appendonly, which is exactly
+// what this needs: it can add media and make albums, and can see nothing it did
+// not upload itself. There is no shared Snappy Snap client, deliberately — a
+// client ID in a public installer is a quota everyone shares and a secret
+// nobody controls — so you paste your own Desktop-app client and own the quota.
+const GPHOTOS_SCOPE = 'https://www.googleapis.com/auth/photoslibrary.appendonly';
+const GPHOTOS_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GPHOTOS_TOKEN = 'https://oauth2.googleapis.com/token';
+const GPHOTOS_API = 'https://photoslibrary.googleapis.com/v1';
+
+// A refresh token is a standing key to someone's photo library, so it is sealed
+// with the OS keystore (DPAPI on Windows) when that is available. The fallback
+// is the plain settings file, which is where the app's other credentials live —
+// said plainly in Settings rather than implied.
+function sealSecret(v){
+  if(!v) return '';
+  try{ if(safeStorage.isEncryptionAvailable()) return 'enc:' + safeStorage.encryptString(v).toString('base64'); }catch(e){}
+  return v;
+}
+function openSecret(v){
+  if(!v) return '';
+  if(!String(v).startsWith('enc:')) return String(v);
+  try{ return safeStorage.decryptString(Buffer.from(String(v).slice(4), 'base64')); }
+  catch(e){ console.error('could not unseal the Google token', e); return ''; }
+}
+function gphotosConfigured(){ return !!(settings.gphotosClientId && settings.gphotosClientSecret); }
+function gphotosConnected(){ return gphotosConfigured() && !!settings.gphotosRefresh; }
+
+const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+function pkce(){
+  const verifier = b64url(crypto.randomBytes(48));
+  return { verifier, challenge: b64url(crypto.createHash('sha256').update(verifier).digest()) };
+}
+function authUrl({ clientId, redirect, challenge, state }){
+  const q = new URLSearchParams({
+    client_id: clientId, redirect_uri: redirect, response_type: 'code', scope: GPHOTOS_SCOPE,
+    code_challenge: challenge, code_challenge_method: 'S256', state,
+    access_type: 'offline',        // without this there is no refresh token at all
+    prompt: 'consent',             // and without this a re-connect silently returns none
+  });
+  return GPHOTOS_AUTH + '?' + q.toString();
+}
+// The loopback redirect is what Google prescribes for installed apps: a
+// throwaway server on 127.0.0.1 catches the code, so nothing leaves the machine
+// except the consent itself.
+function gphotosConnect(){
+  return new Promise((resolve, reject) => {
+    if(!gphotosConfigured()){ reject(new Error('Paste your Google client ID and secret first')); return; }
+    const { verifier, challenge } = pkce();
+    const state = b64url(crypto.randomBytes(16));
+    let done = false;
+    const finish = (err, val) => { if(done) return; done = true; clearTimeout(timer); try{ srv.close(); }catch(e){} err ? reject(err) : resolve(val); };
+    const srv = http.createServer(async (req, res) => {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      if(u.pathname !== '/') { res.writeHead(404).end(); return; }
+      const page = (msg) => { res.writeHead(200, { 'Content-Type':'text/html; charset=utf-8' });
+        res.end('<!doctype html><meta charset="utf-8"><title>Snappy Snap</title>' +
+          '<body style="font:15px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;background:#1b1e28;color:#e7e9ef;padding:48px">' +
+          '<h2 style="margin:0 0 8px">Snappy Snap</h2><p>' + msg + '</p></body>'); };
+      if(u.searchParams.get('state') !== state){ page('That response did not match this request. Nothing was connected.'); finish(new Error('state mismatch')); return; }
+      const err = u.searchParams.get('error');
+      if(err){ page('Connection cancelled.'); finish(new Error(err === 'access_denied' ? 'You declined the permission' : err)); return; }
+      const code = u.searchParams.get('code');
+      if(!code){ page('No code came back.'); finish(new Error('no code returned')); return; }
+      try{
+        const r = await fetch(GPHOTOS_TOKEN, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ code, client_id: settings.gphotosClientId, client_secret: settings.gphotosClientSecret,
+            redirect_uri: redirect, grant_type:'authorization_code', code_verifier: verifier }).toString() });
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok || !j.refresh_token){
+          throw new Error(j.error_description || j.error ||
+            (r.ok ? 'Google returned no refresh token — remove the app at myaccount.google.com/permissions and connect again' : 'token exchange failed (' + r.status + ')'));
+        }
+        settings.gphotosRefresh = sealSecret(j.refresh_token); saveSettings();
+        gphotosAccess = { token: j.access_token, until: Date.now() + Math.max(0, (j.expires_in || 3600) - 60) * 1000 };
+        page('Connected. You can close this tab.');
+        finish(null, true);
+      }catch(e){ page('Could not finish connecting: ' + String(e && e.message || e)); finish(e); }
+    });
+    let redirect = '';
+    srv.on('error', (e) => finish(e));
+    srv.listen(0, '127.0.0.1', () => {
+      redirect = 'http://127.0.0.1:' + srv.address().port;
+      shell.openExternal(authUrl({ clientId: settings.gphotosClientId, redirect, challenge, state }));
+    });
+    // Don't hold a listening socket open for ever if the browser is never finished with.
+    const timer = setTimeout(() => finish(new Error('Timed out waiting for Google')), 5 * 60 * 1000);
+  });
+}
+let gphotosAccess = null;                  // { token, until } — short-lived, never written to disk
+async function gphotosToken(force){
+  if(!force && gphotosAccess && Date.now() < gphotosAccess.until) return gphotosAccess.token;
+  const refresh = openSecret(settings.gphotosRefresh);
+  if(!refresh) throw new Error('Connect Google Photos in Settings first');
+  const r = await fetch(GPHOTOS_TOKEN, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ refresh_token: refresh, client_id: settings.gphotosClientId,
+      client_secret: settings.gphotosClientSecret, grant_type:'refresh_token' }).toString() });
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok || !j.access_token){
+    // invalid_grant means the token is dead for good (revoked, or the consent
+    // screen is still in Testing, where Google expires them after seven days).
+    if(j.error === 'invalid_grant'){ settings.gphotosRefresh = ''; settings.gphotosAlbumId = ''; saveSettings(); gphotosAccess = null;
+      throw new Error('Google signed this app out. Reconnect in Settings — and publish your consent screen, or tokens expire weekly.'); }
+    throw new Error(j.error_description || j.error || ('could not refresh the token (' + r.status + ')'));
+  }
+  gphotosAccess = { token: j.access_token, until: Date.now() + Math.max(0, (j.expires_in || 3600) - 60) * 1000 };
+  return gphotosAccess.token;
+}
+async function gphotosAlbumId(token){
+  const want = (settings.gphotosAlbum || '').trim();
+  if(!want) return null;                              // straight into the library
+  if(settings.gphotosAlbumId) return settings.gphotosAlbumId;
+  const r = await fetch(GPHOTOS_API + '/albums', { method:'POST',
+    headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token },
+    body: JSON.stringify({ album: { title: want } }) });
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok || !j.id){
+    // An album is a nicety; never lose the upload over it.
+    console.error('album create failed', j);
+    return null;
+  }
+  settings.gphotosAlbumId = j.id; saveSettings();
+  return j.id;
+}
+// Two steps, as the API requires: raw bytes for an upload token, then a
+// batchCreate that turns the token into a real item.
+async function gphotosUpload(bytes, fileName, token, albumId, description){
+  const up = await fetch(GPHOTOS_API + '/uploads', { method:'POST',
+    headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/octet-stream',
+      'X-Goog-Upload-Content-Type':'image/png', 'X-Goog-Upload-Protocol':'raw' },
+    body: bytes });
+  const uploadToken = (await up.text()).trim();
+  if(!up.ok || !uploadToken) throw Object.assign(new Error('upload rejected (' + up.status + ')'), { status: up.status });
+  const body = { newMediaItems: [{ description: description || '', simpleMediaItem: { fileName, uploadToken } }] };
+  if(albumId) body.albumId = albumId;
+  const cr = await fetch(GPHOTOS_API + '/mediaItems:batchCreate', { method:'POST',
+    headers:{ 'Content-Type':'application/json', Authorization:'Bearer ' + token }, body: JSON.stringify(body) });
+  const j = await cr.json().catch(() => ({}));
+  // Carry the status on the error. Deciding what to retry by pattern-matching
+  // Google's prose would break the day they reword it.
+  if(!cr.ok) throw Object.assign(new Error((j.error && j.error.message) || ('the library refused it (' + cr.status + ')')), { status: cr.status });
+  const r0 = (j.newMediaItemResults || [])[0];
+  const st = r0 && r0.status;
+  // batchCreate answers 200 with a per-item status, so a failure hides in the body.
+  if(st && st.message && !/^(Success|OK)$/i.test(st.message)) throw new Error(st.message);
+  return r0 && r0.mediaItem ? r0.mediaItem : null;
+}
+async function sendToPhotos(image, ctx){
+  if(!gphotosConnected()){
+    try{ new Notification({ title:'Snappy Snap — Google Photos', body:'Connect Google Photos in Settings first.' }).show(); }catch(e){}
+    return false;
+  }
+  try{
+    const bytes = image.toPNG();
+    if(bytes.length > 190 * 1024 * 1024) throw new Error('that image is too big for Google Photos');
+    const name = ((ctx && ctx.name) || ('Snap ' + new Date().toISOString().replace(/[:.]/g, '-'))).replace(/\.png$/i, '') + '.png';
+    let token = await gphotosToken();
+    let album = await gphotosAlbumId(token);
+    try{
+      await gphotosUpload(bytes, name, token, album, ctx && ctx.note);
+    }catch(e){
+      // An access token that expired mid-flight, or an album we remember that
+      // has since been deleted: both are worth exactly one retry with fresh
+      // state before giving up.
+      const msg = String(e && e.message || e);
+      if(e && (e.status === 401 || e.status === 403)){ token = await gphotosToken(true); }
+      else if(settings.gphotosAlbumId && (e && e.status === 400) && /album/i.test(msg)){ settings.gphotosAlbumId = ''; saveSettings(); }
+      else throw e;
+      album = await gphotosAlbumId(token);
+      await gphotosUpload(bytes, name, token, album, ctx && ctx.note);
+    }
+    try{ new Notification({ title:'Snappy Snap — Google Photos', body: (settings.gphotosAlbum || '').trim() ? 'Uploaded to ' + settings.gphotosAlbum + '.' : 'Uploaded.' }).show(); }catch(e){}
+    return true;
+  }catch(e){
+    console.error('google photos upload failed', e);
+    try{ new Notification({ title:'Snappy Snap — Google Photos', body:String(e && e.message || e).slice(0, 200) }).show(); }catch(e2){}
+    return false;
+  }
+}
+ipcMain.handle('photos:status', () => ({ configured: gphotosConfigured(), connected: gphotosConnected(),
+  sealed: (() => { try{ return safeStorage.isEncryptionAvailable(); }catch(e){ return false; } })() }));
+ipcMain.handle('photos:connect', async () => {
+  try{ await gphotosConnect(); return { ok: true }; }
+  catch(e){ return { ok: false, error: String(e && e.message || e) }; }
+});
+ipcMain.handle('photos:disconnect', () => {
+  settings.gphotosRefresh = ''; settings.gphotosAlbumId = ''; saveSettings(); gphotosAccess = null;
+  return { ok: true };
+});
+
 // ---- session shelf -------------------------------------------------------
 // A slim always-on-top strip holding this session's snaps. Each thumbnail is a
 // NATIVE file drag source (webContents.startDrag), so a snap can be dragged
@@ -827,7 +1037,10 @@ function toggleShelf(){
 // The window is sized from what the page ACTUALLY measures, not a constant:
 // a hardcoded height was measured against one machine's fonts and clipped the
 // top of the Options menu everywhere Segoe UI renders it taller.
-const BAR_W = 712, BAR_H_MIN = 84;   // widened for the 9th mode; the pill self-measures its height only
+// Wide enough for every mode at once. The pill is centred in a transparent
+// window, so when an optional integration is hidden it simply gets narrower —
+// the window does not need to resize with it.
+const BAR_W = 760, BAR_H_MIN = 84;
 let barH = BAR_H_MIN;                              // current content height, reported by the renderer
 function barBounds(){
   const cur = screen.getCursorScreenPoint();
@@ -856,7 +1069,7 @@ function toggleBar(){
   if(barWin && !barWin.isDestroyed() && barWin.isVisible()) hideBar();
   else openBar();
 }
-ipcMain.on('bar:ready', (e) => e.sender.send('bar:state', settings));
+ipcMain.on('bar:ready', (e) => e.sender.send('bar:state', publicSettings()));
 ipcMain.on('bar:close', () => hideBar());
 // The renderer measures itself and reports the height it needs; the window
 // grows upward to match and shrinks back when the menu closes. A permanently
@@ -869,7 +1082,7 @@ ipcMain.on('bar:size', (e, px) => {
 function forgetBoardToken(){ boardToken = null; boardTokenAt = 0; }
 ipcMain.on('bar:option', (e, patch) => {
   Object.assign(settings, patch || {}); saveSettings(); refreshTrayMenu();
-  if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:state', settings);
+  if(barWin && !barWin.isDestroyed()) barWin.webContents.send('bar:state', publicSettings());
 });
 ipcMain.on('bar:run', async (e, mode) => {
   // The bar must be gone BEFORE the capture runs: any window under the cursor
@@ -887,8 +1100,9 @@ ipcMain.on('bar:run', async (e, mode) => {
     if(mode === 'screen'){ await captureWholeScreen(); }          // returns the bar itself
     else if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
     else if(mode === 'board'){ startCapture('board'); }
+    else if(mode === 'photos'){ startCapture('photos'); }
     else if(mode === 'terminal'){ await captureTerminalText(); returnBar(); }
-    else startCapture(['markup','batch','ocr','pin','board'].includes(mode) ? mode : 'normal');
+    else startCapture(['markup','batch','ocr','pin','board','photos'].includes(mode) ? mode : 'normal');
   }catch(err){ console.error('bar capture failed', err); barLaunched = false; }
 });
 // Dismissing after a grab is right for a one-off — it's what the platform tools
@@ -953,6 +1167,7 @@ ipcMain.on('shelf:menu', (e, i) => {
     { label: 'Copy image', click: () => { const im = load(); if(im) try{ clipboard.writeImage(im); }catch(e2){} } },
     { label: 'Pin on top', click: () => { const im = load(); if(im) openPin(im); } },
     { label: 'Send to idea board', click: () => { const im = load(); if(im) sendToBoard(im, { title: it.name }); } },
+    { label: 'Upload to Google Photos', click: () => { const im = load(); if(im) sendToPhotos(im, { name: it.name }); } },
     { type: 'separator' },
     { label: 'Open with…', click: () => openWith(it.file) },
     { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
@@ -1008,6 +1223,7 @@ function refreshTrayMenu(){
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
     { label: 'Send a region to the idea board   (' + (settings.boardHotkey || '—') + ')', click: () => startCapture('board') },
+    { label: 'Send a region to Google Photos   (' + (settings.photosHotkey || '—') + ')', click: () => startCapture('photos') },
     ...(pins.size ? [{ label: 'Close all pins (' + pins.size + ')', click: () => { closeAllPins(); refreshTrayMenu(); } }] : []),
     { label: 'Capture terminal text   (' + (settings.termHotkey || '—') + ')', click: () => captureTerminalText().catch((e) => console.error(e)) },
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
@@ -1039,13 +1255,21 @@ function openSettings(){
 }
 
 // ---- settings IPC --------------------------------------------------------
-ipcMain.handle('settings:get', () => settings);
+ipcMain.handle('settings:get', () => publicSettings());
 ipcMain.handle('settings:set', (e, patch) => {
+  // settings:get reports the Google token as a placeholder, so a renderer that
+  // echoed its whole form back would otherwise overwrite the real one with it.
+  // The token is only ever written by the OAuth flow.
+  if(patch && 'gphotosRefresh' in patch) delete patch.gphotosRefresh;
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch || 'boardHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch || 'boardHotkey' in patch || 'photosHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   if('launchpadUrl' in patch || 'launchpadPass' in patch) forgetBoardToken();
+  // A different Google client means a different consent; a different album name
+  // means the remembered album id is for the wrong album.
+  if('gphotosClientId' in patch || 'gphotosClientSecret' in patch){ gphotosAccess = null; }
+  if('gphotosAlbum' in patch && patch.gphotosAlbum !== undefined){ settings.gphotosAlbumId = ''; saveSettings(); }
   refreshTrayMenu();
   return settings;
 });
@@ -1652,6 +1876,10 @@ function registerHotkey(){
     try{ globalShortcut.register(settings.boardHotkey, () => startCapture('board')); }
     catch(e){ console.error('board hotkey failed', e); }
   }
+  if(settings.photosHotkey){
+    try{ globalShortcut.register(settings.photosHotkey, () => startCapture('photos')); }
+    catch(e){ console.error('photos hotkey failed', e); }
+  }
 }
 
 // ---- command line ---------------------------------------------------------
@@ -1659,7 +1887,7 @@ function registerHotkey(){
 // second copy: Electron hands its argv to the running instance, which performs
 // the capture. That makes every mode scriptable and bindable to whatever
 // shortcut manager you already use. Pure parser, exported for the tests.
-const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','board','bar','shelf'];
+const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','board','photos','bar','shelf'];
 function parseCli(argv){
   // argv arrives as the full process argv; drop the exe and any Electron/Chromium
   // switches so `snappy-snap.exe --region` and `electron . --region` parse alike.
@@ -1697,7 +1925,7 @@ async function runCli(cmd){
     if(cmd.mode === 'window') await captureActiveWindow();
     else if(cmd.mode === 'screen') await captureWholeScreen();
     else if(cmd.mode === 'all') await captureAllScreens();
-    else startCapture(['markup','ocr','pin','batch','board'].includes(cmd.mode) ? cmd.mode : 'normal');
+    else startCapture(['markup','ocr','pin','batch','board','photos'].includes(cmd.mode) ? cmd.mode : 'normal');
   }catch(e){ console.error('cli capture failed', e); cliOverride = null; }
 }
 
