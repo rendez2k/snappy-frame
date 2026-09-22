@@ -103,7 +103,9 @@ snap works on it too.
 computer has minted, when it was made and how long it has left. Revoking deletes
 the image server-side, so the link dies for everyone holding it.
 
-**The session shelf** holds everything you've captured. Drag a thumbnail
+**The session shelf** has a **+** button: take a snap straight onto it without
+reaching for a hotkey. Left-click takes a region; right-click offers every other
+mode, and a way into the combine window. It holds everything you've captured. Drag a thumbnail
 straight into Claude Desktop, Slack or an editor — it's a real OS file drag, not
 a bitmap, so anything that accepts a dropped file accepts it. Right-click a tile
 for a share link, a pin, **Open with…** (the Windows app chooser) or the folder.

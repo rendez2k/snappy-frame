@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('snap', {
   shelfMenu: (i) => ipcRenderer.send('shelf:menu', i),
   shelfClear: () => ipcRenderer.send('shelf:clear'),
   shelfHide: () => ipcRenderer.send('shelf:hide'),
+  shelfCapture: (mode) => ipcRenderer.send('shelf:capture', mode),
+  shelfCaptureMenu: () => ipcRenderer.send('shelf:captureMenu'),
   // batch collector
   batchReady: () => ipcRenderer.send('batch:ready'),
   batchOnUpdate: (cb) => ipcRenderer.on('batch:update', (e, items) => cb(items)),

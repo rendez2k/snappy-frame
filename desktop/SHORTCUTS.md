@@ -1,6 +1,6 @@
 # Snappy Snap — every shortcut
 
-Version 0.27.0. Everything in the first table is editable in **Settings…**
+Version 0.28.0. Everything in the first table is editable in **Settings…**
 (tray icon → Settings). The rest are fixed.
 
 On a Mac build, `Ctrl` means `Cmd`.
@@ -146,10 +146,11 @@ Mouse only.
 
 | Action | What it does |
 |---|---|
+| **+** button | Take a snap straight onto the shelf; right-click it for every other mode |
 | *drag a thumbnail out* | Drop the real file into any app that takes one |
 | *drag the header* | Move the shelf, including onto another monitor |
 | *double-click a thumbnail* | Show that file in Explorer |
-| *right-click a thumbnail* | Share link, copy, pin on top, send to idea board, upload to Google Photos, open with, show in folder, remove |
+| *right-click a thumbnail* | Share link, copy, pin on top, send to idea board, upload to Google Photos, combine with others, open with, show in folder, remove |
 | *middle-click a thumbnail* | Remove it from the shelf |
 | **S** button | Cycle the thumbnail size: small, medium, large |
 | 🔓 button | Lock the shelf so it cannot be dragged |
@@ -160,7 +161,8 @@ Mouse only.
 
 ## The combine window
 
-Tray → **Combine images…**. Mouse only.
+Tray → **Combine images…**, or right-click the shelf's **+** button, or
+right-click any shelf thumbnail. Mouse only.
 
 | Action | What it does |
 |---|---|

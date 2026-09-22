@@ -29,6 +29,13 @@
     padding:0;flex:none;font-weight:600;}
   .ico:hover{border-color:#48506a;}
   .ico.on{border-color:var(--acc);color:#fff;background:#2f2740;}
+  /* The capture button is the one you reach for most, so it leads and is the
+     only coloured control in the header. */
+  .ico.cap{font-size:14px;font-weight:400;background:var(--acc);border-color:var(--acc);color:#fff;}
+  .ico.cap:hover{filter:brightness(1.12);border-color:var(--acc);}
+  /* Five controls have to fit the narrowest shelf, where the title is already
+     hidden. Shave the gap and a pixel off each rather than drop a control. */
+  @media (max-width:170px){ .top{gap:3px;} .top .ico{width:17px;height:17px;} }
   #list{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:7px;padding:2px;}
   #list::-webkit-scrollbar{width:0;}
   .snap{position:relative;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:#0f1219;
@@ -58,13 +65,14 @@
     <div class="top" title="Drag to move — including onto another monitor">
       <span class="grip"><i></i><i></i></span>
       <b>Shelf</b>
+      <button class="ico cap" id="cap" title="Take a snap — right-click for other modes">+</button>
       <button class="ico" id="size" title="Thumbnail size — click to cycle">S</button>
       <button class="ico" id="lock" title="Lock the shelf in place">🔓</button>
       <button class="ico" id="clear" title="Clear the shelf">🗑</button>
       <button class="ico" id="hide" title="Hide (toggle with the shelf hotkey)">▸</button>
     </div>
     <button class="all" id="dragAll" draggable="true" hidden>⇗ Drag all</button>
-    <div id="list"><div id="empty">Snaps land here.<br>Drag one straight into Claude.</div></div>
+    <div id="list"><div id="empty">Press <b>+</b> to take a snap.<br>Then drag it straight into Claude.</div></div>
   </div>
 
 <script>
@@ -88,6 +96,10 @@
       ? 'Locked in place — click the padlock to move it again'
       : 'Drag to move — including onto another monitor';
   });
+  // Left click takes a region, which is what you want nine times in ten;
+  // right click offers every other mode without spending header width on them.
+  $('cap').onclick = () => window.snap.shelfCapture('region');
+  $('cap').oncontextmenu = (e) => { e.preventDefault(); window.snap.shelfCaptureMenu(); };
   $('size').onclick = () => window.snap.shelfSize(SIZES[(SIZES.indexOf(size) + 1) % SIZES.length]);
   $('lock').onclick = () => window.snap.shelfLock(!locked);
 
@@ -96,8 +108,8 @@
   function paint(){
     const L = $('list');
     $('dragAll').hidden = items.length < 2;
-    if(!items.length){
-      L.innerHTML = '<div id="empty">Snaps land here.<br>Drag one straight into Claude.</div>';
+    if(!items.length){   // the empty state should say how to fill it
+      L.innerHTML = '<div id="empty">Press <b>+</b> to take a snap.<br>Then drag it straight into Claude.</div>';
       return;
     }
     L.innerHTML = '';

@@ -1222,6 +1222,36 @@ ipcMain.on('shelf:size', (e, size) => {
 });
 ipcMain.on('shelf:lock', (e, on) => { settings.shelfLock = !!on; saveSettings(); applyShelfLock(); });
 ipcMain.on('shelf:hide', () => { if(shelfWin && !shelfWin.isDestroyed()) shelfWin.hide(); });
+// Taking a snap FROM the shelf. The shelf is always on screen, so reaching for
+// a hotkey to add to it was the one obvious move it did not offer. The capture
+// path already hides our own windows before the shutter, so the shelf cannot
+// end up in its own thumbnail.
+const SHELF_MODES = [
+  ['region', 'Capture a region', 'hotkey'],
+  ['window', 'Capture the active window', 'windowHotkey'],
+  ['screen', 'Capture the whole screen', 'screenHotkey'],
+  ['markup', 'Capture and mark up', 'markupHotkey'],
+  ['ocr', 'Copy text from a region', 'ocrHotkey'],
+  ['pin', 'Pin a region on top', 'pinHotkey'],
+  ['batch', 'Add to batch', 'batchHotkey'],
+];
+function runShelfMode(mode){
+  if(mode === 'window'){ captureActiveWindow().catch((e) => console.error(e)); return; }
+  if(mode === 'screen'){ captureWholeScreen().catch((e) => console.error(e)); return; }
+  startCapture(['markup', 'ocr', 'pin', 'batch', 'board', 'photos'].includes(mode) ? mode : 'normal');
+}
+ipcMain.on('shelf:capture', (e, mode) => runShelfMode(mode));
+ipcMain.on('shelf:captureMenu', (e) => {
+  const items = SHELF_MODES.map(([mode, label, key]) => ({
+    label: label + (settings[key] ? '   (' + settings[key] + ')' : ''),
+    click: () => runShelfMode(mode),
+  }));
+  if(gphotosConnected()) items.push({ label: 'Send a region to Google Photos', click: () => runShelfMode('photos') });
+  if(boardOrigin()) items.push({ label: 'Send a region to the idea board', click: () => runShelfMode('board') });
+  items.push({ type: 'separator' }, { label: 'Combine images…', click: () => openCombine() });
+  const w = BrowserWindow.fromWebContents(e.sender);
+  Menu.buildFromTemplate(items).popup(w ? { window: w } : {});
+});
 ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); saveHistory(); });
 ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); saveHistory(); });
 ipcMain.on('shelf:copy', (e, i) => {
@@ -1249,6 +1279,8 @@ ipcMain.on('shelf:menu', (e, i) => {
     { label: 'Pin on top', click: () => { const im = load(); if(im) openPin(im); } },
     { label: 'Send to idea board', click: () => { const im = load(); if(im) sendToBoard(im, { title: it.name }); } },
     { label: 'Upload to Google Photos', click: () => { const im = load(); if(im) sendToPhotos(im, { name: it.name }); } },
+    { type: 'separator' },
+    { label: 'Combine with others…', click: () => openCombine() },
     { type: 'separator' },
     { label: 'Open with…', click: () => openWith(it.file) },
     { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
