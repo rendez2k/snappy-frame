@@ -30,6 +30,9 @@ These work from anywhere, whatever app you are in.
 The last three have no default because they are not wanted by everyone. Give
 them a shortcut in Settings if you want them.
 
+For a wallpaper or a cheat sheet, [SHORTCUTS-LIST.txt](SHORTCUTS-LIST.txt) has
+the same hotkeys as plain name-and-keys pairs, ready to paste.
+
 ---
 
 ## While you are dragging a region

@@ -1299,7 +1299,10 @@ function refreshTrayMenu(){
     { label: 'Capture active window   (' + (settings.windowHotkey || '—') + ')', click: () => captureActiveWindow().catch((e) => console.error(e)) },
     { label: 'Capture whole screen   (' + (settings.screenHotkey || '—') + ')', click: () => captureWholeScreen().catch((e) => console.error(e)) },
     { label: 'Capture all monitors   (' + (settings.allHotkey || '—') + ')', click: () => captureAllScreens().catch((e) => console.error(e)) },
-    { label: 'Capture & mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
+    // "and", not "&": Windows reads an ampersand in a menu label as a mnemonic
+    // marker, swallows it and underlines the next letter, so this item read
+    // "Capture  mark up" with a stray double space.
+    { label: 'Capture and mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
