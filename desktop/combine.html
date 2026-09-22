@@ -1,0 +1,324 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#1b1e28;--bar:#232733;--line:#333949;--ink:#e7e9ef;--mut:#9aa0b0;--acc:#6d5efc;--bad:#ff6b6b;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13.5px;
+    user-select:none;-webkit-user-select:none;}
+  /* Three rows on the right — options, preview, actions — and the picker spans
+     all of them. Two rows with three children auto-created a phantom row and
+     spread the option groups down the window. */
+  /* The picker gives ground on a narrow window so the options band keeps to
+     two rows instead of three and the preview keeps its space. */
+  body{display:grid;grid-template-columns:clamp(210px,28vw,300px) 1fr;grid-template-rows:auto 1fr auto;height:100%;}
+
+  /* left: the picker */
+  #pick{grid-column:1;grid-row:1 / span 3;border-right:1px solid var(--line);background:var(--bar);
+    display:grid;grid-template-rows:auto 1fr auto;min-height:0;}
+  #pick h2{margin:0;padding:13px 14px 9px;font-size:13px;}
+  #pick h2 span{color:var(--mut);font-weight:400;}
+  #tiles{overflow:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:6px;min-height:0;}
+  .tile{display:flex;align-items:center;gap:9px;padding:6px;border:1px solid var(--line);border-radius:9px;
+    background:#20242e;cursor:pointer;}
+  .tile:hover{border-color:#48506a;}
+  .tile.on{border-color:var(--acc);background:#2a2740;}
+  .tile img{width:54px;height:36px;object-fit:cover;border-radius:5px;background:#12141c;flex:none;}
+  .tile .n{flex:1;min-width:0;}
+  .tile .nm{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tile .sz{font-size:10.5px;color:var(--mut);margin-top:2px;}
+  /* The order badge is the whole point of a multi-select: it says what order
+     they will be laid out in, which is the order you ticked them. */
+  .ord{width:22px;height:22px;flex:none;border-radius:50%;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--mut);}
+  .tile.on .ord{background:var(--acc);border-color:var(--acc);color:#fff;}
+  #pickFoot{padding:10px;border-top:1px solid var(--line);display:flex;gap:6px;}
+
+  /* right: options + preview */
+  #opts{grid-column:2;grid-row:1;padding:12px 14px;display:flex;flex-wrap:wrap;gap:12px 16px;
+    align-items:flex-end;border-bottom:1px solid var(--line);}
+  .grp{display:flex;flex-direction:column;gap:5px;}
+  /* A class that sets display beats the UA's [hidden] rule, so say it again. */
+  .grp[hidden]{display:none;}
+  .grp > label{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);}
+  .seg{display:flex;gap:4px;}
+  .seg button{font:inherit;font-size:12px;color:var(--mut);background:#2b3040;border:1px solid var(--line);
+    border-radius:8px;padding:6px 11px;cursor:pointer;}
+  .seg button.on{border-color:var(--acc);color:var(--ink);background:#2f2740;}
+  input[type=range]{width:84px;accent-color:var(--acc);}
+  input[type=number]{width:62px;background:#2b3040;border:1px solid var(--line);border-radius:8px;
+    color:var(--ink);font:inherit;font-size:12px;padding:6px 8px;}
+  .val{font-size:11.5px;color:var(--mut);min-width:22px;}
+  .rowline{display:flex;align-items:center;gap:8px;}
+
+  #stage{grid-column:2;grid-row:2;overflow:auto;padding:16px;display:flex;align-items:center;justify-content:center;
+    min-height:0;background:
+      linear-gradient(45deg,#191c24 25%,transparent 25%,transparent 75%,#191c24 75%),
+      linear-gradient(45deg,#191c24 25%,#15171e 25%,#15171e 75%,#191c24 75%);
+    background-size:18px 18px;background-position:0 0,9px 9px;}
+  #preview{max-width:100%;max-height:100%;box-shadow:0 10px 40px rgba(0,0,0,.5);border-radius:3px;}
+  #none{color:var(--mut);text-align:center;line-height:1.7;padding:0 30px;}
+
+  #foot{grid-column:2;grid-row:3;border-top:1px solid var(--line);padding:11px 14px;display:flex;align-items:center;gap:9px;}
+  #out{flex:1;font-size:12px;color:var(--mut);}
+  #out b{color:var(--ink);font-weight:600;}
+  #out.warn{color:#ffc46b;}
+  #out.bad{color:var(--bad);}
+  button.act{font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);background:#2b3040;
+    border:1px solid var(--line);border-radius:9px;padding:8px 14px;cursor:pointer;}
+  button.act:hover{border-color:#48506a;}
+  button.act.primary{background:var(--acc);border-color:var(--acc);color:#fff;}
+  button.act:disabled,.seg button:disabled{opacity:.45;cursor:default;}
+  button.sm{font-size:12px;padding:6px 10px;}
+</style>
+</head>
+<body>
+  <div id="pick">
+    <h2>Images <span id="pickCount"></span></h2>
+    <div id="tiles"></div>
+    <div id="pickFoot">
+      <button class="act sm" id="add">Add files…</button>
+      <button class="act sm" id="clearSel">Clear</button>
+    </div>
+  </div>
+
+  <div id="opts">
+    <div class="grp"><label>Layout</label>
+      <div class="seg" id="mode">
+        <button data-v="column" class="on">Column</button>
+        <button data-v="row">Row</button>
+        <button data-v="grid">Grid</button>
+      </div>
+    </div>
+    <div class="grp" id="colsGrp" hidden><label>Columns</label>
+      <div class="rowline"><input type="number" id="cols" min="1" max="12" step="1" value="0" placeholder="auto">
+        <span class="val">auto</span></div>
+    </div>
+    <div class="grp"><label>Sizes</label>
+      <div class="seg" id="fit">
+        <button data-v="native" class="on" title="Never rescales an image">Native</button>
+        <button data-v="match" title="Scale every image so they line up">Match</button>
+      </div>
+    </div>
+    <div class="grp"><label>Gap</label>
+      <div class="rowline"><input type="range" id="gap" min="0" max="80" step="2" value="12"><span class="val" id="gapV">12</span></div>
+    </div>
+    <div class="grp"><label>Border</label>
+      <div class="rowline"><input type="range" id="pad" min="0" max="80" step="2" value="12"><span class="val" id="padV">12</span></div>
+    </div>
+    <div class="grp"><label>Background</label>
+      <div class="seg" id="bg">
+        <button data-v="#ffffff" class="on">White</button>
+        <button data-v="#14161d">Dark</button>
+        <button data-v="">None</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stage"><div id="none">Tick two or more images on the left.<br>They combine in the order you tick them.</div></div>
+
+  <div id="foot">
+    <span id="out"></span>
+    <button class="act" id="copy" disabled>Copy</button>
+    <button class="act primary" id="save" disabled>Save &amp; add to shelf</button>
+  </div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // Chromium refuses a canvas larger than this on a side, and silently produces
+  // a blank one if you try — so the result is scaled to fit instead of failing.
+  const MAX_SIDE = 16000;
+  let rows = [];                 // {id,name,thumb,w,h}
+  const picked = [];             // ids, in the order they were ticked
+  const cache = new Map();       // id -> HTMLImageElement
+  let out = null;                // the composed canvas
+  let busy = false, again = false;
+  const opt = { mode:'column', fit:'native', gap:12, pad:12, bg:'#ffffff', cols:0 };
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  async function load(){
+    rows = await window.snap.combineList();
+    paintTiles();
+  }
+  function paintTiles(){
+    $('pickCount').textContent = rows.length ? '· ' + picked.length + ' of ' + rows.length : '';
+    if(!rows.length){
+      $('tiles').innerHTML = '<div style="color:var(--mut);padding:18px 6px;line-height:1.6">' +
+        'Nothing on the shelf yet.<br>Take some snaps, or press <b>Add files…</b></div>';
+      return;
+    }
+    $('tiles').innerHTML = rows.map(r => {
+      const k = picked.indexOf(r.id);
+      return '<div class="tile' + (k >= 0 ? ' on' : '') + '" data-id="' + r.id + '">' +
+        '<div class="ord">' + (k >= 0 ? (k + 1) : '') + '</div>' +
+        '<img src="' + esc(r.thumb) + '" alt="">' +
+        '<div class="n"><div class="nm">' + esc(r.name) + '</div>' +
+        '<div class="sz">' + r.w + ' × ' + r.h + '</div></div></div>';
+    }).join('');
+    [...$('tiles').children].forEach(el => {
+      if(!el.dataset.id) return;
+      el.onclick = () => {
+        const id = +el.dataset.id, k = picked.indexOf(id);
+        if(k >= 0) picked.splice(k, 1); else picked.push(id);
+        paintTiles(); compose();
+      };
+    });
+  }
+
+  async function imgFor(id){
+    if(cache.has(id)) return cache.get(id);
+    const bytes = await window.snap.combineBytes(id);
+    if(!bytes) return null;
+    // A blob URL keeps the canvas untainted; a file:// <img> would not.
+    const url = URL.createObjectURL(new Blob([bytes]));
+    const im = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = url; });
+    if(im) cache.set(id, im);
+    return im;
+  }
+
+  // Where every image goes, at full resolution, before any fit-to-canvas scale.
+  function plan(imgs){
+    const { mode, fit, gap, pad } = opt;
+    const n = imgs.length;
+    const boxes = [];
+    if(mode === 'grid'){
+      const cols = opt.cols > 0 ? Math.min(opt.cols, n) : Math.max(1, Math.round(Math.sqrt(n)));
+      const rowsN = Math.ceil(n / cols);
+      // A uniform cell keeps columns and rows aligned whatever the sources are.
+      const cw = Math.max(...imgs.map(i => i.width)), ch = Math.max(...imgs.map(i => i.height));
+      imgs.forEach((im, k) => {
+        const cx = k % cols, cy = (k / cols) | 0;
+        let w = im.width, h = im.height;
+        if(fit === 'match'){ const s = Math.min(cw / w, ch / h); w = Math.round(w * s); h = Math.round(h * s); }
+        boxes.push({ im, x: pad + cx * (cw + gap) + Math.round((cw - w) / 2),
+                         y: pad + cy * (ch + gap) + Math.round((ch - h) / 2), w, h });
+      });
+      return { boxes, W: pad * 2 + cols * cw + gap * (cols - 1), H: pad * 2 + rowsN * ch + gap * (rowsN - 1) };
+    }
+    const col = mode === 'column';
+    // Match scales every image to the largest along the shared axis, so they
+    // line up; Native never rescales anything and centres instead.
+    const span = col ? Math.max(...imgs.map(i => i.width)) : Math.max(...imgs.map(i => i.height));
+    let run = pad;
+    for(const im of imgs){
+      let w = im.width, h = im.height;
+      if(fit === 'match'){
+        const s = col ? span / w : span / h;
+        w = Math.round(w * s); h = Math.round(h * s);
+      }
+      if(col) boxes.push({ im, x: pad + Math.round((span - w) / 2), y: run, w, h }), run += h + gap;
+      else    boxes.push({ im, x: run, y: pad + Math.round((span - h) / 2), w, h }), run += w + gap;
+    }
+    const along = run - gap + pad;
+    return col ? { boxes, W: pad * 2 + span, H: along } : { boxes, W: along, H: pad * 2 + span };
+  }
+
+  async function compose(){
+    if(busy){ again = true; return; }
+    busy = true;
+    try{
+      const imgs = [];
+      for(const id of picked){ const im = await imgFor(id); if(im) imgs.push(im); }
+      const stage = $('stage');
+      if(imgs.length < 1){
+        out = null; stage.innerHTML = '<div id="none">Tick two or more images on the left.<br>They combine in the order you tick them.</div>';
+        $('out').textContent = ''; $('out').className = ''; $('save').disabled = true; $('copy').disabled = true;
+        return;
+      }
+      let { boxes, W, H } = plan(imgs);
+      let note = '';
+      const over = Math.max(W / MAX_SIDE, H / MAX_SIDE);
+      if(over > 1){
+        // Scale the whole composition rather than refusing it.
+        const s = 1 / over;
+        boxes = boxes.map(b => ({ ...b, x: Math.round(b.x * s), y: Math.round(b.y * s), w: Math.max(1, Math.round(b.w * s)), h: Math.max(1, Math.round(b.h * s)) }));
+        W = Math.floor(W * s); H = Math.floor(H * s);
+        note = ' · scaled down to fit the ' + MAX_SIDE + 'px limit';
+      }
+      const c = document.createElement('canvas'); c.width = Math.max(1, W); c.height = Math.max(1, H);
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      if(opt.bg){ g.fillStyle = opt.bg; g.fillRect(0, 0, c.width, c.height); }
+      for(const b of boxes) g.drawImage(b.im, b.x, b.y, b.w, b.h);
+      out = c;
+      // Preview from a downscaled copy. Encoding the full canvas to a data URL
+      // is what the export is for; doing it on every keystroke of the gap
+      // slider locks the window up once the composition gets large.
+      const PV = 1600, k = Math.min(1, PV / Math.max(c.width, c.height));
+      let shown = c;
+      if(k < 1){
+        shown = document.createElement('canvas');
+        shown.width = Math.max(1, Math.round(c.width * k)); shown.height = Math.max(1, Math.round(c.height * k));
+        const sg = shown.getContext('2d'); sg.imageSmoothingQuality = 'high';
+        sg.drawImage(c, 0, 0, shown.width, shown.height);
+      }
+      stage.innerHTML = '';
+      const pv = document.createElement('img'); pv.id = 'preview'; pv.src = shown.toDataURL('image/png');
+      stage.appendChild(pv);
+      $('out').className = note ? 'warn' : '';
+      $('out').innerHTML = '<b>' + W + ' × ' + H + '</b> from ' + imgs.length + ' image' + (imgs.length === 1 ? '' : 's') + esc(note);
+      $('save').disabled = false; $('copy').disabled = false;
+    }catch(e){
+      $('out').className = 'bad'; $('out').textContent = 'Could not combine those: ' + (e && e.message || e);
+      $('save').disabled = true; $('copy').disabled = true;
+    }finally{
+      busy = false;
+      if(again){ again = false; compose(); }
+    }
+  }
+
+  function bytesOf(canvas){
+    return new Promise(res => canvas.toBlob(async b => res(b ? new Uint8Array(await b.arrayBuffer()) : null), 'image/png'));
+  }
+
+  // --- controls ---
+  function seg(id, key, after){
+    [...$(id).children].forEach(b => b.onclick = () => {
+      [...$(id).children].forEach(x => x.classList.toggle('on', x === b));
+      opt[key] = b.dataset.v; if(after) after(); compose();
+    });
+  }
+  seg('mode', 'mode', () => { $('colsGrp').hidden = opt.mode !== 'grid'; });
+  seg('fit', 'fit');
+  seg('bg', 'bg');
+  for(const [id, key] of [['gap','gap'], ['pad','pad']]){
+    $(id).oninput = () => { opt[key] = +$(id).value; $(id + 'V').textContent = $(id).value; compose(); };
+  }
+  $('cols').oninput = () => {
+    opt.cols = Math.max(0, Math.min(12, +$('cols').value || 0));
+    $('cols').nextElementSibling.textContent = opt.cols ? ('') : 'auto';
+    compose();
+  };
+  $('add').onclick = async () => { const r = await window.snap.combineAdd(); if(r && r.added) await load(); };
+  $('clearSel').onclick = () => { picked.length = 0; paintTiles(); compose(); };
+  $('copy').onclick = async () => {
+    if(!out) return;
+    const b = await bytesOf(out); if(!b) return;
+    window.snap.combineCopy(b);
+    const el = $('copy'); el.textContent = 'Copied'; setTimeout(() => el.textContent = 'Copy', 1200);
+  };
+  $('save').onclick = async () => {
+    if(!out) return;
+    const btn = $('save'); btn.disabled = true; btn.textContent = 'Saving…';
+    const b = await bytesOf(out);
+    const r = b ? await window.snap.combineSave({ bytes: b, copy: false }) : { ok:false, error:'could not encode the image' };
+    btn.textContent = 'Save & add to shelf'; btn.disabled = false;
+    if(r && r.ok){
+      $('out').className = ''; $('out').innerHTML = 'Saved <b>' + esc(r.name) + '</b> — the originals are untouched.';
+      await load();                       // the new image joins the picker too
+    } else {
+      $('out').className = 'bad'; $('out').textContent = (r && r.error) || 'Save failed';
+    }
+  };
+
+  // The test harness reads the canvas that will be exported, not the preview.
+  window.__out = () => out;
+  load();
+})();
+</script>
+</body>
+</html>

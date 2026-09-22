@@ -92,6 +92,13 @@ extension does, so nothing changes on that side. Oversized captures are stepped
 down (and finally re-encoded as JPEG) to fit the board's 4 MB limit. Sending is
 an upload, with the same caution as the inbox.
 
+**Combine several images into one.** Tray → *Combine images…* lists everything
+the shelf remembers, plus anything you add from disk. Tick them in the order you
+want, choose a column, row or grid, and save. Native size never rescales
+anything; Match lines them all up. The sources are untouched — the result is a
+new PNG that lands on the shelf beside them, so every action that works on a
+snap works on it too.
+
 **Share links can be revoked.** Tray → *Share links…* lists every link this
 computer has minted, when it was made and how long it has left. Revoking deletes
 the image server-side, so the link dies for everyone holding it.

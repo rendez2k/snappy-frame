@@ -1,6 +1,6 @@
 # Snappy Snap — every shortcut
 
-Version 0.26.0. Everything in the first table is editable in **Settings…**
+Version 0.27.0. Everything in the first table is editable in **Settings…**
 (tray icon → Settings). The rest are fixed.
 
 On a Mac build, `Ctrl` means `Cmd`.
@@ -152,6 +152,25 @@ Mouse only.
 | 🔓 button | Lock the shelf so it cannot be dragged |
 | 🗑 button | Clear the shelf |
 | ▸ button | Hide it |
+
+---
+
+## The combine window
+
+Tray → **Combine images…**. Mouse only.
+
+| Action | What it does |
+|---|---|
+| *click a tile* | Tick it; the badge shows its place in the order |
+| *click it again* | Untick it, and the rest renumber |
+| **Layout** | Column, row or grid |
+| **Columns** | Grid only; empty means it picks for you |
+| **Sizes** | Native never rescales; Match lines them all up |
+| **Gap** / **Border** | Space between the images, and around them |
+| **Background** | White, dark, or none for transparency |
+| **Add files…** | Bring in an image the shelf does not have |
+| **Copy** | The combined image to the clipboard |
+| **Save & add to shelf** | A new PNG in your save folder; the sources are untouched |
 
 ---
 

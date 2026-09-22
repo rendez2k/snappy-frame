@@ -66,4 +66,10 @@ contextBridge.exposeInMainWorld('snap', {
   photosStatus: () => ipcRenderer.invoke('photos:status'),
   photosConnect: () => ipcRenderer.invoke('photos:connect'),
   photosDisconnect: () => ipcRenderer.invoke('photos:disconnect'),
+  // combine images
+  combineList: () => ipcRenderer.invoke('combine:list'),
+  combineBytes: (id) => ipcRenderer.invoke('combine:bytes', id),
+  combineAdd: () => ipcRenderer.invoke('combine:add'),
+  combineSave: (payload) => ipcRenderer.invoke('combine:save', payload),
+  combineCopy: (bytes) => ipcRenderer.send('combine:copy', bytes),
 });

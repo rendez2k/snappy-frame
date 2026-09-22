@@ -719,6 +719,87 @@ async function sendToBoard(image, ctx){
   }
 }
 
+// ---- combine several images into one --------------------------------------
+// The batch window stitches the shots you are collecting right now, in one
+// fixed vertical layout. This is the other half: reach back into anything the
+// shelf remembers (or any file on disk), tick several, and lay them out. The
+// sources are never touched — the result is a brand new PNG that lands on the
+// shelf beside them.
+let combineWin = null;
+let combineExtra = [];                      // files added from disk for this session of the window
+function combineSources(){
+  return [...shelf.map(x => ({ file: x.file, name: x.name })), ...combineExtra];
+}
+function openCombine(){
+  if(combineWin && !combineWin.isDestroyed()){ combineWin.show(); combineWin.focus(); return; }
+  combineWin = new BrowserWindow({ width: 1000, height: 720, minWidth: 720, minHeight: 520,
+    title: 'Snappy Snap — Combine images', autoHideMenuBar: true, backgroundColor: '#1b1e28',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
+  combineWin.loadFile('combine.html');
+  combineWin.on('closed', () => { combineWin = null; combineExtra = []; });
+}
+// Thumbnails for the picker. Small on purpose: the full bytes are fetched only
+// for the images actually ticked.
+ipcMain.handle('combine:list', () => combineSources().map((src, id) => {
+  let thumb = '', w = 0, h = 0;
+  try{
+    const im = nativeImage.createFromPath(src.file);
+    if(im.isEmpty()) return null;
+    const sz = im.getSize(); w = sz.width; h = sz.height;
+    thumb = im.resize({ height: 96, quality: 'good' }).toDataURL();
+  }catch(e){ return null; }
+  return { id, name: src.name || path.basename(src.file), thumb, w, h };
+}).filter(Boolean));
+// Bytes rather than a data URL, and the renderer turns them into a blob URL: a
+// file:// <img> would taint the canvas and make the export throw.
+ipcMain.handle('combine:bytes', (e, id) => {
+  const src = combineSources()[id];
+  if(!src) return null;
+  try{ return fs.readFileSync(src.file); }catch(e2){ return null; }
+});
+ipcMain.handle('combine:add', async () => {
+  const r = await dialog.showOpenDialog(combineWin || undefined, {
+    title: 'Add images to combine', properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+  });
+  if(r.canceled) return { added: 0 };
+  let added = 0;
+  for(const f of r.filePaths){
+    if(combineSources().some(x => x.file === f)) continue;     // already listed
+    combineExtra.push({ file: f, name: path.basename(f) }); added++;
+  }
+  return { added };
+});
+ipcMain.handle('combine:save', async (e, payload) => {
+  if(!payload || !payload.bytes) return { ok: false, error: 'nothing to save' };
+  let img;
+  try{ img = nativeImage.createFromBuffer(Buffer.from(payload.bytes)); }
+  catch(e2){ return { ok: false, error: 'that image could not be read back' }; }
+  if(img.isEmpty()) return { ok: false, error: 'that image came out empty' };
+  if(payload.copy){ try{ clipboard.writeImage(img); }catch(e2){} }
+  ensureFolder();
+  const n = nameParts();
+  let dir = settings.saveFolder;
+  if(settings.dailyFolders) dir = path.join(dir, n.day);
+  try{ fs.mkdirSync(dir, { recursive:true }); }catch(e2){}
+  const base = settings.namePattern
+    ? applyNamePattern(settings.namePattern, { width: img.getSize().width, height: img.getSize().height })
+    : `Combined ${n.time}`;
+  let p = path.join(dir, base + '.png'), k = 2;
+  while(fs.existsSync(p)){ p = path.join(dir, `${base} (${k}).png`); k++; }
+  try{ fs.writeFileSync(p, Buffer.from(payload.bytes)); }
+  catch(e2){ return { ok: false, error: String(e2 && e2.message || e2) }; }
+  // Straight onto the shelf, so every action that already works on a snap —
+  // drag out, share, pin, Photos — works on the combined image too.
+  if(settings.shelf !== false) addToShelf(p, img);
+  if(settings.notify){ try{ new Notification({ title:'Snappy Snap', body:'Saved ' + path.basename(p) + (payload.copy ? ' · copied to clipboard' : '') }).show(); }catch(e2){} }
+  if(settings.revealAfter) shell.showItemInFolder(p);
+  return { ok: true, path: p, name: path.basename(p) };
+});
+ipcMain.on('combine:copy', (e, bytes) => {
+  try{ clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(bytes))); }catch(e2){ console.error('combine copy failed', e2); }
+});
+
 // ---- Google Photos --------------------------------------------------------
 // Google shut the Drive-for-desktop "back up this folder to Photos" route down
 // on 10 August 2026, and the Photos website's own folder backup only runs while
@@ -1229,6 +1310,7 @@ function refreshTrayMenu(){
     { label: 'Capture bar   (' + (settings.barHotkey || '—') + ')', click: () => toggleBar() },
     { label: 'Session shelf   (' + (settings.shelfHotkey || '—') + ')', click: () => toggleShelf() },
     { label: 'Share links…', click: () => openShares() },
+    { label: 'Combine images…', click: () => openCombine() },
     { type:'separator' },
     { label:'Mode: Raw — no frame', type:'radio', checked: settings.defaultAction === 'save', click: () => { settings.defaultAction = 'save'; saveSettings(); refreshTrayMenu(); } },
     { label:'Mode: Beautify in Snappy Frame', type:'radio', checked: settings.defaultAction === 'beautify', click: () => { settings.defaultAction = 'beautify'; saveSettings(); refreshTrayMenu(); } },
