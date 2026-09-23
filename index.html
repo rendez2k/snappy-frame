@@ -1422,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.6';
+const APP_VERSION='1.25.7';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1867,6 +1867,37 @@ function edgeCut(g,side,iw,ih){
   let cut=last; for(let b=1;b<=3 && last-b>=0 && same(meds[last-b],meds[last]);b++) cut=last-b;
   return { cut, noise:lastN };
 }
+// A header or footer block often has rounded corners and a thin margin down
+// its sides. Once the block is extended to the screen edge, that margin shows
+// as white slivers and notches at the join. Repaint it in the block's colour —
+// but only margin connected to the image's outer edge (flood fill), so white
+// lettering inside the block is never touched.
+function healEdgeBlock(mg,side,iw,ih,cut){
+  const a=Math.round(iw*0.1), w=iw-2*a, yCut = side==='t'? cut : ih-1-cut;
+  offPct(mg,a,yCut,w,1); const block=offPct.med;
+  const cy = side==='t'? 0 : ih-1, cp=mg.getImageData(0,cy,1,1).data, margin=[cp[0],cp[1],cp[2]];
+  const d2=(p,q)=>(p[0]-q[0])**2+(p[1]-q[1])**2+(p[2]-q[2])**2;
+  if(d2(margin,block)<60*60) return;                        // no distinct margin
+  // how far the block reaches in from this edge
+  let n=0; const lim=Math.round(ih*0.3);
+  for(; n<lim; n++){ const y= side==='t'? cut+n : ih-1-cut-n; offPct(mg,a,y,w,1); if(d2(offPct.med,block)>40*40) break; }
+  const zh=cut+n; if(zh<2) return;
+  const y0 = side==='t'? 0 : ih-zh, ow=Math.max(4,Math.round(iw*0.08));
+  const img=mg.getImageData(0,y0,iw,zh), D=img.data, seen=new Uint8Array(iw*zh), st=[];
+  const isMargin=i=>{ const p=[D[i],D[i+1],D[i+2]]; return d2(p,margin)<d2(p,block); };
+  const push=(x,y)=>{ const k=y*iw+x; if(seen[k]) return; seen[k]=1; if(isMargin(k*4)) st.push(k); };
+  const outerRow = side==='t'? 0 : zh-1;
+  for(let x=0;x<iw;x++) push(x,outerRow);
+  for(let y=0;y<zh;y++){ push(0,y); push(iw-1,y); }
+  while(st.length){ const k=st.pop(), x=k%iw, y=(k/iw)|0, i=k*4;
+    D[i]=block[0]; D[i+1]=block[1]; D[i+2]=block[2];
+    if(x>0 && (x-1<ow || x-1>=iw-ow || y===outerRow)) push(x-1,y);
+    if(x<iw-1 && (x+1<ow || x+1>=iw-ow || y===outerRow)) push(x+1,y);
+    if(y>0 && (x<ow || x>=iw-ow)) push(x,y-1);
+    if(y<zh-1 && (x<ow || x>=iw-ow)) push(x,y+1);
+  }
+  mg.putImageData(img,0,y0);
+}
 function extendedBackdrop(){
   const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
   if(!W||!H||!iw||!ih) return null;
@@ -1876,6 +1907,7 @@ function extendedBackdrop(){
     const m=document.createElement('canvas'); m.width=iw; m.height=ih; const mg=m.getContext('2d',{willReadFrequently:true}); mg.drawImage(shot,0,0);
     const sc0=Math.min(W/iw,H/ih), gapV = H - ih*sc0 > 1, gapH = W - iw*sc0 > 1;
     const T=gapV?edgeCut(mg,'t',iw,ih):{cut:0,noise:0}, B=gapV?edgeCut(mg,'b',iw,ih):{cut:0,noise:0};
+    if(gapV){ try{ if(!T.fill) healEdgeBlock(mg,'t',iw,ih,T.cut); if(!B.fill) healEdgeBlock(mg,'b',iw,ih,B.cut); }catch(e){} }
     // Sides are always checked: a thin plain margin down the sides of a poster
     // shows as white strips inside the phone even when nothing is extended there.
     const L=edgeCut(mg,'l',iw,ih), R=edgeCut(mg,'r',iw,ih);
@@ -3274,6 +3306,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.7', items:['Fit + extend repaints the thin margin and rounded corners around a poster\'s header and footer in the block\'s own colour, so there are no white slivers or notches where the block meets the extension'] },
   {v:'1.25.6', items:['After an AI extend, choosing Crop, Fit + blur, Fit + colour or Fit + extend puts your original image back first — so the fill works from your poster, not from what the AI painted'] },
   {v:'1.25.5', items:['Fit + extend: when a poster has nothing plain to stretch at an edge (a logo running into the footer\'s edge), that side is filled with the block\'s solid colour instead of streaking'] },
   {v:'1.25.4', items:['Fit + extend looks past a thin margin and rounded corners at the edge of a poster and extends the actual colour block (a red header, a black footer), trimming the margin so there\'s no white band'] },
