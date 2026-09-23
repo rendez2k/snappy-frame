@@ -1422,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.5';
+const APP_VERSION='1.25.6';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -3274,6 +3274,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.6', items:['After an AI extend, choosing Crop, Fit + blur, Fit + colour or Fit + extend puts your original image back first — so the fill works from your poster, not from what the AI painted'] },
   {v:'1.25.5', items:['Fit + extend: when a poster has nothing plain to stretch at an edge (a logo running into the footer\'s edge), that side is filled with the block\'s solid colour instead of streaking'] },
   {v:'1.25.4', items:['Fit + extend looks past a thin margin and rounded corners at the edge of a poster and extends the actual colour block (a red header, a black footer), trimming the margin so there\'s no white band'] },
   {v:'1.25.3', items:['Fit + extend trims the hairline seam some posters have on their edges, so there\'s no line where the extension meets the image'] },
@@ -4739,7 +4740,12 @@ function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
   $('devPanCtl').hidden = (state.devFit||'crop')!=='crop';
   if(typeof syncAiUI==='function') syncAiUI(); }         // a fitted image has nothing to pan
 $('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
-  state.devFit=b.dataset.v; updateDevCropUI(); render(); });
+  state.devFit=b.dataset.v;
+  // Picking a fill after an AI extend means "do it this way instead": go back
+  // to the original, or the new fill would continue whatever the AI painted.
+  if(typeof aiUndoSrc!=='undefined' && aiUndoSrc){ const src=aiUndoSrc; aiUndoSrc=null; loadImage(src); syncAiUI();
+    toast('Back to your original image, filled with '+b.textContent); }
+  updateDevCropUI(); render(); });
 // auto-match bg
 $('btnMatch').onclick=autoMatchBg;
 // animated / magic / batch
