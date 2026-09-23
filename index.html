@@ -983,6 +983,9 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             <input type="range" id="dof" min="0" max="100" value="0"></div>
           <div class="field"><label>Focus <span class="val" id="focusVal">Near</span></label>
             <input type="range" id="focus" min="0" max="100" value="15"></div>
+          <button class="btn sm" id="btnPickFocus" type="button" style="width:100%;margin:-2px 0 12px">🎯 Click the card to focus</button>
+          <div class="field"><label>Mist <span class="val" id="mistVal">Off</span></label>
+            <input type="range" id="mist" min="0" max="100" value="0"></div>
           <p class="hint" id="dofHint" hidden>Tilt the card to see it — a flat card has no depth to blur.</p>
         </div>
       </section>
@@ -1249,7 +1252,7 @@ const state = {
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
-  dof:0, focus:15,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
+  dof:0, focus:15, mist:0,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
   bw:0, bc:'#ffffff',
   fmt:'png', scale:2,
   // v1.5
@@ -1288,7 +1291,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.16.1';
+const APP_VERSION='1.17.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1475,11 +1478,12 @@ shot.addEventListener('load',()=>{ persp.querySelectorAll('.dof-layer img[data-d
 function applyDof(){
   persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
   const FR = multiOn() ? $('multi') : device;
-  const on = state.hasImage && state.mode!=='code' && state.dof>0 && FR.offsetWidth>0;
+  const want = state.dof>0 || state.mist>0;
+  const on = state.hasImage && state.mode!=='code' && want && FR.offsetWidth>0;
   const W=FR.offsetWidth, H=FR.offsetHeight;
   const P = on ? dofParams(W,H) : null;
-  const hint=$('dofHint'); if(hint) hint.hidden = !(state.dof>0 && P && P.tilt<0.05);
-  if(!on || P.blur<0.35) return;
+  const hint=$('dofHint'); if(hint) hint.hidden = !(want && P && P.tilt<0.05);
+  if(!on || P.tilt<0.05) return;
   // One clean copy of the card, reused for each layer.
   const proto=FR.cloneNode(true);
   const ps=proto.querySelector('#shot'); if(ps) ps.setAttribute('data-dof-shot','');
@@ -1488,7 +1492,7 @@ function applyDof(){
   // The real card already casts the shadow; blurred extra ones would darken it.
   proto.style.boxShadow='none';
   proto.querySelectorAll('.f-card,.f-device').forEach(el=>{ el.style.boxShadow='none'; });
-  for(const L of DOF_LAYERS){
+  for(const L of (state.dof>0 ? DOF_LAYERS : [])){
     const blur=P.blur*L.k;
     if(blur<0.35) continue;
     const pad=Math.ceil(blur*3);
@@ -1508,6 +1512,49 @@ function applyDof(){
     wrap.appendChild(clone);
     persp.appendChild(wrap);          // later = on top: the stronger blur covers the lighter one
   }
+  if(state.mist>0){
+    // Mist is haze that thickens with distance from the viewer (not from the
+    // focus). A copy of the card turned solid white — brightness(0) invert(1)
+    // keeps its exact outline, rounded corners and bezel included, and leaves
+    // the gaps in a multi layout clear — faded in from near to far.
+    const wrap=document.createElement('div');
+    wrap.className='dof-layer dof-mist';
+    wrap.setAttribute('aria-hidden','true');
+    Object.assign(wrap.style,{ position:'absolute', left:FR.offsetLeft+'px', top:FR.offsetTop+'px',
+      width:W+'px', height:H+'px', margin:'0', pointerEvents:'none',
+      transform:FR.style.transform, transformOrigin:'50% 50%' });
+    const k=state.mist/100, stops=[];
+    for(let i=0;i<=16;i++){ const p=i/16, v=Math.max(0,Math.min(1,(p-0.08)/0.92));
+      stops.push(`rgba(0,0,0,${(k*0.78*Math.pow(v,1.35)).toFixed(3)}) ${(p*100).toFixed(1)}%`); }
+    const m=`linear-gradient(${P.ang.toFixed(2)}deg, ${stops.join(', ')})`;
+    wrap.style.webkitMaskImage=m; wrap.style.maskImage=m;
+    const clone=proto.cloneNode(true);
+    Object.assign(clone.style,{ position:'absolute', left:'0', top:'0', width:W+'px', height:H+'px',
+      margin:'0', transform:'none', filter:'brightness(0) invert(1)' });
+    wrap.appendChild(clone);
+    persp.appendChild(wrap);
+  }
+}
+// Where on the card's depth axis (0 near … 1 far, as `focus` counts) a screen
+// point lands. The card is in 3D, so the click is mapped back through the
+// projection of its four corners (a homography) to the card's own plane.
+function focusAtPoint(cx,cy){
+  const FR = multiOn() ? $('multi') : device;
+  const W=FR.offsetWidth, H=FR.offsetHeight; if(!W||!H) return null;
+  const pts=[[0,0],[W,0],[W,H],[0,H]].map(([x,y])=>{ const d=document.createElement('i');
+    Object.assign(d.style,{position:'absolute',left:x+'px',top:y+'px',width:'0',height:'0'}); FR.appendChild(d);
+    const r=d.getBoundingClientRect(); d.remove(); return [r.left,r.top,x,y]; });
+  // Solve screen → card: x = (a u + b v + c)/(g u + h v + 1), likewise y.
+  const A=[], B=[];
+  for(const [u,v,x,y] of pts){ A.push([u,v,1,0,0,0,-u*x,-v*x]); B.push(x); A.push([0,0,0,u,v,1,-u*y,-v*y]); B.push(y); }
+  for(let i=0;i<8;i++){ let m=i; for(let r=i+1;r<8;r++) if(Math.abs(A[r][i])>Math.abs(A[m][i])) m=r;
+    [A[i],A[m]]=[A[m],A[i]]; [B[i],B[m]]=[B[m],B[i]]; if(Math.abs(A[i][i])<1e-12) return null;
+    for(let r=0;r<8;r++){ if(r===i) continue; const f=A[r][i]/A[i][i]; for(let c=i;c<8;c++) A[r][c]-=f*A[i][c]; B[r]-=f*B[i]; } }
+  const h=B.map((b,i)=>b/A[i][i]), den=h[6]*cx+h[7]*cy+1;
+  const x=(h[0]*cx+h[1]*cy+h[2])/den, y=(h[3]*cx+h[4]*cy+h[5])/den;
+  if(x<0||y<0||x>W||y>H) return null;                          // missed the card
+  const t=dofParams(W,H).ang*Math.PI/180, L=Math.abs(Math.sin(t))*W+Math.abs(Math.cos(t))*H;
+  return Math.max(0,Math.min(1,((x-W/2)*Math.sin(t)-(y-H/2)*Math.cos(t))/L+0.5));
 }
 
 // Size the stage and place the card. The card is centred by its *visual* (post-
@@ -2752,6 +2799,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.17.0', items:[
+    'Click to focus: press 🎯 under Focus, then click anywhere on the tilted card and that spot becomes the sharp one. It works out the real depth of the point you clicked, and turns depth of field on if it was off. Esc cancels',
+    'Mist: a haze that thickens with distance, like air in a landscape photo. It follows the card\'s exact outline (rounded corners, device bezels, gaps in a multi-screenshot layout) and combines with depth of field',
+  ]},
   {v:'1.16.1', items:[
     'Fixed: the phone and tablet mockups stretched to whatever shape the screenshot was, so a desktop grab became a wide "phone" with a notch. They now keep a real iPhone and iPad screen shape, and the screenshot fills the screen and is cropped to fit',
     'New sliders under Device mockup, "Show across" and "Scroll down", choose which part of the screenshot is on screen. A long full-page grab starts at the top',
@@ -3988,9 +4039,28 @@ $('tiltPresets').addEventListener('click',e=>{
 function dofLabels(){
   $('dofVal').textContent = state.dof>0 ? (state.dof<34 ? 'Subtle' : state.dof<67 ? 'Medium' : 'Strong') : 'Off';
   $('focusVal').textContent = state.focus<25 ? 'Near' : state.focus>75 ? 'Far' : 'Middle';
+  $('mistVal').textContent = state.mist>0 ? (state.mist<34 ? 'Light' : state.mist<67 ? 'Hazy' : 'Thick') : 'Off';
 }
 $('dof').addEventListener('input',()=>{ state.dof=+$('dof').value; dofLabels(); render(); });
 $('focus').addEventListener('input',()=>{ state.focus=+$('focus').value; dofLabels(); render(); });
+$('mist').addEventListener('input',()=>{ state.mist=+$('mist').value; dofLabels(); render(); });
+// Click-to-focus is an armed mode, so an ordinary click on the stage (mark-up,
+// dragging) never moves the focus by accident.
+let pickingFocus=false;
+function armFocusPick(on){ pickingFocus=on; $('btnPickFocus').classList.toggle('on',on);
+  $('btnPickFocus').textContent = on ? 'Now click the card… (Esc to cancel)' : '🎯 Click the card to focus';
+  stage.style.cursor = on ? 'crosshair' : ''; }
+$('btnPickFocus').onclick=()=>{
+  if(pickingFocus) return armFocusPick(false);
+  if(!state.rx && !state.ry && !state.rz){ toast('Tilt the card first — a flat card has no depth to focus in'); return; }
+  if(!state.dof){ state.dof=50; $('dof').value=50; dofLabels(); render(); }
+  armFocusPick(true); };
+stage.addEventListener('click',e=>{ if(!pickingFocus) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const f=focusAtPoint(e.clientX,e.clientY);
+  if(f==null){ toast('Click on the card itself'); return; }
+  state.focus=Math.round(f*100); $('focus').value=state.focus; dofLabels(); armFocusPick(false); render(); },true);
+document.addEventListener('keydown',e=>{ if(pickingFocus && e.key==='Escape') armFocusPick(false); });
 ;['rx','ry','rz'].forEach(id=>$(id).addEventListener('input',()=>{
   $('tiltPresets').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
 }));
@@ -4148,7 +4218,7 @@ $('btnReset').onclick=()=>{
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,size:100,pad:64,rad:14,noise:false,
     textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
-    shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff',
+    shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
 };
@@ -4166,7 +4236,7 @@ function syncUI(){
   $('rx').value=state.rx; $('rxVal').textContent=state.rx+'°';
   $('ry').value=state.ry; $('ryVal').textContent=state.ry+'°';
   $('rz').value=state.rz; $('rzVal').textContent=state.rz+'°';
-  $('dof').value=state.dof||0; $('focus').value=(state.focus==null?15:state.focus); dofLabels();
+  $('dof').value=state.dof||0; $('focus').value=(state.focus==null?15:state.focus); $('mist').value=state.mist||0; dofLabels();
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
   $('frameType').value=state.frame;
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
@@ -4289,7 +4359,7 @@ const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPrese
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','size','pad','rad','noise',
   'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
-  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','bw','bc','device','multi','multiGap'];
+  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
 function saveUser(a){ try{ localStorage.setItem(PKEY,JSON.stringify(a)); }catch(e){ toast('Could not save (storage full)',true); } }
