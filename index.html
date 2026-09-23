@@ -170,6 +170,11 @@ input,select{font-family:inherit}
   text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
 /* fill (crop) mode: image covers the whole card area below any frame bar */
 .f-card.fill{display:flex}
+/* Behind a fitted image on a phone/tablet screen: the same image, enlarged and
+   blurred, filling the bars (z-index -1 stays inside the card's own stacking
+   context, above its background and below the shot). */
+.dv-back{display:none; position:absolute; inset:-10%; z-index:-1; background:center/cover no-repeat;
+  filter:blur(26px) saturate(1.25) brightness(.85)}
 .f-shot.fill{flex:1 1 auto; min-height:0; width:100%; height:auto; object-fit:cover}
 
 /* Empty state */
@@ -609,6 +614,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               <div class="dv-screen">
                 <div id="card" class="f-card">
                   <div class="f-bar" id="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url"></div><div class="title"></div><div class="wbtns"><span>&#9472;</span><span>&#9723;</span><span>&#10005;</span></div></div>
+                  <div id="devBack" class="dv-back"></div>
                   <img id="shot" class="f-shot" alt="" />
                   <div id="codeWrap" style="display:none"><div class="cw-bar"><div class="cw-dots"><i></i><i></i><i></i></div><div class="cw-title"></div></div><pre></pre></div>
                   <div id="annoLayer"></div>
@@ -826,11 +832,19 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             <p class="hint" style="margin-top:8px">Wrap the screenshot in a device shell — pair it with a 3D tilt for the classic angled hero.</p>
           </div>
           <div id="devCropCtl" hidden>
-            <p class="hint" style="margin:-4px 0 10px">The phone and tablet keep a real screen's shape, so the screenshot is cropped to fit. For a proper mobile layout, grab the site as 📱 Phone from the URL box.</p>
+            <p class="hint" style="margin:-4px 0 10px">The phone and tablet keep a real screen's shape. For a proper mobile layout, grab the site as 📱 Phone from the URL box.</p>
+            <div class="field"><label>Fill the screen</label>
+              <div class="seg" id="devFitSeg">
+                <button data-v="crop" class="on" title="Cover the screen, cropping what doesn't fit">Crop</button>
+                <button data-v="blur" title="Show the whole image over a blurred copy of itself">Fit + blur</button>
+                <button data-v="colour" title="Show the whole image on a colour taken from its edges">Fit + colour</button>
+              </div></div>
+            <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
               <input type="range" id="devX" min="0" max="100" value="50"></div>
             <div class="field"><label>Scroll down <span class="val" id="devYVal">0%</span></label>
               <input type="range" id="devY" min="0" max="100" value="0"></div>
+            </div>
           </div>
         </div>
       </section>
@@ -1252,7 +1266,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
-  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
   textVal:'', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
@@ -1296,7 +1310,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.17.2';
+const APP_VERSION='1.18.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1479,6 +1493,7 @@ function dofMask(W,H,pad,P,from,to){
 const DOF_LAYERS=[ { k:0.4, from:0.12, to:0.6 }, { k:1, from:0.45, to:1 } ];
 // A motion capture swaps shot.src frame by frame without a re-layout, so the
 // blurred copies follow the real image here or they'd freeze on an old frame.
+shot.addEventListener('load',()=>{ if($('devBack').style.display==='block') devBackdrop('blur'); });
 shot.addEventListener('load',()=>{ persp.querySelectorAll('.dof-layer img[data-dof-shot]').forEach(im=>{ if(im.src!==shot.src) im.src=shot.src; }); });
 function applyDof(){
   persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
@@ -1567,6 +1582,25 @@ function focusAtPoint(cx,cy){
 // Screen sizes in layout px, at the real devices' proportions (iPhone 390×844,
 // iPad Air 820×1180).
 const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
+// What fills the bars when a whole image is fitted onto a device screen.
+let _edgeCache={src:'',col:''};
+function edgeColour(){
+  if(_edgeCache.src===shot.src) return _edgeCache.col;
+  let col='#0b0c11';
+  try{ const w=64,h=64,c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d',{willReadFrequently:true});
+    g.drawImage(shot,0,0,w,h);
+    // Average the outermost rows and columns: that's what the bars sit against.
+    let r=0,gg=0,b=0,n=0; const add=(x,y)=>{ const d=g.getImageData(x,y,1,1).data; r+=d[0]; gg+=d[1]; b+=d[2]; n++; };
+    for(let i=0;i<w;i++){ add(i,0); add(i,h-1); } for(let j=0;j<h;j++){ add(0,j); add(w-1,j); }
+    col=`rgb(${Math.round(r/n)},${Math.round(gg/n)},${Math.round(b/n)})`; }catch(e){}
+  _edgeCache={src:shot.src,col}; return col;
+}
+function devBackdrop(mode){
+  const bk=$('devBack');
+  bk.style.display = mode==='blur' ? 'block' : 'none';
+  if(mode==='blur'){ const u=`url("${shot.src}")`; if(bk.style.backgroundImage!==u) bk.style.backgroundImage=u; }
+  card.style.background = mode==='colour' ? edgeColour() : (mode==='blur' ? '#0b0c11' : '');
+}
 function layout(){
   if(!state.hasImage){ persp.style.left='50%'; persp.style.top='50%';
     persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
@@ -1581,6 +1615,7 @@ function layout(){
     : state.aspect==='custom' ? [state.customW, state.customH]
     : (FIXED_SIZES[state.aspect]||[1280,720]);
 
+  if(!DEV_SCREENS[state.device] || codeMode){ shot.style.objectFit=''; devBackdrop(null); }
   if(codeMode){
     // the code card auto-sizes to its content; nothing to size on the (hidden) image
     card.classList.remove('fill'); shot.classList.remove('fill');
@@ -1602,7 +1637,10 @@ function layout(){
     card.classList.add('fill'); shot.classList.add('fill');
     card.style.width=sw+'px'; card.style.height=sh+'px';
     shot.style.width='100%'; shot.style.height='auto';
-    shot.style.objectPosition=`${state.devX}% ${state.devY}%`;
+    const fitIn=state.devFit==='blur'||state.devFit==='colour';
+    shot.style.objectFit = fitIn ? 'contain' : '';
+    shot.style.objectPosition = fitIn ? '50% 50%' : `${state.devX}% ${state.devY}%`;
+    devBackdrop(fitIn ? state.devFit : null);
   } else {
     // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
     card.classList.remove('fill'); shot.classList.remove('fill');
@@ -2284,6 +2322,7 @@ function buildMulti(){
     // Code cards and annotations belong to the single-image view only.
     const cw=d.querySelector('#codeWrap'); if(cw) cw.remove();
     const an=d.querySelector('#annoLayer'); if(an) an.remove();
+    const db=d.querySelector('#devBack'); if(db) db.remove();
     d.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
     d.removeAttribute('id');
     d.style.display=''; d.style.transform='none';
@@ -2848,6 +2887,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.18.0', items:[
+    'Phone and tablet mockups can now show the WHOLE image: "Fill the screen" → Fit + blur puts it over a blurred copy of itself (like a square photo in a Story), Fit + colour fills the gaps with a colour taken from the image\'s edges. Crop is still there for screenshots that are already phone-shaped',
+  ]},
   {v:'1.17.2', items:[
     'Fixed: pasting an image copied from a web page, Slack, Discord or a chat app did nothing, because those put a link to the image on the clipboard rather than the image itself. It is now fetched and loaded',
     'Fixed: an image file copied or dropped from Windows Explorer with no file type was refused as "not an image"',
@@ -4154,7 +4196,11 @@ $('deviceChips').addEventListener('click',e=>{ const b=e.target.closest('button'
   state.device=b.dataset.v; $('deviceChips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); updateDevCropUI(); render(); });
 bindRange('devX','devX',v=>v+'%');
 bindRange('devY','devY',v=>v+'%');
-function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device]; }
+function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
+  $('devFitSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.devFit||'crop')));
+  $('devPanCtl').hidden = (state.devFit||'crop')!=='crop'; }         // a fitted image has nothing to pan
+$('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.devFit=b.dataset.v; updateDevCropUI(); render(); });
 // auto-match bg
 $('btnMatch').onclick=autoMatchBg;
 // animated / magic / batch
@@ -4279,7 +4325,7 @@ $('btnReset').onclick=()=>{
   if(state.origSrc){ shot.src=state.origSrc; }   // un-bake any redactions back to the clean image
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
     textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
@@ -4420,7 +4466,7 @@ function applyPreset(s){
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','devX','devY','size','pad','rad','noise',
+  'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
   'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
