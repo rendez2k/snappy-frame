@@ -168,8 +168,8 @@ input,select{font-family:inherit}
 /* App store badges, drawn in the style of the official ones */
 #badgeLayer{position:absolute; z-index:7; display:none; gap:.28em; pointer-events:none; font-size:44px}
 /* caption, badges and logo can be picked up and moved on the preview */
-#textLayer,#badgeLayer,#logoLayer{pointer-events:auto; cursor:grab; touch-action:none}
-#textLayer.dragging,#badgeLayer.dragging,#logoLayer.dragging{cursor:grabbing; outline:1px dashed rgba(255,255,255,.75); outline-offset:4px}
+#textLayer,#titleLayer,#badgeLayer,#logoLayer{pointer-events:auto; cursor:grab; touch-action:none}
+#textLayer.dragging,#titleLayer.dragging,#badgeLayer.dragging,#logoLayer.dragging{cursor:grabbing; outline:1px dashed rgba(255,255,255,.75); outline-offset:4px}
 #persp #device,#persp #multi{cursor:grab}
 #snapGuide{position:absolute; left:50%; top:0; bottom:0; width:0; border-left:1px dashed rgba(255,255,255,.8); z-index:9; display:none; pointer-events:none}
 .sbadge{display:inline-flex; align-items:center; gap:.2em; height:1em; padding:0 .3em 0 .22em; border-radius:.17em;
@@ -180,19 +180,19 @@ input,select{font-family:inherit}
 .sbadge small{font-size:.2em; font-weight:500; letter-spacing:.01em; opacity:.95}
 .sbadge b{font-size:.4em; font-weight:600; letter-spacing:-.01em; margin-top:.02em}
 #badgeLayer.light .sbadge{background:#fff; color:#000; border-color:#000}
-#textLayer{position:absolute; z-index:6; display:none; white-space:pre;
+#textLayer,#titleLayer{position:absolute; z-index:6; display:none; white-space:pre;
   font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:-.01em;
   text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
 /* Caption as a pill. Glass is iOS-style: it blurs and saturates what's behind
    it, with a bright rim on top and a fainter one underneath where light
    would catch the edge of real glass. */
-#textLayer.pill{padding:.42em 1.05em; border-radius:999px; line-height:1.2}
-#textLayer.glass{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.08) 55%,rgba(255,255,255,.14));
+#textLayer.pill,#titleLayer.pill{padding:.42em 1.05em; border-radius:999px; line-height:1.2}
+#textLayer.glass,#titleLayer.glass{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.08) 55%,rgba(255,255,255,.14));
   -webkit-backdrop-filter:blur(16px) saturate(180%); backdrop-filter:blur(16px) saturate(180%);
   border:1px solid rgba(255,255,255,.42);
   box-shadow:inset 0 1px 1px rgba(255,255,255,.75), inset 0 -1px 1px rgba(255,255,255,.22), 0 10px 30px rgba(0,0,0,.22);
   text-shadow:0 1px 2px rgba(0,0,0,.25)}
-#textLayer.solid{background:rgba(14,16,23,.82); border:1px solid rgba(255,255,255,.10);
+#textLayer.solid,#titleLayer.solid{background:rgba(14,16,23,.82); border:1px solid rgba(255,255,255,.10);
   box-shadow:0 10px 30px rgba(0,0,0,.25); text-shadow:none}
 /* fill (crop) mode: image covers the whole card area below any frame bar */
 .f-card.fill{display:flex}
@@ -691,6 +691,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div id="noiseLayer"></div>
           <img id="logoLayer" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
           <div id="textLayer"></div>
+          <div id="titleLayer"></div>
           <div id="flareLayer"></div>
           <div id="badgeLayer"></div>
           <div id="snapGuide"></div>
@@ -1020,9 +1021,43 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
 
       <!-- Text & logo -->
       <section class="sec collapsed" data-sec="overlay">
-        <button class="head"><span class="ico">🔤</span> Text &amp; logo <span class="chev">▾</span></button>
+        <button class="head"><span class="ico">🔤</span> Title, text &amp; logo <span class="chev">▾</span></button>
         <div class="body">
-          <div class="field"><label>Text</label>
+          <div class="field"><label>Title <span class="hint" style="font-weight:400">— a headline, e.g. across the top</span></label>
+            <input class="txt" id="titleVal" placeholder="e.g. Results are out!" value=""></div>
+          <div id="titleCtl" hidden>
+            <div class="field"><div class="seg" id="titleStyleSeg">
+              <button data-v="plain" class="on">Plain</button><button data-v="glass">Glass</button><button data-v="solid">Solid</button></div></div>
+            <div class="field"><select class="sel" id="titleFont">
+              <option value="sans">Sans · Inter</option>
+              <option value="serif">Serif · Georgia</option>
+              <option value="mono">Monospace</option>
+              <option value="rounded">Rounded · Trebuchet</option>
+              <option value="condensed">Condensed</option>
+              <option value="display">Display · Impact</option>
+              <option value="poppins">Poppins</option>
+              <option value="montserrat">Montserrat</option>
+              <option value="oswald">Oswald</option>
+              <option value="bebas">Bebas Neue</option>
+              <option value="pacifico">Pacifico · script</option>
+            </select></div>
+            <div class="row2">
+              <div class="color"><button class="cswatch" id="titleColor" style="background:#ffffff"></button><input type="text" id="titleColort" value="#FFFFFF"></div>
+              <label class="toggle" style="margin-top:0"><input type="checkbox" id="titleBold" checked> <span>Bold</span></label>
+            </div>
+            <div class="field" id="titleBgRow" hidden style="margin-top:10px"><label>Box colour</label>
+              <div class="color"><button class="cswatch" id="titleBg" style="background:#0e1017"></button><input type="text" id="titleBgt" value="#0E1017"></div></div>
+            <div class="field"><label>Title size <span class="val" id="titleSizeVal">56px</span></label>
+              <input type="range" id="titleSize" min="16" max="160" value="56"></div>
+            <div class="field"><label>Title position</label>
+              <div class="posgrid" id="titlePosGrid">
+                <button data-p="tl"></button><button data-p="tc" class="on"></button><button data-p="tr"></button>
+                <button data-p="ml"></button><button data-p="mc"></button><button data-p="mr"></button>
+                <button data-p="bl"></button><button data-p="bc"></button><button data-p="br"></button>
+              </div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="field"><label>Caption</label>
             <input class="txt" id="textVal" placeholder="Caption, @handle, URL…" value=""></div>
           <div class="field"><label>Style</label>
             <div class="seg" id="textStyleSeg">
@@ -1417,7 +1452,7 @@ const state = {
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, devFitX:null, devNudgeX:0, devNudgeY:0, size:100, pad:64, rad:14, noise:false,
-  textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
+  titleVal:'', titleStyle:'plain', titleBg:'', titleFont:'bebas', titleColor:'#ffffff', titleSize:56, titleBold:true, titlePos:'tc', titleXY:[50,8], textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
@@ -1460,7 +1495,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.27.1';
+const APP_VERSION='1.28.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1547,17 +1582,9 @@ function render(){
   // background pattern overlay
   applyPattern();
 
-  // text & logo overlays
-  const tl=$('textLayer'), tv=(state.textVal||'').trim();
-  if(tv){ tl.style.display='block'; tl.textContent=state.textVal; tl.style.color=state.textColor;
-    tl.style.fontSize=state.textSize+'px'; tl.style.fontWeight=state.textBold?'700':'500';
-    tl.style.fontFamily=FONTS[state.textFont]||FONTS.sans;
-    const ts=state.textStyle||'plain'; tl.className = ts==='plain' ? '' : 'pill '+ts;
-    // Box colour: Solid fills with it; Glass is tinted by it, still see-through.
-    const bg=state.textBg, rgb=bg && hexToRgb(bg);
-    tl.style.background = !rgb ? '' : ts==='solid' ? bg
-      : ts==='glass' ? `linear-gradient(180deg,rgba(${rgb},.46),rgba(${rgb},.20) 55%,rgba(${rgb},.30))` : ''; }
-  else tl.style.display='none';
+  // text & logo overlays — the caption and the title share one styling path
+  styleTextLayer($('textLayer'),'text');
+  styleTextLayer($('titleLayer'),'title');
   const lg=$('logoLayer');
   if(state.logoSrc){ lg.style.display='block'; lg.src=state.logoSrc;
     lg.style.width=state.logoSize+'%'; lg.style.opacity=(state.logoOpacity/100).toFixed(2); }
@@ -1582,7 +1609,7 @@ function placeOverlay(el,pos,margin,xy){
     // stays put when the canvas changes size or the export scales up.
     el.style.right=el.style.bottom='auto'; el.style.left=xy[0]+'%'; el.style.top=xy[1]+'%';
     el.style.transform='translate(-50%,-50%)';
-    if(el.id==='textLayer') el.style.textAlign='center';
+    if(el.id==='textLayer'||el.id==='titleLayer') el.style.textAlign='center';
     return;
   }
   const v=pos[0], h=pos[1];
@@ -1591,11 +1618,24 @@ function placeOverlay(el,pos,margin,xy){
   if(h==='l') el.style.left=margin+'px'; else if(h==='r') el.style.right=margin+'px'; else { el.style.left='50%'; tx='-50%'; }
   if(v==='t') el.style.top=margin+'px'; else if(v==='b') el.style.bottom=margin+'px'; else { el.style.top='50%'; ty='-50%'; }
   el.style.transform=(tx!=='0'||ty!=='0')?`translate(${tx},${ty})`:'none';
-  if(el.id==='textLayer' && h==='c') el.style.textAlign='center';
-  else if(el.id==='textLayer') el.style.textAlign=(h==='r')?'right':'left';
+  const isText=el.id==='textLayer'||el.id==='titleLayer';
+  if(isText && h==='c') el.style.textAlign='center';
+  else if(isText) el.style.textAlign=(h==='r')?'right':'left';
 }
 const APPLE_SVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8c-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.7 2.4 2.9 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .8c1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.5-1-2.5-4.1zM14.1 5.8c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.7-1.3z"/></svg>';
 const PLAY_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00a0ff" d="M3.6 2.2C3.3 2.4 3.1 2.8 3.1 3.3v17.4c0 .5.2.9.5 1.1L13.4 12z"/><path fill="#00f076" d="M3.6 2.2 13.4 12l3.1-3.1L5.2 2.4c-.6-.4-1.2-.4-1.6-.2z"/><path fill="#ff3a44" d="M3.6 21.8 13.4 12l3.1 3.1-11.3 6.5c-.6.4-1.2.4-1.6.2z"/><path fill="#ffc800" d="M16.5 8.9 13.4 12l3.1 3.1 3.5-2c.9-.5.9-1.7 0-2.2z"/></svg>';
+function styleTextLayer(el,p){
+  const v=(state[p+'Val']||'').trim();
+  if(!v){ el.style.display='none'; return; }
+  el.style.display='block'; el.textContent=state[p+'Val']; el.style.color=state[p+'Color'];
+  el.style.fontSize=state[p+'Size']+'px'; el.style.fontWeight=state[p+'Bold']?'700':'500';
+  el.style.fontFamily=FONTS[state[p+'Font']]||FONTS.sans;
+  const ts=state[p+'Style']||'plain'; el.className = ts==='plain' ? '' : 'pill '+ts;
+  // Box colour: Solid fills with it; Glass is tinted by it, still see-through.
+  const bg=state[p+'Bg'], rgb=bg && hexToRgb(bg);
+  el.style.background = !rgb ? '' : ts==='solid' ? bg
+    : ts==='glass' ? `linear-gradient(180deg,rgba(${rgb},.46),rgba(${rgb},.20) 55%,rgba(${rgb},.30))` : '';
+}
 function hexToRgb(h){ const m=/^#?([0-9a-f]{6})$/i.exec(h||''); if(!m) return null; const n=parseInt(m[1],16); return `${n>>16},${(n>>8)&255},${n&255}`; }
 function renderBadges(){
   const L=$('badgeLayer'), b=state.badges||'none';
@@ -1639,6 +1679,7 @@ function makeDraggable(el,posKey,xyKey){
 function placeOverlays(){
   const m=Math.round(Math.min(stage.offsetWidth,stage.offsetHeight)*0.045)+6;
   placeOverlay($('textLayer'),state.textPos,m,state.textXY);
+  placeOverlay($('titleLayer'),state.titlePos||'tc',m,state.titleXY);
   placeOverlay($('logoLayer'),state.logoPos,m,state.logoXY);
   placeOverlay($('badgeLayer'),state.badgePos||'br',m,state.badgeXY);
   // Caption and badges can collide — same spot, or neighbouring spots on a
@@ -2439,22 +2480,23 @@ async function stageToBlob(opts){
   c.width=Math.max(1,Math.floor(W*pr+1e-6)); c.height=Math.max(1,Math.floor(H*pr+1e-6));
   const g=c.getContext('2d');
   if(opts.type==='image/jpeg'){ g.fillStyle=opts.backgroundColor||'#ffffff'; g.fillRect(0,0,c.width,c.height); }
-  const tl=$('textLayer');
-  if(tl.classList.contains('glass') && tl.style.display!=='none'){
+  const glass=[$('textLayer'),$('titleLayer')].filter(el=>el.classList.contains('glass') && el.style.display!=='none');
+  if(glass.length){
     // The PNG renderer ignores backdrop-filter, so a glass caption would export
     // as a faint tint over SHARP content. Bake the frost in: render everything
     // but the caption, blur that inside the pill's shape, then lay the caption
     // (tint, rims, text) over it from a second, caption-only render.
     const k=stage.getBoundingClientRect().width/(stage.offsetWidth||1)||1;
-    const sr=stage.getBoundingClientRect(), r=tl.getBoundingClientRect();
-    const x=(r.left-sr.left)/k*pr, y=(r.top-sr.top)/k*pr, w=r.width/k*pr, h=r.height/k*pr;
-    tl.style.visibility='hidden';
-    let base; try{ base=await _stageImage(opts); } finally { tl.style.visibility=''; }
+    const sr=stage.getBoundingClientRect();
+    const boxes=glass.map(el=>{ const r=el.getBoundingClientRect(); return [(r.left-sr.left)/k*pr,(r.top-sr.top)/k*pr,r.width/k*pr,r.height/k*pr]; });
+    glass.forEach(el=>el.style.visibility='hidden');
+    let base; try{ base=await _stageImage(opts); } finally { glass.forEach(el=>el.style.visibility=''); }
     g.drawImage(base,0,0,W*pr,H*pr);
     const snap=document.createElement('canvas'); snap.width=c.width; snap.height=c.height; snap.getContext('2d').drawImage(c,0,0);
-    g.save(); g.beginPath(); g.roundRect(x,y,w,h,h/2); g.clip();
-    g.filter=`blur(${(16*pr).toFixed(1)}px) saturate(180%)`; g.drawImage(snap,0,0); g.filter='none'; g.restore();
-    const hide=[persp,$('patternLayer'),$('logoLayer'),$('noiseLayer'),$('flareLayer'),$('badgeLayer')].concat(bgBlurEl?[bgBlurEl]:[]);
+    for(const [x,y,w,h] of boxes){ g.save(); g.beginPath(); g.roundRect(x,y,w,h,h/2); g.clip();
+      g.filter=`blur(${(16*pr).toFixed(1)}px) saturate(180%)`; g.drawImage(snap,0,0); g.filter='none'; g.restore(); }
+    const hide=[persp,$('patternLayer'),$('logoLayer'),$('noiseLayer'),$('flareLayer'),$('badgeLayer')]
+      .concat([$('textLayer'),$('titleLayer')].filter(el=>!glass.includes(el))).concat(bgBlurEl?[bgBlurEl]:[]);
     const saved=hide.map(el=>el.style.visibility), bg=stage.style.background;
     hide.forEach(el=>el.style.visibility='hidden'); stage.style.background='transparent';
     let cap; try{ cap=await _stageImage({...opts, backgroundColor:undefined}); }
@@ -2889,15 +2931,15 @@ async function rasterStage(mode,pr){
   const saved={bg:stage.style.background, persp:persp.style.display, pl:pl.style.display,
     tl:tl.style.display, lg:lg.style.display, nl:nl.style.display, blur:bgBlurEl?bgBlurEl.style.display:null};
   const fl=$('flareLayer'), flSaved=fl.style.display;
-  const bl=$('badgeLayer'), blSaved=bl.style.display;
-  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; fl.style.display='none'; bl.style.display='none'; }
+  const bl=$('badgeLayer'), blSaved=bl.style.display, ttl=$('titleLayer'), ttlSaved=ttl.style.display;
+  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; fl.style.display='none'; bl.style.display='none'; ttl.style.display='none'; }
   else if(mode==='front'){ stage.style.background='transparent'; if(bgBlurEl) bgBlurEl.style.display='none'; pl.style.display='none'; }
   try{ if(mode!=='bg' && state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   const safari=_isSafari();
   let url; const o={pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:!safari};
   try{ if(safari){ try{ await htmlToImage.toPng(stage,o); }catch(e){} await new Promise(r=>setTimeout(r,40)); }
     url=await htmlToImage.toPng(stage,o); }
-  finally{ fl.style.display=flSaved; bl.style.display=blSaved; stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
+  finally{ fl.style.display=flSaved; bl.style.display=blSaved; ttl.style.display=ttlSaved; stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
     tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
   const im=new Image(); await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=url;}); return im;
 }
@@ -3158,7 +3200,7 @@ async function applyMarkup(){
 (function(){
   const bar=$('jumpBar'), panel=$('panel');
   const NAMES={ content:'Content', batch:'Multiple', presets:'Presets', bg:'Background', pattern:'Pattern',
-    frame:'Frame & phone', layout:'Layout', overlay:'Text & badges', shadow:'Shadow', tilt:'3D & lens',
+    frame:'Frame & phone', layout:'Layout', overlay:'Title, text & badges', shadow:'Shadow', tilt:'3D & lens',
     border:'Border', export:'Export', anim:'Animate', magic:'Resize' };
   const secs=[...panel.querySelectorAll('section.sec[data-sec]')];
   secs.forEach(sec=>{ const k=sec.dataset.sec, ico=sec.querySelector('.head .ico');
@@ -3393,6 +3435,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.28.0', items:['A second text: a Title, with its own style (plain, glass or solid), font, colour, box colour, size and position — top centre by default, draggable like everything else. The caption stays for a web address or @handle'] },
   {v:'1.27.1', items:['The ▲▼◀▶ nudge buttons move the image by real pixels in any direction, even where there\'s no spare room; the gap that opens is filled to match', 'The jump bar shows there\'s more: ‹ › arrows and a fade at whichever end has hidden sections, and the mouse wheel scrolls it sideways'] },
   {v:'1.27.0', items:['Image position now moves left and right as well as up and down, and nudges 1px at a time: ▲▼◀▶ buttons (Shift for 10px), or the arrow keys on a slider', 'Jump bar at the top of the settings panel: one click opens any section and scrolls to it (Frame & phone, 3D & lens, Text & badges…), the section you\'re in stays highlighted, and "Close all" folds everything away'] },
   {v:'1.26.0', items:['Image position for the Fit modes: nudge the image up or down inside the phone or tablet screen. Auto still decides from the image\'s edges'] },
@@ -4691,6 +4734,19 @@ bindRange('logoSize','logoSize',v=>v+'%');
 bindRange('logoOpacity','logoOpacity',v=>v+'%');
 bindPosGrid('logoPosGrid','logoPos');
 makeDraggable($('textLayer'),'textPos','textXY');
+makeDraggable($('titleLayer'),'titlePos','titleXY');
+$('titleVal').oninput=e=>{ state.titleVal=e.target.value; $('titleCtl').hidden=!state.titleVal.trim(); render(); };
+$('titleFont').onchange=e=>{ state.titleFont=e.target.value; render(); };
+$('titleBold').onchange=e=>{ state.titleBold=e.target.checked; render(); };
+bindRange('titleSize','titleSize',v=>v+'px');
+bindPosGrid('titlePosGrid','titlePos');
+bindColor('titleColor','titleColor');
+bindColor('titleBg','titleBg');
+function syncTitleUI(){ const ts=state.titleStyle||'plain';
+  $('titleStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===ts));
+  $('titleBgRow').hidden = ts==='plain';
+  setColor('titleBg', state.titleBg || (ts==='solid' ? '#0e1017' : '#ffffff')); }
+$('titleStyleSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; state.titleStyle=b.dataset.v; syncTitleUI(); render(); });
 makeDraggable($('badgeLayer'),'badgePos','badgeXY');
 makeDraggable($('logoLayer'),'logoPos','logoXY');
 bindPosGrid('badgePosGrid','badgePos');
@@ -5012,7 +5068,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,devFitX:null,devNudgeX:0,devNudgeY:0,size:100,pad:64,rad:14,noise:false,
-    textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
+    titleVal:'',titleStyle:'plain',titleBg:'',titleFont:'bebas',titleColor:'#ffffff',titleSize:56,titleBold:true,titlePos:'tc',titleXY:[50,8],textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
@@ -5039,6 +5095,11 @@ function syncUI(){
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
   $('aspect').value=state.aspect;
   $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.position));
+  $('titleVal').value=state.titleVal||''; $('titleCtl').hidden=!(state.titleVal||'').trim();
+  $('titleFont').value=state.titleFont||'bebas'; $('titleBold').checked=state.titleBold!==false;
+  $('titleSize').value=state.titleSize||56; $('titleSizeVal').textContent=(state.titleSize||56)+'px';
+  setColor('titleColor',state.titleColor||'#ffffff'); syncTitleUI();
+  $('titlePosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===(state.titlePos||'tc')));
   $('textVal').value=state.textVal||'';
   $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.textStyle||'plain'))); setColor('textColor',state.textColor); syncTextBgUI();
   $('textFont').value=state.textFont||'sans';
@@ -5193,7 +5254,7 @@ function applyLens(s){
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','devFitY','devFitX','devNudgeX','devNudgeY','size','pad','rad','noise',
-  'textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
+  'titleVal','titleStyle','titleBg','titleFont','titleColor','titleSize','titleBold','titlePos','titleXY','textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
