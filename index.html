@@ -820,6 +820,13 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             </div>
             <p class="hint" style="margin-top:8px">Wrap the screenshot in a device shell — pair it with a 3D tilt for the classic angled hero.</p>
           </div>
+          <div id="devCropCtl" hidden>
+            <p class="hint" style="margin:-4px 0 10px">The phone and tablet keep a real screen's shape, so the screenshot is cropped to fit. For a proper mobile layout, grab the site as 📱 Phone from the URL box.</p>
+            <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
+              <input type="range" id="devX" min="0" max="100" value="50"></div>
+            <div class="field"><label>Scroll down <span class="val" id="devYVal">0%</span></label>
+              <input type="range" id="devY" min="0" max="100" value="0"></div>
+          </div>
         </div>
       </section>
 
@@ -1237,7 +1244,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
-  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, size:100, pad:64, rad:14, noise:false,
   textVal:'', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
@@ -1281,7 +1288,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.16.0';
+const APP_VERSION='1.16.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1505,6 +1512,9 @@ function applyDof(){
 
 // Size the stage and place the card. The card is centred by its *visual* (post-
 // perspective) bounding box so a 3D tilt never clips against overflow:hidden.
+// Screen sizes in layout px, at the real devices' proportions (iPhone 390×844,
+// iPad Air 820×1180).
+const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
 function layout(){
   if(!state.hasImage){ persp.style.left='50%'; persp.style.top='50%';
     persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
@@ -1531,6 +1541,16 @@ function layout(){
     card.style.width=cw+'px'; card.style.height=ch+'px';
     shot.style.width='100%'; shot.style.height='auto';
     shot.style.objectPosition=`${state.posX}% ${state.posY}%`;
+  } else if(DEV_SCREENS[state.device]){
+    // A phone or tablet keeps a real screen's shape. Wrapping the bezel round
+    // whatever the image is gave a desktop grab a 16:9 "phone" with a notch.
+    // The shot covers the screen instead, top-anchored by default, like a page
+    // that hasn't been scrolled.
+    const [sw,sh]=DEV_SCREENS[state.device];
+    card.classList.add('fill'); shot.classList.add('fill');
+    card.style.width=sw+'px'; card.style.height=sh+'px';
+    shot.style.width='100%'; shot.style.height='auto';
+    shot.style.objectPosition=`${state.devX}% ${state.devY}%`;
   } else {
     // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
     card.classList.remove('fill'); shot.classList.remove('fill');
@@ -1829,7 +1849,7 @@ function shotOnStage(){
   return { x:(r.left-s.left)/k, y:(r.top-s.top)/k, w:r.width/k, h:r.height/k };
 }
 function _shotSnappable(){
-  return state.hasImage && state.mode!=='code' && !multiOn() && !(state.fill && state.aspect!=='auto')
+  return state.hasImage && state.mode!=='code' && !multiOn() && !(state.fill && state.aspect!=='auto') && !DEV_SCREENS[state.device]
     && !state.rx && !state.ry && !state.rz;
 }
 function effectiveExportPR(){
@@ -2639,7 +2659,7 @@ function shotApiUrl(key,url,devName,full){
 // leaves a laptop you chose alone, but won't sit in a phone left from before.
 function frameForGrab(devName){
   const d=GRAB_DEVICES[devName]; if(!d) return;
-  if(d.frame){ state.device=d.frame; state.frame='none'; }
+  if(d.frame){ state.device=d.frame; state.frame='none'; state.devX=50; state.devY=0; }
   else if(state.device==='phone' || state.device==='tablet') state.device='none';
 }
 async function grabUrl(inputId,btnId){
@@ -2732,6 +2752,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.16.1', items:[
+    'Fixed: the phone and tablet mockups stretched to whatever shape the screenshot was, so a desktop grab became a wide "phone" with a notch. They now keep a real iPhone and iPad screen shape, and the screenshot fills the screen and is cropped to fit',
+    'New sliders under Device mockup, "Show across" and "Scroll down", choose which part of the screenshot is on screen. A long full-page grab starts at the top',
+  ]},
   {v:'1.16.0', items:[
     'Grab from URL now has Desktop, Tablet and Phone — the page is rendered at that device\'s width, density and touch rules, so you get the site\'s real mobile layout (not a squeezed desktop page), and it lands in the matching phone or tablet frame',
     'Phone and tablet grabs need a ScreenshotOne key (add one under the gear ⚙); the free renderer can only do desktop, and it says so instead of faking it',
@@ -3994,7 +4018,10 @@ $('codeLines').addEventListener('change',e=>{ state.codeLines=e.target.checked; 
 bindRange('codeSize','codeSize',v=>v+'px');
 // device mockups
 $('deviceChips').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
-  state.device=b.dataset.v; $('deviceChips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+  state.device=b.dataset.v; $('deviceChips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); updateDevCropUI(); render(); });
+bindRange('devX','devX',v=>v+'%');
+bindRange('devY','devY',v=>v+'%');
+function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device]; }
 // auto-match bg
 $('btnMatch').onclick=autoMatchBg;
 // animated / magic / batch
@@ -4119,7 +4146,7 @@ $('btnReset').onclick=()=>{
   if(state.origSrc){ shot.src=state.origSrc; }   // un-bake any redactions back to the clean image
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,size:100,pad:64,rad:14,noise:false,
     textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
@@ -4162,6 +4189,9 @@ function syncUI(){
   $('patRotate').value=state.patRotate; $('patRotateVal').textContent=state.patRotate+'°';
   $('posX').value=state.posX; $('posXVal').textContent=state.posX+'%';
   $('posY').value=state.posY; $('posYVal').textContent=state.posY+'%';
+  $('devX').value=state.devX; $('devXVal').textContent=state.devX+'%';
+  $('devY').value=state.devY; $('devYVal').textContent=state.devY+'%';
+  updateDevCropUI();
   $('fitMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',(x.dataset.v==='fill')===state.fill));
   updateFillUI();
   $('bgType').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===state.bgType));
@@ -4257,7 +4287,7 @@ function applyPreset(s){
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','size','pad','rad','noise',
+  'position','fill','posX','posY','devX','devY','size','pad','rad','noise',
   'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
