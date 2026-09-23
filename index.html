@@ -1343,7 +1343,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.20.1';
+const APP_VERSION='1.20.2';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1495,10 +1495,10 @@ function dofParams(W,H){
   const tilt=(Math.abs(a)*W+Math.abs(b)*H)/Math.max(W,H);      // 0 flat … ~1.4
   const k=state.dof/100;
   return {
-    blur: k*Math.max(W,H)*0.016*Math.min(1,tilt*1.8),           // px, in the card's own plane
+    blur: k*Math.max(W,H)*0.011*Math.min(1,tilt*1.8),           // px, in the card's own plane
     ang: Math.atan2(a,-b)*180/Math.PI,                           // CSS angle, near → far
-    band: 0.10-0.07*k,                                           // half-width of the sharp zone
-    fall: 0.85-0.45*k,                                           // distance over which blur arrives
+    band: 0.16-0.08*k,                                           // half-width of the sharp zone
+    fall: 1.0-0.4*k,                                           // distance over which blur arrives
     tilt,
   };
 }
@@ -2992,6 +2992,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.20.2', items:[
+    'Gentler depth of field: the blur is about a third softer at every setting, and more of the card around the focus stays sharp. The lens looks use less of it, so the screenshot stays readable',
+  ]},
   {v:'1.20.1', items:[
     'The phone mockup widens less for wide images (at most 0.5 wide-to-tall, was 0.6) — any wider stopped looking like a phone',
   ]},
@@ -4595,13 +4598,13 @@ function applyPreset(s){
 // Lens looks change only the camera: tilt, depth of field, mist and flare.
 // They leave the background and frame alone, so they layer over any preset.
 const LENS_LOOKS=[
-  {n:'Hero',        s:{rx:14, ry:-26, rz:4,  dof:45, focus:12, mist:0,  flare:0}},
-  {n:'Tilt-shift',  s:{rx:38, ry:0,   rz:0,  dof:80, focus:50, mist:0,  flare:0}},
-  {n:'Dreamy',      s:{rx:10, ry:-20, rz:3,  dof:55, focus:18, mist:45, flare:35, flareTone:'warm', flareX:84, flareY:12}},
-  {n:'Golden hour', s:{rx:8,  ry:22,  rz:-3, dof:35, focus:14, mist:15, flare:75, flareTone:'warm', flareX:12, flareY:10}},
-  {n:'Far focus',   s:{rx:18, ry:24,  rz:-3, dof:70, focus:88, mist:20, flare:0}},
-  {n:'Fog',         s:{rx:22, ry:-32, rz:5,  dof:30, focus:6,  mist:78, flare:0}},
-  {n:'Neon',        s:{rx:6,  ry:-14, rz:2,  dof:25, focus:15, mist:0,  flare:60, flareTone:'cool', flareX:90, flareY:30}},
+  {n:'Hero',        s:{rx:14, ry:-26, rz:4,  dof:28, focus:12, mist:0,  flare:0}},
+  {n:'Tilt-shift',  s:{rx:38, ry:0,   rz:0,  dof:50, focus:50, mist:0,  flare:0}},
+  {n:'Dreamy',      s:{rx:10, ry:-20, rz:3,  dof:32, focus:18, mist:35, flare:35, flareTone:'warm', flareX:84, flareY:12}},
+  {n:'Golden hour', s:{rx:8,  ry:22,  rz:-3, dof:22, focus:14, mist:12, flare:70, flareTone:'warm', flareX:12, flareY:10}},
+  {n:'Far focus',   s:{rx:18, ry:24,  rz:-3, dof:40, focus:88, mist:15, flare:0}},
+  {n:'Fog',         s:{rx:22, ry:-32, rz:5,  dof:18, focus:6,  mist:65, flare:0}},
+  {n:'Neon',        s:{rx:6,  ry:-14, rz:2,  dof:18, focus:15, mist:0,  flare:55, flareTone:'cool', flareX:90, flareY:30}},
   {n:'Clear lens',  s:{dof:0, mist:0, flare:0}},
 ];
 function applyLens(s){
