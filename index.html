@@ -868,6 +868,18 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
                 <button data-v="colour" title="Show the whole image on a colour taken from its edges">Fit + colour</button>
                 <button data-v="extend" title="Show the whole image and stretch its outer edges to fill the screen — seamless on posters with plain borders">Fit + extend</button>
               </div></div>
+            <div class="field" id="aiExtendBox">
+              <button class="btn sm" id="btnAiExtend" type="button" style="width:100%;justify-content:center">✨ AI extend to fill the screen</button>
+              <div id="falKeyRow" hidden style="margin-top:8px">
+                <div style="display:flex;gap:6px"><input class="txt" id="falKeyInput" type="password" placeholder="Paste your fal.ai API key" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
+                  <button class="btn sm primary" id="falKeySave" type="button">Save</button></div>
+                <p class="hint" style="margin-top:6px">AI extend paints new picture around the edges so the image really is phone-shaped. It uses your own <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">fal.ai key</a>: stored only in this browser, sent only to fal, and each extend costs a few cents on your fal account.</p>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:6px">
+                <button class="lnk" id="btnAiUndo" type="button" hidden>↩ Undo AI extend</button>
+                <button class="lnk" id="falKeyForget" type="button" hidden>Change fal key</button>
+              </div>
+            </div>
             <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
               <input type="range" id="devX" min="0" max="100" value="50"></div>
@@ -1375,7 +1387,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.21.0';
+const APP_VERSION='1.22.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -3063,6 +3075,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.22.0', items:[
+    '✨ AI extend for phone and tablet mockups: paints new picture around the edges so the image becomes exactly the screen\'s shape — nothing cropped, no bars. Uses your own fal.ai key, kept in this browser and sent only to fal (a few cents per extend). Undo puts the original back',
+  ]},
   {v:'1.21.0', items:[
     'Fit + extend for phone and tablet mockups: the whole image is shown and its outer edges are stretched to fill the rest of the screen. On posters and graphics with plain borders it looks like the image was made the right size. Runs instantly in your browser — no AI, no upload',
     'App store badges: add "Download on the App Store" and/or "Get it on Google Play" badges, in black or white, sized and placed anywhere (Text & logo section)',
@@ -4411,9 +4426,58 @@ $('deviceChips').addEventListener('click',e=>{ const b=e.target.closest('button'
   state.device=b.dataset.v; $('deviceChips').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); updateDevCropUI(); render(); });
 bindRange('devX','devX',v=>v+'%');
 bindRange('devY','devY',v=>v+'%');
+// ---- AI extend (fal.ai, the user's own key) ----
+// Outpaints the image to exactly the device screen's shape, so nothing is
+// cropped or padded. fal.run allows cross-origin calls, so the key goes from
+// this browser straight to fal and never touches our server.
+const FAL_KEY='snappy_fal_key';
+function getFalKey(){ try{ return (localStorage.getItem(FAL_KEY)||'').trim(); }catch(e){ return ''; } }
+let aiUndoSrc=null;
+function syncAiUI(){ const k=!!getFalKey();
+  $('falKeyForget').hidden=!k; $('btnAiUndo').hidden=!aiUndoSrc; }
+$('falKeySave').onclick=()=>{ const k=$('falKeyInput').value.trim(); if(!k){ toast('Paste a fal key first',true); return; }
+  try{ localStorage.setItem(FAL_KEY,k); }catch(e){} $('falKeyInput').value=''; $('falKeyRow').hidden=true; syncAiUI(); aiExtend(); };
+$('falKeyForget').onclick=()=>{ try{ localStorage.removeItem(FAL_KEY); }catch(e){} $('falKeyRow').hidden=false; syncAiUI(); };
+$('btnAiUndo').onclick=()=>{ if(!aiUndoSrc) return; const src=aiUndoSrc; aiUndoSrc=null; loadImage(src); syncAiUI(); toast('Back to the original image'); };
+function aiCanvasFor(iw,ih,A){
+  // Grow the short side to reach aspect A, then scale to Bria's 5000×5000-area limit.
+  let w=iw, h=ih; if(iw/ih>A) h=Math.round(iw/A); else w=Math.round(ih*A);
+  const s=Math.min(1, Math.sqrt(24e6/(w*h)));
+  const W=Math.round(w*s), H=Math.round(h*s), ow=Math.round(iw*s), oh=Math.round(ih*s);
+  return { canvas:[W,H], size:[ow,oh], loc:[Math.round((W-ow)/2), Math.round((H-oh)/2)] };
+}
+async function aiExtend(){
+  if(!state.hasImage || !DEV_SCREENS[state.device]){ toast('Pick the phone or tablet mockup first',true); return; }
+  const key=getFalKey(); if(!key){ $('falKeyRow').hidden=false; $('falKeyInput').focus(); return; }
+  const iw=shot.naturalWidth, ih=shot.naturalHeight; const [sw,sh]=devScreenSize(); const A=sw/sh;
+  if(Math.abs(iw/ih - A) < 0.01){ toast('It already fits the screen exactly'); return; }
+  const g=aiCanvasFor(iw,ih,A);
+  const btn=$('btnAiExtend'), label=btn.textContent; btn.disabled=true; btn.textContent='✨ Extending… (about 10–20 s)';
+  try{
+    const c=document.createElement('canvas'); c.width=iw; c.height=ih; c.getContext('2d').drawImage(shot,0,0);
+    const img=c.toDataURL('image/jpeg',0.92);
+    const r=await fetch('https://fal.run/fal-ai/bria/expand',{ method:'POST',
+      headers:{ 'Authorization':'Key '+key, 'Content-Type':'application/json' },
+      body:JSON.stringify({ image_url:img, canvas_size:g.canvas, original_image_size:g.size, original_image_location:g.loc, sync_mode:true }) });
+    const j=await r.json().catch(()=>({}));
+    if(r.status===401||r.status===403){ toast('fal rejected that key — check it, or top up your fal balance',true); $('falKeyRow').hidden=false; return; }
+    const url=j && j.image && j.image.url;
+    if(!r.ok || !url){ toast('AI extend failed: '+((j&&(j.detail&&(j.detail[0]&&j.detail[0].msg||j.detail)))||r.status),true); return; }
+    let data=url;
+    if(!/^data:/.test(url)){ const b=await (await fetch(url)).blob(); data=await new Promise(res=>{ const f=new FileReader(); f.onload=()=>res(f.result); f.readAsDataURL(b); }); }
+    aiUndoSrc=shot.src;
+    // The result is the screen's exact shape, so show it whole: nothing to crop or fill.
+    state.devFit='crop'; state.devX=50; state.devY=50;
+    loadImage(data); updateDevCropUI(); syncAiUI();
+    toast('✨ Extended to fit the screen');
+  }catch(e){ toast('Couldn\'t reach fal — check your connection and try again',true); }
+  finally{ btn.disabled=false; btn.textContent=label; }
+}
+$('btnAiExtend').onclick=aiExtend;
 function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
   $('devFitSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.devFit||'crop')));
-  $('devPanCtl').hidden = (state.devFit||'crop')!=='crop'; }         // a fitted image has nothing to pan
+  $('devPanCtl').hidden = (state.devFit||'crop')!=='crop';
+  if(typeof syncAiUI==='function') syncAiUI(); }         // a fitted image has nothing to pan
 $('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.devFit=b.dataset.v; updateDevCropUI(); render(); });
 // auto-match bg
