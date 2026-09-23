@@ -165,6 +165,16 @@ input,select{font-family:inherit}
 .f-shot{display:block; object-fit:contain}
 /* text & logo overlays (sit on the whole export canvas, above everything) */
 #logoLayer{position:absolute; z-index:6; display:none; pointer-events:none; height:auto}
+/* App store badges, drawn in the style of the official ones */
+#badgeLayer{position:absolute; z-index:7; display:none; gap:.28em; pointer-events:none; font-size:44px}
+.sbadge{display:inline-flex; align-items:center; gap:.2em; height:1em; padding:0 .3em 0 .22em; border-radius:.17em;
+  background:#000; color:#fff; border:max(1px,.022em) solid #a6a6a6; box-sizing:border-box; white-space:nowrap;
+  font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif; line-height:1}
+.sbadge svg{width:.62em; height:.62em; flex:none}
+.sbadge .t{display:flex; flex-direction:column; justify-content:center}
+.sbadge small{font-size:.2em; font-weight:500; letter-spacing:.01em; opacity:.95}
+.sbadge b{font-size:.4em; font-weight:600; letter-spacing:-.01em; margin-top:.02em}
+#badgeLayer.light .sbadge{background:#fff; color:#000; border-color:#000}
 #textLayer{position:absolute; z-index:6; display:none; pointer-events:none; white-space:pre;
   font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:-.01em;
   text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
@@ -639,6 +649,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <img id="logoLayer" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
           <div id="textLayer"></div>
           <div id="flareLayer"></div>
+          <div id="badgeLayer"></div>
         </div>
       </div>
       <div class="empty" id="empty">
@@ -855,6 +866,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
                 <button data-v="crop" class="on" title="Cover the screen, cropping what doesn't fit">Crop</button>
                 <button data-v="blur" title="Show the whole image over a blurred copy of itself">Fit + blur</button>
                 <button data-v="colour" title="Show the whole image on a colour taken from its edges">Fit + colour</button>
+                <button data-v="extend" title="Show the whole image and stretch its outer edges to fill the screen — seamless on posters with plain borders">Fit + extend</button>
               </div></div>
             <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
@@ -980,6 +992,26 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               <button data-p="ml"></button><button data-p="mc"></button><button data-p="mr"></button>
               <button data-p="bl"></button><button data-p="bc"></button><button data-p="br" class="on"></button>
             </div>
+          </div>
+          <div class="divider"></div>
+          <div class="field"><label>App store badges</label>
+            <div class="seg" id="badgeSeg">
+              <button data-v="none" class="on">None</button>
+              <button data-v="both">Both</button>
+              <button data-v="apple">App Store</button>
+              <button data-v="google">Google Play</button>
+            </div></div>
+          <div id="badgeCtl" hidden>
+            <div class="field"><div class="seg" id="badgeThemeSeg">
+              <button data-v="dark" class="on">Black</button><button data-v="light">White</button></div></div>
+            <div class="field"><label>Badge size <span class="val" id="badgeSizeVal">44px</span></label>
+              <input type="range" id="badgeSize" min="28" max="90" value="44"></div>
+            <div class="field"><label>Badge position</label>
+              <div class="posgrid" id="badgePosGrid">
+                <button data-p="tl"></button><button data-p="tc"></button><button data-p="tr"></button>
+                <button data-p="ml"></button><button data-p="mc"></button><button data-p="mr"></button>
+                <button data-p="bl"></button><button data-p="bc"></button><button data-p="br" class="on"></button>
+              </div></div>
           </div>
         </div>
       </section>
@@ -1301,7 +1333,7 @@ const state = {
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
   textVal:'', textStyle:'plain', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
-  logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
+  logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   dof:0, focus:15, mist:0, flare:0, flareTone:'warm', flareX:80, flareY:16,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
@@ -1343,7 +1375,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.20.2';
+const APP_VERSION='1.21.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1436,6 +1468,7 @@ function render(){
   if(state.logoSrc){ lg.style.display='block'; lg.src=state.logoSrc;
     lg.style.width=state.logoSize+'%'; lg.style.opacity=(state.logoOpacity/100).toFixed(2); }
   else { lg.style.display='none'; lg.src=BLANK_PX; }  // blank src so export never fetches the page URL
+  renderBadges();
 
   // Clone the freshly-styled card into the multi-frame layout (no-op when off).
   buildMulti();
@@ -1459,10 +1492,23 @@ function placeOverlay(el,pos,margin){
   if(el.id==='textLayer' && h==='c') el.style.textAlign='center';
   else if(el.id==='textLayer') el.style.textAlign=(h==='r')?'right':'left';
 }
+const APPLE_SVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8c-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.7 2.4 2.9 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .8c1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.5-1-2.5-4.1zM14.1 5.8c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.7-1.3z"/></svg>';
+const PLAY_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00a0ff" d="M3.6 2.2C3.3 2.4 3.1 2.8 3.1 3.3v17.4c0 .5.2.9.5 1.1L13.4 12z"/><path fill="#00f076" d="M3.6 2.2 13.4 12l3.1-3.1L5.2 2.4c-.6-.4-1.2-.4-1.6-.2z"/><path fill="#ff3a44" d="M3.6 21.8 13.4 12l3.1 3.1-11.3 6.5c-.6.4-1.2.4-1.6.2z"/><path fill="#ffc800" d="M16.5 8.9 13.4 12l3.1 3.1 3.5-2c.9-.5.9-1.7 0-2.2z"/></svg>';
+function renderBadges(){
+  const L=$('badgeLayer'), b=state.badges||'none';
+  if(b==='none' || !state.hasImage){ L.style.display='none'; L.innerHTML=''; return; }
+  const ap=`<span class="sbadge">${APPLE_SVG}<span class="t"><small>Download on the</small><b>App Store</b></span></span>`;
+  const gp=`<span class="sbadge">${PLAY_SVG}<span class="t"><small>GET IT ON</small><b>Google Play</b></span></span>`;
+  L.innerHTML = b==='both' ? ap+gp : b==='apple' ? ap : gp;
+  L.className = state.badgeTheme==='light' ? 'light' : '';
+  L.style.fontSize=(state.badgeSize||44)+'px';
+  L.style.display='flex';
+}
 function placeOverlays(){
   const m=Math.round(Math.min(stage.offsetWidth,stage.offsetHeight)*0.045)+6;
   placeOverlay($('textLayer'),state.textPos,m);
   placeOverlay($('logoLayer'),state.logoPos,m);
+  placeOverlay($('badgeLayer'),state.badgePos||'br',m);
 }
 
 const FIXED_SIZES={ '1:1':[1200,1200], '4:3':[1280,960], '3:4':[960,1280],
@@ -1641,10 +1687,34 @@ function edgeColour(){
     col=`rgb(${Math.round(r/n)},${Math.round(gg/n)},${Math.round(b/n)})`; }catch(e){}
   _edgeCache={src:shot.src,col}; return col;
 }
+// Fit + extend: the bars are the image's own outermost rows and columns,
+// stretched outwards. On a poster with plain coloured borders (most designed
+// graphics) that's indistinguishable from a taller original — no AI needed.
+let _extendCache={key:'',url:''};
+function extendedBackdrop(){
+  const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
+  if(!W||!H||!iw||!ih) return '';
+  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H;
+  if(_extendCache.key===key) return _extendCache.url;
+  const q=2, c=document.createElement('canvas'); c.width=W*q; c.height=H*q; const g=c.getContext('2d');
+  const sc=Math.min(W/iw,H/ih), dw=iw*sc*q, dh=ih*sc*q, ox=(c.width-dw)/2, oy=(c.height-dh)/2;
+  const e=Math.max(1,Math.round(Math.min(iw,ih)*0.004));      // a few source px, so one stray pixel can't streak
+  try{
+    if(oy>0){ g.drawImage(shot,0,0,iw,e, ox,0,dw,oy+1); g.drawImage(shot,0,ih-e,iw,e, ox,oy+dh-1,dw,oy+1); }
+    if(ox>0){ g.drawImage(shot,0,0,e,ih, 0,oy,ox+1,dh); g.drawImage(shot,iw-e,0,e,ih, ox+dw-1,oy,ox+1,dh); }
+    if(ox>0&&oy>0){ [[0,0,0,0],[iw-1,0,ox+dw-1,0],[0,ih-1,0,oy+dh-1],[iw-1,ih-1,ox+dw-1,oy+dh-1]]
+      .forEach(([sx,sy,dx,dy])=>g.drawImage(shot,sx,sy,1,1,dx,dy,ox+1,oy+1)); }
+    g.drawImage(shot,ox,oy,dw,dh);
+    _extendCache={key,url:c.toDataURL('image/png')};
+  }catch(err){ _extendCache={key,url:''}; }
+  return _extendCache.url;
+}
 function devBackdrop(mode){
   const bk=$('devBack');
   bk.style.display = mode==='blur' ? 'block' : 'none';
   if(mode==='blur'){ const u=`url("${shot.src}")`; if(bk.style.backgroundImage!==u) bk.style.backgroundImage=u; }
+  if(mode==='extend'){ const u=extendedBackdrop();
+    card.style.background = u ? `url("${u}") center/100% 100% no-repeat` : edgeColour(); return; }
   card.style.background = mode==='colour' ? edgeColour() : (mode==='blur' ? '#0b0c11' : '');
 }
 function layout(){
@@ -1684,7 +1754,7 @@ function layout(){
     card.classList.add('fill'); shot.classList.add('fill');
     card.style.width=sw+'px'; card.style.height=sh+'px';
     shot.style.width='100%'; shot.style.height='auto';
-    const fitIn=state.devFit==='blur'||state.devFit==='colour';
+    const fitIn=state.devFit==='blur'||state.devFit==='colour'||state.devFit==='extend';
     shot.style.objectFit = fitIn ? 'contain' : '';
     shot.style.objectPosition = fitIn ? '50% 50%' : `${state.devX}% ${state.devY}%`;
     devBackdrop(fitIn ? state.devFit : null);
@@ -2099,7 +2169,7 @@ async function stageToBlob(opts){
     const snap=document.createElement('canvas'); snap.width=c.width; snap.height=c.height; snap.getContext('2d').drawImage(c,0,0);
     g.save(); g.beginPath(); g.roundRect(x,y,w,h,h/2); g.clip();
     g.filter=`blur(${(16*pr).toFixed(1)}px) saturate(180%)`; g.drawImage(snap,0,0); g.filter='none'; g.restore();
-    const hide=[persp,$('patternLayer'),$('logoLayer'),$('noiseLayer'),$('flareLayer')].concat(bgBlurEl?[bgBlurEl]:[]);
+    const hide=[persp,$('patternLayer'),$('logoLayer'),$('noiseLayer'),$('flareLayer'),$('badgeLayer')].concat(bgBlurEl?[bgBlurEl]:[]);
     const saved=hide.map(el=>el.style.visibility), bg=stage.style.background;
     hide.forEach(el=>el.style.visibility='hidden'); stage.style.background='transparent';
     let cap; try{ cap=await _stageImage({...opts, backgroundColor:undefined}); }
@@ -2534,14 +2604,15 @@ async function rasterStage(mode,pr){
   const saved={bg:stage.style.background, persp:persp.style.display, pl:pl.style.display,
     tl:tl.style.display, lg:lg.style.display, nl:nl.style.display, blur:bgBlurEl?bgBlurEl.style.display:null};
   const fl=$('flareLayer'), flSaved=fl.style.display;
-  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; fl.style.display='none'; }
+  const bl=$('badgeLayer'), blSaved=bl.style.display;
+  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; fl.style.display='none'; bl.style.display='none'; }
   else if(mode==='front'){ stage.style.background='transparent'; if(bgBlurEl) bgBlurEl.style.display='none'; pl.style.display='none'; }
   try{ if(mode!=='bg' && state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   const safari=_isSafari();
   let url; const o={pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:!safari};
   try{ if(safari){ try{ await htmlToImage.toPng(stage,o); }catch(e){} await new Promise(r=>setTimeout(r,40)); }
     url=await htmlToImage.toPng(stage,o); }
-  finally{ fl.style.display=flSaved; stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
+  finally{ fl.style.display=flSaved; bl.style.display=blSaved; stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
     tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
   const im=new Image(); await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=url;}); return im;
 }
@@ -2992,6 +3063,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.21.0', items:[
+    'Fit + extend for phone and tablet mockups: the whole image is shown and its outer edges are stretched to fill the rest of the screen. On posters and graphics with plain borders it looks like the image was made the right size. Runs instantly in your browser — no AI, no upload',
+    'App store badges: add "Download on the App Store" and/or "Get it on Google Play" badges, in black or white, sized and placed anywhere (Text & logo section)',
+  ]},
   {v:'1.20.2', items:[
     'Gentler depth of field: the blur is about a third softer at every setting, and more of the card around the focus stays sharp. The lens looks use less of it, so the screenshot stays readable',
   ]},
@@ -4219,6 +4294,17 @@ $('btnLogoRemove').onclick=()=>{ state.logoSrc=null; $('btnLogoRemove').style.di
 bindRange('logoSize','logoSize',v=>v+'%');
 bindRange('logoOpacity','logoOpacity',v=>v+'%');
 bindPosGrid('logoPosGrid','logoPos');
+bindPosGrid('badgePosGrid','badgePos');
+bindRange('badgeSize','badgeSize',v=>v+'px');
+function syncBadgeUI(){
+  $('badgeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.badges||'none')));
+  $('badgeThemeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.badgeTheme||'dark')));
+  $('badgeCtl').hidden=(state.badges||'none')==='none';
+  $('badgeSize').value=state.badgeSize||44; $('badgeSizeVal').textContent=(state.badgeSize||44)+'px';
+  $('badgePosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===(state.badgePos||'br')));
+}
+$('badgeSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; state.badges=b.dataset.v; syncBadgeUI(); render(); });
+$('badgeThemeSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; state.badgeTheme=b.dataset.v; syncBadgeUI(); render(); });
 // fit / fill
 $('fitMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.fill=b.dataset.v==='fill';
@@ -4455,7 +4541,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
-    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
+    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
@@ -4490,6 +4576,7 @@ function syncUI(){
   $('logoSize').value=state.logoSize; $('logoSizeVal').textContent=state.logoSize+'%';
   $('logoOpacity').value=state.logoOpacity; $('logoOpacityVal').textContent=state.logoOpacity+'%';
   $('logoPosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.logoPos));
+  syncBadgeUI();
   $('btnLogoRemove').style.display=state.logoSrc?'':'none';
   $('customSizeField').hidden=state.aspect!=='custom';
   $('customW').value=state.customW; $('customH').value=state.customH;
@@ -4635,7 +4722,7 @@ function applyLens(s){
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
-  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
+  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos','badges','badgeTheme','badgeSize','badgePos',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
