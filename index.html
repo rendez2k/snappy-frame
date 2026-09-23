@@ -453,8 +453,17 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .f-device.d-phone{padding:12px; background:#0b0c11; border-radius:44px;
   box-shadow:inset 0 0 0 2px #2a2d38, inset 0 0 0 6px #05060a}
 .f-device.d-phone .dv-screen{border-radius:32px; overflow:hidden; box-shadow:0 0 0 1px #1a1c24}
-.f-device.d-phone::before{content:''; position:absolute; top:20px; left:50%; transform:translateX(-50%);
-  width:38%; height:20px; background:#05060a; border-radius:0 0 14px 14px; z-index:3}
+.f-device.d-phone::before{content:''; position:absolute; top:24px; left:50%; transform:translateX(-50%);
+  width:31%; height:28px; background:#000; border-radius:14px; z-index:3;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}   /* Dynamic Island */
+/* side buttons: power on the right, action + volume on the left */
+.f-device.d-phone::after{content:''; position:absolute; right:-4px; top:25%; width:4px; height:11%;
+  background:#1b1d25; border-radius:0 3px 3px 0; box-shadow:-3px 0 0 #1b1d25}
+.dv-btns{display:none}
+.f-device.d-phone .dv-btns{display:block; position:absolute; left:-4px; top:16%; width:4px; height:30px;
+  background:#1b1d25; border-radius:3px 0 0 3px; box-shadow:0 58px 0 #1b1d25, 0 124px 0 #1b1d25}
+.f-device.d-phone .dv-btns::after{content:''; position:absolute; left:0; top:58px; width:4px; height:54px;
+  background:#1b1d25; border-radius:3px 0 0 3px}
 /* tablet */
 .f-device.d-tablet{padding:20px; background:#0b0c11; border-radius:26px;
   box-shadow:inset 0 0 0 2px #2a2d38}
@@ -634,6 +643,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div id="persp">
             <div id="multi"></div>
             <div id="device" class="f-device d-none">
+              <i class="dv-btns" aria-hidden="true"></i>
               <div class="dv-screen">
                 <div id="card" class="f-card">
                   <div class="f-bar" id="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url"></div><div class="title"></div><div class="wbtns"><span>&#9472;</span><span>&#9723;</span><span>&#10005;</span></div></div>
@@ -1390,7 +1400,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.22.1';
+const APP_VERSION='1.23.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1524,6 +1534,16 @@ function placeOverlays(){
   placeOverlay($('textLayer'),state.textPos,m);
   placeOverlay($('logoLayer'),state.logoPos,m);
   placeOverlay($('badgeLayer'),state.badgePos||'br',m);
+  // Caption and badges in the same spot would sit on top of each other, so
+  // stack them: the caption goes above the badges ("Find us on" → badges).
+  const tl=$('textLayer'), bl=$('badgeLayer');
+  if(state.textPos===(state.badgePos||'br') && tl.style.display!=='none' && bl.style.display!=='none'){
+    const gap=Math.round(bl.offsetHeight*0.3), v=state.textPos[0];
+    if(v==='b') tl.style.bottom=(m+bl.offsetHeight+gap)+'px';
+    else if(v==='t') bl.style.top=(m+tl.offsetHeight+gap)+'px';
+    else { const d=(bl.offsetHeight+gap)/2, h=state.textPos[1], tx=h==='c'?'-50%':'0';
+      tl.style.transform=`translate(${tx},calc(-50% - ${d}px))`; bl.style.transform=`translate(${tx},calc(-50% + ${(tl.offsetHeight+gap)/2}px))`; }
+  }
 }
 
 const FIXED_SIZES={ '1:1':[1200,1200], '4:3':[1280,960], '3:4':[960,1280],
@@ -1678,15 +1698,15 @@ function focusAtPoint(cx,cy){
 // iPad Air 820×1180).
 const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
 // A screen that is far narrower than the image wastes most of it, so the shape
-// gives a little: a phone widens up to 0.5 — past that it reads as a small
-// tablet wearing phone corners — a tablet turns to landscape for a landscape image and flexes
+// gives a little. A phone never does: any wider than a real iPhone and it
+// stops reading as a phone (Fit + extend / AI extend fill the gap instead); a tablet turns to landscape for a landscape image and flexes
 // between real iPad shapes. Height stays put so the device doesn't shrink.
 function devScreenSize(){
   let [w,h]=DEV_SCREENS[state.device];
   if(!state.imgW || !state.imgH) return [w,h];
   const a=state.imgW/state.imgH;
   if(state.device==='tablet' && a>1.1) [w,h]=[h,w];
-  const [lo,hi] = state.device==='phone' ? [w/h,0.50] : (w>h ? [1.33,1.6] : [w/h,0.80]);
+  const [lo,hi] = state.device==='phone' ? [w/h,w/h] : (w>h ? [1.33,1.6] : [w/h,0.80]);
   return [Math.round(h*Math.max(lo,Math.min(hi,a))), h];
 }
 // What fills the bars when a whole image is fitted onto a device screen.
@@ -3082,6 +3102,11 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.23.0', items:[
+    'The phone mockup looks like a current iPhone: a Dynamic Island instead of the old notch, and side buttons on the frame',
+    'The phone always keeps a real iPhone\'s proportions — it no longer widens for wide images (Fit + extend and AI extend fill the screen instead)',
+    'Caption and app store badges in the same position now stack (caption above the badges) instead of overlapping',
+  ]},
   {v:'1.22.1', items:['The fal.ai key for AI extend now lives in ⚙ Settings, next to the screenshot key'] },
   {v:'1.22.0', items:[
     '✨ AI extend for phone and tablet mockups: paints new picture around the edges so the image becomes exactly the screen\'s shape — nothing cropped, no bars. Uses your own fal.ai key, kept in this browser and sent only to fal (a few cents per extend). Undo puts the original back',
