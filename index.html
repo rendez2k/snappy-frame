@@ -1422,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.0';
+const APP_VERSION='1.25.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1898,7 +1898,10 @@ function layout(){
 
   let stageW, stageH;
   if(!fixed){
-    stageW=Math.ceil(vw*scale+2*pad); stageH=Math.ceil(vh*scale+2*pad);
+    // A dragged card on Auto: the canvas grows on the far side instead, so
+    // shifting the phone up makes room underneath (for a caption, badges).
+    const ox=Math.abs(state.cardDX||0)/100*vw*scale, oy=Math.abs(state.cardDY||0)/100*vh*scale;
+    stageW=Math.ceil(vw*scale+2*pad+ox); stageH=Math.ceil(vh*scale+2*pad+oy);
   } else {
     stageW=FW; stageH=FH;
     scale=Math.min(sizeF, (FW-2*pad)/vw, (FH-2*pad)/vh);   // shrink card to fit canvas
@@ -1911,8 +1914,12 @@ function layout(){
   // effect when the fixed canvas leaves spare room; in Auto every anchor = centre).
   const P=state.position||'mc', pv=P[0], ph=P[1];
   // …plus any offset from dragging the card itself (% of the canvas).
-  const cx = (ph==='l'? pad+visW/2 : ph==='r'? stageW-pad-visW/2 : stageW/2) + (fixed?(state.cardDX||0):0)/100*stageW;
-  const cy = (pv==='t'? pad+visH/2 : pv==='b'? stageH-pad-visH/2 : stageH/2) + (fixed?(state.cardDY||0):0)/100*stageH;
+  let cx = (ph==='l'? pad+visW/2 : ph==='r'? stageW-pad-visW/2 : stageW/2) + (fixed?(state.cardDX||0):0)/100*stageW;
+  let cy = (pv==='t'? pad+visH/2 : pv==='b'? stageH-pad-visH/2 : stageH/2) + (fixed?(state.cardDY||0):0)/100*stageH;
+  if(!fixed){   // on Auto the offset is in card sizes, and the card hugs the near edge
+    const dxp=(state.cardDX||0)/100*visW, dyp=(state.cardDY||0)/100*visH;
+    cx = pad+visW/2+Math.max(0,dxp); cy = pad+visH/2+Math.max(0,dyp);
+  }
 
   // scale is applied *outside* the rotation so it scales the tilted result uniformly
   FR.style.transform=(scale!==1?`scale(${scale}) `:'')+rot;
@@ -3178,6 +3185,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.1', items:['The phone or card can be dragged on an Auto canvas too: the canvas grows on the other side, so moving the phone up makes room underneath for a caption and badges'] },
   {v:'1.25.0', items:[
     'Drag the phone (or card) itself around the canvas: pick it up on the preview and move it, e.g. up to make room for a caption and badges underneath. Snaps back to centre; the Position grid resets it',
     'Box colour for the caption pill: Solid fills with it, Glass is tinted by it and stays see-through',
@@ -4428,10 +4436,11 @@ $('posGrid').addEventListener('click',e=>{ if(e.target.closest('button')){ state
     if(!d || e.pointerId!==d.id) return;
     const mx=e.clientX-d.x, my=e.clientY-d.y;
     if(!d.on){ if(Math.hypot(mx,my)<4) return;
-      if(state.aspect==='auto'){ d=null; toast('Pick an aspect ratio under Layout to move the card around the canvas'); return; }
       d.on=true; persp.setPointerCapture?.(e.pointerId); stage.style.cursor='grabbing'; }
-    const sr=stage.getBoundingClientRect();
-    let nx=d.dx+mx/sr.width*100, ny=d.dy+my/sr.height*100;
+    // Fixed canvas: % of the canvas. Auto: % of the card (the canvas grows as you drag).
+    if(!d.box) d.box = state.aspect==='auto' ? target().getBoundingClientRect() : stage.getBoundingClientRect();
+    let nx=d.dx+mx/d.box.width*100, ny=d.dy+my/d.box.height*100;
+    if(state.aspect==='auto'){ nx=Math.max(-60,Math.min(60,nx)); ny=Math.max(-60,Math.min(60,ny)); }
     const sx=Math.abs(nx)<1.5, sy=Math.abs(ny)<1.5; if(sx) nx=0; if(sy) ny=0;
     $('snapGuide').style.display=sx?'block':'none';
     state.cardDX=+nx.toFixed(2); state.cardDY=+ny.toFixed(2);
