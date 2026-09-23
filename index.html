@@ -565,6 +565,10 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
         <span class="lbl">Upload</span>
       </button>
+      <button class="btn sm lblbtn" id="btnPaste" title="Paste an image from the clipboard (or press Ctrl+V anywhere)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg>
+        <span class="lbl">Paste</span>
+      </button>
       <button class="btn sm lblbtn" id="btnBrief" title="Design brief from the captured page" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="19" cy="13" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="10" cy="19" r="2.5"/><path d="M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-1.5-1-1.7-1-3 0-1.1.9-2 2-2h1a6 6 0 0 0 6-6c0-4.4-4.5-7-10-7z"/></svg>
         <span class="lbl">Brief</span>
@@ -622,6 +626,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <h2 id="emptyTitle">Drop a screenshot to begin</h2>
           <p id="emptyHint">Drag &amp; drop an image — or <b>several at once</b> to frame them together — <kbd>⌘/Ctrl</kbd>+<kbd>V</kbd> to paste a screenshot <em>or text</em>, upload, or capture your screen.</p>
           <button class="btn primary" id="btnUpload2">Choose image</button>
+          <button class="btn" id="btnPaste2">Paste</button>
           <button class="btn" id="btnText2" style="margin-left:8px">📝 Text card</button>
           <div class="urlgrab grab-only">
             <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
@@ -1291,7 +1296,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.17.0';
+const APP_VERSION='1.17.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2651,6 +2656,28 @@ document.querySelectorAll('.sec > .head').forEach(h=>{
 
 // import
 $('btnUpload').onclick=$('btnUpload2').onclick=()=>$('fileInput').click();
+// A Paste BUTTON, for phones and tablets (no Ctrl+V) and for anyone who
+// didn't know the shortcut. Reading the clipboard needs a click like this one,
+// and some browsers show a small "Paste" prompt or ask for permission first.
+async function pasteFromClipboard(){
+  if(!(navigator.clipboard && navigator.clipboard.read)){
+    toast('This browser won\'t let a button read the clipboard. Press Ctrl+V (⌘V on a Mac) instead.',true); return; }
+  try{
+    for(const item of await navigator.clipboard.read()){
+      const t=item.types.find(x=>x.startsWith('image/'));
+      if(t){ const b=await item.getType(t); handleFile(new File([b],'pasted.'+(t.split('/')[1]||'png'),{type:t})); return; }
+    }
+    for(const item of await navigator.clipboard.read()){
+      if(item.types.includes('text/plain')){ const txt=(await (await item.getType('text/plain')).text()).trim();
+        if(/^https?:\/\/\S+$/.test(txt)){ const box=$('urlInput').offsetParent?'urlInput':'urlInput2'; $(box).value=txt; toast('That\'s a link. Press Grab to screenshot the page.'); return; }
+        if(txt.length>=3){ openTextModal(txt); return; } }
+    }
+    toast('Nothing on the clipboard to paste. Copy a screenshot or image first.',true);
+  }catch(e){
+    toast(e && e.name==='NotAllowedError' ? 'Clipboard access was blocked. Allow it, or press Ctrl+V (⌘V on a Mac).' : 'Couldn\'t read the clipboard. Try Ctrl+V (⌘V on a Mac).',true);
+  }
+}
+$('btnPaste').onclick=$('btnPaste2').onclick=pasteFromClipboard;
 $('fileInput').onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); e.target.value=''; };
 
 // Grab a screenshot of a public webpage by URL.
@@ -2799,6 +2826,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.17.1', items:[
+    'A Paste button, in the top bar and on the start screen, for phones and tablets (no Ctrl+V) and for anyone who didn\'t know the shortcut. It pastes an image, opens pasted text as a text card, or puts a pasted link in the Grab box',
+  ]},
   {v:'1.17.0', items:[
     'Click to focus: press 🎯 under Focus, then click anywhere on the tilted card and that spot becomes the sharp one. It works out the real depth of the point you clicked, and turns depth of field on if it was off. Esc cancels',
     'Mist: a haze that thickens with distance, like air in a landscape photo. It follows the card\'s exact outline (rounded corners, device bezels, gaps in a multi-screenshot layout) and combines with depth of field',
@@ -3198,6 +3228,8 @@ function revealBatch(){
 window.addEventListener('paste',e=>{
   const items=e.clipboardData && e.clipboardData.items; if(!items) return;
   for(const it of items){ if(it.type.startsWith('image/')){ handleFile(it.getAsFile()); e.preventDefault(); return; } }
+  const f=[...(e.clipboardData.files||[])].find(x=>x.type.startsWith('image/'));
+  if(f){ handleFile(f); e.preventDefault(); return; }
   // No image on the clipboard: pasted TEXT opens the text-card editor prefilled.
   // Skip when typing in a field, when a modal is up, or for bare URLs (those
   // belong to the "grab a webpage" box).
