@@ -391,6 +391,8 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 .upreset .del{margin-left:auto; color:var(--muted-2); font-size:15px; line-height:1; padding:0 2px}
 .upreset .del:hover{color:#e0555f}
 
+/* lens flare: light added over the whole scene, like a real lens */
+#flareLayer{position:absolute; inset:0; z-index:6; pointer-events:none; display:none; mix-blend-mode:screen}
 /* noise overlay */
 #noiseLayer{position:absolute; inset:0; z-index:5; pointer-events:none; display:none;
   mix-blend-mode:overlay; opacity:.5;
@@ -625,6 +627,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div id="noiseLayer"></div>
           <img id="logoLayer" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
           <div id="textLayer"></div>
+          <div id="flareLayer"></div>
         </div>
       </div>
       <div class="empty" id="empty">
@@ -708,6 +711,9 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         <button class="head"><span class="ico">✨</span> Presets <span class="chev">▾</span></button>
         <div class="body">
           <div class="presets" id="presetGrid"></div>
+          <div class="divider"></div>
+          <label style="display:block;margin-bottom:8px">Lens looks <span class="hint" style="font-weight:400">— camera angle, blur, mist and flare, on any background</span></label>
+          <div class="presets" id="lensGrid"></div>
           <div class="divider"></div>
           <button class="btn sm" id="btnSavePreset" style="width:100%;justify-content:center">＋ Save current setup</button>
           <p class="hint" style="margin-top:6px">Saves every style plus your text &amp; logo, so you can reload it any time.</p>
@@ -1006,6 +1012,16 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div class="field"><label>Mist <span class="val" id="mistVal">Off</span></label>
             <input type="range" id="mist" min="0" max="100" value="0"></div>
           <p class="hint" id="dofHint" hidden>Tilt the card to see it — a flat card has no depth to blur.</p>
+          <div class="field" style="margin-top:6px"><label>Lens flare <span class="val" id="flareVal">Off</span></label>
+            <input type="range" id="flare" min="0" max="100" value="0"></div>
+          <div id="flareCtl" hidden>
+            <div class="field"><div class="seg" id="flareToneSeg">
+              <button data-v="warm" class="on">Warm</button><button data-v="cool">Cool</button><button data-v="white">White</button></div></div>
+            <div class="field"><label>Light from — across <span class="val" id="flareXVal">80%</span></label>
+              <input type="range" id="flareX" min="0" max="100" value="80"></div>
+            <div class="field"><label>Light from — down <span class="val" id="flareYVal">16%</span></label>
+              <input type="range" id="flareY" min="0" max="100" value="16"></div>
+          </div>
         </div>
       </section>
 
@@ -1271,7 +1287,7 @@ const state = {
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
-  dof:0, focus:15, mist:0,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
+  dof:0, focus:15, mist:0, flare:0, flareTone:'warm', flareX:80, flareY:16,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
   bw:0, bc:'#ffffff',
   fmt:'png', scale:2,
   // v1.5
@@ -1310,7 +1326,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.18.0';
+const APP_VERSION='1.19.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1582,6 +1598,18 @@ function focusAtPoint(cx,cy){
 // Screen sizes in layout px, at the real devices' proportions (iPhone 390×844,
 // iPad Air 820×1180).
 const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
+// A screen that is far narrower than the image wastes most of it, so the shape
+// gives a little: a phone widens up to a still-believable 0.6 (a broad
+// Android), a tablet turns to landscape for a landscape image and flexes
+// between real iPad shapes. Height stays put so the device doesn't shrink.
+function devScreenSize(){
+  let [w,h]=DEV_SCREENS[state.device];
+  if(!state.imgW || !state.imgH) return [w,h];
+  const a=state.imgW/state.imgH;
+  if(state.device==='tablet' && a>1.1) [w,h]=[h,w];
+  const [lo,hi] = state.device==='phone' ? [w/h,0.60] : (w>h ? [1.33,1.6] : [w/h,0.80]);
+  return [Math.round(h*Math.max(lo,Math.min(hi,a))), h];
+}
 // What fills the bars when a whole image is fitted onto a device screen.
 let _edgeCache={src:'',col:''};
 function edgeColour(){
@@ -1604,6 +1632,7 @@ function devBackdrop(mode){
 function layout(){
   if(!state.hasImage){ persp.style.left='50%'; persp.style.top='50%';
     persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
+    $('flareLayer').style.display='none';
     persp.style.transform='translate(-50%,-50%)';
     stage.style.width='420px'; stage.style.height='300px'; return; }
 
@@ -1633,7 +1662,7 @@ function layout(){
     // whatever the image is gave a desktop grab a 16:9 "phone" with a notch.
     // The shot covers the screen instead, top-anchored by default, like a page
     // that hasn't been scrolled.
-    const [sw,sh]=DEV_SCREENS[state.device];
+    const [sw,sh]=devScreenSize();
     card.classList.add('fill'); shot.classList.add('fill');
     card.style.width=sw+'px'; card.style.height=sh+'px';
     shot.style.width='100%'; shot.style.height='auto';
@@ -1700,6 +1729,37 @@ function layout(){
   // Every re-layout (an export's, a multi-frame image arriving) can change the
   // card's box, so the depth-of-field copy is rebuilt from the final one.
   applyDof();
+  applyFlare();
+}
+// Lens flare. A bright source, an anamorphic streak through it, a soft halo,
+// and "ghosts" — reflections between lens elements, which always sit on the
+// line from the light through the centre of the frame, on both sides of it.
+const FLARE_TONES={ warm:[[255,236,200],[255,170,90],[120,200,255]], cool:[[220,238,255],[120,180,255],[255,160,220]],
+  white:[[255,255,255],[220,225,235],[200,210,230]] };
+function applyFlare(){
+  const L=$('flareLayer');
+  if(!state.hasImage || !(state.flare>0)){ L.style.display='none'; return; }
+  const W=stage.offsetWidth, H=stage.offsetHeight, k=state.flare/100, M=Math.max(W,H);
+  const [c0,c1,c2]=FLARE_TONES[state.flareTone]||FLARE_TONES.warm;
+  const rgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${Math.min(1,a).toFixed(3)})`;
+  const sx=state.flareX/100*W, sy=state.flareY/100*H, cx=W/2, cy=H/2;
+  const at=(t)=>[cx+(cx-sx)*t, cy+(cy-sy)*t];
+  const g=[];
+  const blob=(x,y,r,c,a,soft)=>g.push(`radial-gradient(circle ${r.toFixed(1)}px at ${x.toFixed(1)}px ${y.toFixed(1)}px, ${rgba(c,a)} 0, ${rgba(c,a*(soft?0.35:0.8))} ${soft?30:70}%, ${rgba(c,0)} 100%)`);
+  const ring=(x,y,r,c,a)=>g.push(`radial-gradient(circle ${r.toFixed(1)}px at ${x.toFixed(1)}px ${y.toFixed(1)}px, ${rgba(c,0)} 78%, ${rgba(c,a)} 90%, ${rgba(c,0)} 100%)`);
+  // source: a hot point that falls off steeply — a plateau reads as a flat disc
+  const glow=(r,c,a)=>g.push(`radial-gradient(circle ${r.toFixed(1)}px at ${sx.toFixed(1)}px ${sy.toFixed(1)}px, ${rgba(c,a)} 0, ${rgba(c,a*0.45)} 12%, ${rgba(c,a*0.14)} 35%, ${rgba(c,a*0.04)} 65%, ${rgba(c,0)} 100%)`);
+  glow(M*0.05,[255,255,255],0.9*k+0.1);
+  glow(M*0.2,c0,0.6*k);
+  glow(M*0.6,c1,0.25*k);
+  // anamorphic streak
+  g.push(`radial-gradient(${(M*0.7).toFixed(0)}px ${(M*0.012).toFixed(1)}px at ${sx.toFixed(1)}px ${sy.toFixed(1)}px, ${rgba(c0,0.75*k)} 0, ${rgba(c2,0.25*k)} 45%, ${rgba(c2,0)} 100%)`);
+  // ghosts
+  [[-0.35,0.05,c1,0.20,false],[0.25,0.022,c2,0.28,false],[0.55,0.06,c1,0.14,true],[0.8,0.018,c0,0.35,false],[1.15,0.11,c2,0.10,true],[1.45,0.035,c1,0.22,false]]
+    .forEach(([t,r,c,a,soft])=>{ const [x,y]=at(t); blob(x,y,M*r,c,a*k,soft); });
+  { const [x,y]=at(1.0); ring(x,y,M*0.14,c2,0.16*k); }
+  L.style.backgroundImage=g.join(', ');
+  L.style.display='block';
 }
 
 function applyPattern(){
@@ -2429,14 +2489,15 @@ async function rasterStage(mode,pr){
   const pl=$('patternLayer'), tl=$('textLayer'), lg=$('logoLayer'), nl=$('noiseLayer');
   const saved={bg:stage.style.background, persp:persp.style.display, pl:pl.style.display,
     tl:tl.style.display, lg:lg.style.display, nl:nl.style.display, blur:bgBlurEl?bgBlurEl.style.display:null};
-  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; }
+  const fl=$('flareLayer'), flSaved=fl.style.display;
+  if(mode==='bg'){ persp.style.display='none'; tl.style.display='none'; lg.style.display='none'; nl.style.display='none'; fl.style.display='none'; }
   else if(mode==='front'){ stage.style.background='transparent'; if(bgBlurEl) bgBlurEl.style.display='none'; pl.style.display='none'; }
   try{ if(mode!=='bg' && state.mode!=='code' && shot.decode) await shot.decode(); }catch(e){}
   const safari=_isSafari();
   let url; const o={pixelRatio:pr,width:stage.offsetWidth,height:stage.offsetHeight,style:{transform:'none'},cacheBust:!safari};
   try{ if(safari){ try{ await htmlToImage.toPng(stage,o); }catch(e){} await new Promise(r=>setTimeout(r,40)); }
     url=await htmlToImage.toPng(stage,o); }
-  finally{ stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
+  finally{ fl.style.display=flSaved; stage.style.background=saved.bg; persp.style.display=saved.persp; pl.style.display=saved.pl;
     tl.style.display=saved.tl; lg.style.display=saved.lg; nl.style.display=saved.nl; if(bgBlurEl&&saved.blur!==null) bgBlurEl.style.display=saved.blur; }
   const im=new Image(); await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=url;}); return im;
 }
@@ -2887,6 +2948,11 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.19.0', items:[
+    'Lens looks: one-click camera styles under Presets (Hero, Tilt-shift, Dreamy, Golden hour, Far focus, Fog, Neon), made from tilt, depth of field, mist and flare. They change only the camera, so they combine with any background preset. "Clear lens" turns the effects off',
+    'Lens flare: a light source with an anamorphic streak and ghost reflections along the line through the centre, in warm, cool or white, placed wherever you like (3D tilt section)',
+    'Phone and tablet mockups flex to fit a wide image: a phone widens a little, as far as a believable shape, and a tablet turns to landscape for a landscape image, so far less has to be cropped or filled',
+  ]},
   {v:'1.18.0', items:[
     'Phone and tablet mockups can now show the WHOLE image: "Fill the screen" → Fit + blur puts it over a blurred copy of itself (like a square photo in a Story), Fit + colour fills the gaps with a colour taken from the image\'s edges. Crop is still there for screenshots that are already phone-shaped',
   ]},
@@ -4145,10 +4211,18 @@ function dofLabels(){
   $('dofVal').textContent = state.dof>0 ? (state.dof<34 ? 'Subtle' : state.dof<67 ? 'Medium' : 'Strong') : 'Off';
   $('focusVal').textContent = state.focus<25 ? 'Near' : state.focus>75 ? 'Far' : 'Middle';
   $('mistVal').textContent = state.mist>0 ? (state.mist<34 ? 'Light' : state.mist<67 ? 'Hazy' : 'Thick') : 'Off';
+  $('flareVal').textContent = state.flare>0 ? (state.flare<34 ? 'Soft' : state.flare<67 ? 'Bright' : 'Blazing') : 'Off';
+  $('flareCtl').hidden = !(state.flare>0);
+  $('flareToneSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.flareTone||'warm')));
 }
 $('dof').addEventListener('input',()=>{ state.dof=+$('dof').value; dofLabels(); render(); });
 $('focus').addEventListener('input',()=>{ state.focus=+$('focus').value; dofLabels(); render(); });
 $('mist').addEventListener('input',()=>{ state.mist=+$('mist').value; dofLabels(); render(); });
+$('flare').addEventListener('input',()=>{ state.flare=+$('flare').value; dofLabels(); render(); });
+bindRange('flareX','flareX',v=>v+'%');
+bindRange('flareY','flareY',v=>v+'%');
+$('flareToneSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.flareTone=b.dataset.v; dofLabels(); render(); });
 // Click-to-focus is an armed mode, so an ordinary click on the stage (mark-up,
 // dragging) never moves the focus by accident.
 let pickingFocus=false;
@@ -4327,7 +4401,7 @@ $('btnReset').onclick=()=>{
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
     textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
-    shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,bw:0,bc:'#ffffff',
+    shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
 };
@@ -4345,7 +4419,9 @@ function syncUI(){
   $('rx').value=state.rx; $('rxVal').textContent=state.rx+'°';
   $('ry').value=state.ry; $('ryVal').textContent=state.ry+'°';
   $('rz').value=state.rz; $('rzVal').textContent=state.rz+'°';
-  $('dof').value=state.dof||0; $('focus').value=(state.focus==null?15:state.focus); $('mist').value=state.mist||0; dofLabels();
+  $('dof').value=state.dof||0; $('focus').value=(state.focus==null?15:state.focus); $('mist').value=state.mist||0; $('flare').value=state.flare||0;
+  $('flareX').value=state.flareX??80; $('flareXVal').textContent=(state.flareX??80)+'%';
+  $('flareY').value=state.flareY??16; $('flareYVal').textContent=(state.flareY??16)+'%'; dofLabels();
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
   $('frameType').value=state.frame;
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
@@ -4463,12 +4539,48 @@ function applyPreset(s){
     grid.appendChild(b); });
 })();
 
+// Lens looks change only the camera: tilt, depth of field, mist and flare.
+// They leave the background and frame alone, so they layer over any preset.
+const LENS_LOOKS=[
+  {n:'Hero',        s:{rx:14, ry:-26, rz:4,  dof:45, focus:12, mist:0,  flare:0}},
+  {n:'Tilt-shift',  s:{rx:38, ry:0,   rz:0,  dof:80, focus:50, mist:0,  flare:0}},
+  {n:'Dreamy',      s:{rx:10, ry:-20, rz:3,  dof:55, focus:18, mist:45, flare:35, flareTone:'warm', flareX:84, flareY:12}},
+  {n:'Golden hour', s:{rx:8,  ry:22,  rz:-3, dof:35, focus:14, mist:15, flare:75, flareTone:'warm', flareX:12, flareY:10}},
+  {n:'Far focus',   s:{rx:18, ry:24,  rz:-3, dof:70, focus:88, mist:20, flare:0}},
+  {n:'Fog',         s:{rx:22, ry:-32, rz:5,  dof:30, focus:6,  mist:78, flare:0}},
+  {n:'Neon',        s:{rx:6,  ry:-14, rz:2,  dof:25, focus:15, mist:0,  flare:60, flareTone:'cool', flareX:90, flareY:30}},
+  {n:'Clear lens',  s:{dof:0, mist:0, flare:0}},
+];
+function applyLens(s){
+  if(s.rx!=null){ state.rx=s.rx; state.ry=s.ry; state.rz=s.rz; }
+  state.dof=s.dof||0; if(s.focus!=null) state.focus=s.focus; state.mist=s.mist||0; state.flare=s.flare||0;
+  if(s.flareTone) state.flareTone=s.flareTone; if(s.flareX!=null){ state.flareX=s.flareX; state.flareY=s.flareY; }
+  syncUI(); render();
+}
+(function(){ const grid=$('lensGrid');
+  LENS_LOOKS.forEach(p=>{ const b=document.createElement('button'); b.className='preset'; b.title=p.n;
+    const pv=document.createElement('span'); pv.className='pv'; pv.style.background='linear-gradient(135deg,#2a2f45,#151823)'; pv.style.position='relative';
+    const i=document.createElement('i');
+    if(p.s.rx!=null) i.style.transform=`perspective(140px) rotateX(${p.s.rx/1.5}deg) rotateY(${p.s.ry/1.5}deg) rotateZ(${p.s.rz}deg)`;
+    // hint at the blur and mist along the card's depth
+    if(p.s.dof||p.s.mist){ const a=Math.atan2(Math.sin(p.s.ry*Math.PI/180),-Math.sin(p.s.rx*Math.PI/180))*180/Math.PI;
+      i.style.background=`linear-gradient(${a.toFixed(0)}deg, rgba(255,255,255,${(0.35+(p.s.mist||0)/200).toFixed(2)}), rgba(255,255,255,.95) ${p.s.focus>60?'90%':'35%'})`; }
+    pv.appendChild(i);
+    if(p.s.flare){ const f=document.createElement('b'); const c=p.s.flareTone==='cool'?'150,200,255':'255,210,150';
+      Object.assign(f.style,{position:'absolute',left:(p.s.flareX-14)+'%',top:(p.s.flareY-14)+'%',width:'28%',height:'28%',borderRadius:'50%',
+        background:`radial-gradient(circle, rgba(255,255,255,.95) 0, rgba(${c},.55) 25%, rgba(${c},0) 70%)`,pointerEvents:'none'}); pv.appendChild(f); }
+    b.appendChild(pv);
+    const n=document.createElement('span'); n.className='pn'; n.textContent=p.n; b.appendChild(n);
+    b.onclick=()=>{ if(!state.hasImage){ toast('Load an image first',true); return; } applyLens(p.s); toast(p.n+' applied'); };
+    grid.appendChild(b); });
+})();
+
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
   'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
-  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','bw','bc','device','multi','multiGap'];
+  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
 function saveUser(a){ try{ localStorage.setItem(PKEY,JSON.stringify(a)); }catch(e){ toast('Could not save (storage full)',true); } }
