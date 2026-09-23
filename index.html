@@ -185,6 +185,10 @@ input,select{font-family:inherit}
 .urlgrab{display:flex; gap:8px; margin-top:12px}
 .urlgrab .txt{flex:1}
 .urlgrab .btn{flex:0 0 auto}
+/* Which device the page is RENDERED as. Sits under whichever URL box you use. */
+.grabdev{margin-top:8px}
+.grabdev button{font-size:12px}
+#setpop .grabdev{margin-top:10px}
 
 /* ---------- Control panel ---------- */
 .panel{background:var(--panel); border-left:1px solid var(--line); overflow-y:auto; overflow-x:hidden;
@@ -623,6 +627,11 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             <input class="txt" id="urlInput" placeholder="…or paste a webpage URL" spellcheck="false">
             <button class="btn sm" id="btnGrab">Grab</button>
           </div>
+          <div class="seg grabdev grab-only" data-grabdev>
+            <button data-v="desktop" title="1440 wide, as a desktop browser sees it">🖥 Desktop</button>
+            <button data-v="tablet" title="820 wide, rendered as an iPad would">▭ Tablet</button>
+            <button data-v="phone" title="390 wide, rendered as an iPhone would — the site's real mobile layout">📱 Phone</button>
+          </div>
           <button class="feedback grab-only" id="btnKey" style="background:none;border:0;cursor:pointer;margin-top:6px"></button>
           <a class="feedback ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener" style="margin-top:14px">Get the Chrome extension to capture any tab →</a>
         </div>
@@ -963,6 +972,11 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             <input type="range" id="ry" min="-45" max="45" value="0"></div>
           <div class="field"><label>Rotate Z <span class="val" id="rzVal">0°</span></label>
             <input type="range" id="rz" min="-30" max="30" value="0"></div>
+          <div class="field" style="margin-top:14px"><label>Depth of field <span class="val" id="dofVal">Off</span></label>
+            <input type="range" id="dof" min="0" max="100" value="0"></div>
+          <div class="field"><label>Focus <span class="val" id="focusVal">Near</span></label>
+            <input type="range" id="focus" min="0" max="100" value="15"></div>
+          <p class="hint" id="dofHint" hidden>Tilt the card to see it — a flat card has no depth to blur.</p>
         </div>
       </section>
 
@@ -1189,6 +1203,11 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
 <div id="setpop">
   <div class="sp-h grab-only">Grab a webpage</div>
   <div class="sp-row grab-only"><input class="txt" id="urlInput2" placeholder="https://example.com" spellcheck="false"><button class="btn sm" id="btnGrab2">Grab</button></div>
+  <div class="seg grabdev grab-only" data-grabdev>
+    <button data-v="desktop" title="1440 wide, as a desktop browser sees it">🖥 Desktop</button>
+    <button data-v="tablet" title="820 wide, rendered as an iPad would">▭ Tablet</button>
+    <button data-v="phone" title="390 wide, rendered as an iPhone would — the site's real mobile layout">📱 Phone</button>
+  </div>
   <label class="toggle grab-only" style="margin-top:10px"><input type="checkbox" id="fullPage" checked> <span>Capture the full page (not just the visible area)</span></label>
   <div class="sp-h grab-only" style="margin-top:14px">Screenshot API key</div>
   <input class="txt grab-only" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
@@ -1223,6 +1242,7 @@ const state = {
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
+  dof:0, focus:15,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
   bw:0, bc:'#ffffff',
   fmt:'png', scale:2,
   // v1.5
@@ -1261,7 +1281,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.15.3';
+const APP_VERSION='1.16.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1392,10 +1412,102 @@ const FIXED_SIZES={ '1:1':[1200,1200], '4:3':[1280,960], '3:4':[960,1280],
 
 function rotCss(){ return `rotateX(${state.rx}deg) rotateY(${state.ry}deg) rotateZ(${state.rz}deg)`; }
 
+// ---------- Depth of field ----------
+// A photograph of a tilted screen is sharp at the focus line and softens with
+// distance from it. The card's depth varies LINEARLY across its own surface, so
+// a linear gradient drawn in the card's own plane follows depth exactly: for
+// CSS rotateX(rx) rotateY(ry) rotateZ(rz), a point (x,y) on the card ends up
+// a·x + b·y further from the viewer. A blurred copy of the card is laid over it,
+// masked by that gradient — clear at the focus, opaque towards near and far.
+// A flat card has no depth, so it correctly gets no blur at all.
+function dofAxis(){
+  const r=Math.PI/180, rx=state.rx*r, ry=state.ry*r, rz=state.rz*r;
+  const S=Math.sin(ry)*Math.cos(rx), T=Math.sin(rx);
+  return { a:S*Math.cos(rz)-T*Math.sin(rz), b:-S*Math.sin(rz)-T*Math.cos(rz) };
+}
+// One slider behaves like an aperture: opening it both blurs harder AND
+// narrows the zone that stays sharp, the way a real lens does.
+function dofParams(W,H){
+  const {a,b}=dofAxis();
+  const tilt=(Math.abs(a)*W+Math.abs(b)*H)/Math.max(W,H);      // 0 flat … ~1.4
+  const k=state.dof/100;
+  return {
+    blur: k*Math.max(W,H)*0.016*Math.min(1,tilt*1.8),           // px, in the card's own plane
+    ang: Math.atan2(a,-b)*180/Math.PI,                           // CSS angle, near → far
+    band: 0.10-0.07*k,                                           // half-width of the sharp zone
+    fall: 0.85-0.45*k,                                           // distance over which blur arrives
+    tilt,
+  };
+}
+// Mask stops for one blur layer. The blur spills past the card's edge, so the
+// wrapper is larger than the card and the card's near→far range maps to the
+// middle of the wrapper's gradient line. `from`/`to` say which slice of the
+// focus distance this layer ramps in over — see DOF_LAYERS.
+function dofMask(W,H,pad,P,from,to){
+  const t=P.ang*Math.PI/180, sx=Math.abs(Math.sin(t)), cy=Math.abs(Math.cos(t));
+  const L=sx*W+cy*H, L2=sx*(W+2*pad)+cy*(H+2*pad);
+  const pos=p=>(((L2-L)/2+p*L)/L2*100).toFixed(2)+'%';
+  const f=state.focus/100;
+  const alpha=p=>{
+    const u=Math.max(0,Math.min(1,(Math.abs(p-f)-P.band)/P.fall));     // 0 at focus … 1 fully out
+    const v=Math.max(0,Math.min(1,(u-from)/(to-from)));
+    return v*v*(3-2*v);
+  };
+  const stops=[];
+  for(let i=0;i<=32;i++){ const p=i/32; stops.push(`rgba(0,0,0,${alpha(p).toFixed(3)}) ${pos(p)}`); }
+  return `linear-gradient(${P.ang.toFixed(2)}deg, ${stops.join(', ')})`;
+}
+// Two layers, not one. A single blurred copy can only CROSSFADE between sharp
+// and very soft, which reads as a washed-out ghost of both in the middle.
+// A lighter blur that arrives first and a full one that arrives later make the
+// blur actually build up with distance, the way it does through a lens.
+const DOF_LAYERS=[ { k:0.4, from:0.12, to:0.6 }, { k:1, from:0.45, to:1 } ];
+// A motion capture swaps shot.src frame by frame without a re-layout, so the
+// blurred copies follow the real image here or they'd freeze on an old frame.
+shot.addEventListener('load',()=>{ persp.querySelectorAll('.dof-layer img[data-dof-shot]').forEach(im=>{ if(im.src!==shot.src) im.src=shot.src; }); });
+function applyDof(){
+  persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
+  const FR = multiOn() ? $('multi') : device;
+  const on = state.hasImage && state.mode!=='code' && state.dof>0 && FR.offsetWidth>0;
+  const W=FR.offsetWidth, H=FR.offsetHeight;
+  const P = on ? dofParams(W,H) : null;
+  const hint=$('dofHint'); if(hint) hint.hidden = !(state.dof>0 && P && P.tilt<0.05);
+  if(!on || P.blur<0.35) return;
+  // One clean copy of the card, reused for each layer.
+  const proto=FR.cloneNode(true);
+  const ps=proto.querySelector('#shot'); if(ps) ps.setAttribute('data-dof-shot','');
+  proto.removeAttribute('id');
+  proto.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  // The real card already casts the shadow; blurred extra ones would darken it.
+  proto.style.boxShadow='none';
+  proto.querySelectorAll('.f-card,.f-device').forEach(el=>{ el.style.boxShadow='none'; });
+  for(const L of DOF_LAYERS){
+    const blur=P.blur*L.k;
+    if(blur<0.35) continue;
+    const pad=Math.ceil(blur*3);
+    // Same box, same centre, same transform as the real card — so it sits
+    // exactly over it in the same 3D space, grown only by the blur's spill.
+    const wrap=document.createElement('div');
+    wrap.className='dof-layer';
+    wrap.setAttribute('aria-hidden','true');
+    Object.assign(wrap.style,{ position:'absolute', left:(FR.offsetLeft-pad)+'px', top:(FR.offsetTop-pad)+'px',
+      width:(W+2*pad)+'px', height:(H+2*pad)+'px', margin:'0', pointerEvents:'none',
+      transform:FR.style.transform, transformOrigin:'50% 50%' });
+    const m=dofMask(W,H,pad,P,L.from,L.to);
+    wrap.style.webkitMaskImage=m; wrap.style.maskImage=m;
+    const clone=proto.cloneNode(true);
+    Object.assign(clone.style,{ position:'absolute', left:pad+'px', top:pad+'px', width:W+'px', height:H+'px',
+      margin:'0', transform:'none', filter:`blur(${blur.toFixed(2)}px)` });
+    wrap.appendChild(clone);
+    persp.appendChild(wrap);          // later = on top: the stronger blur covers the lighter one
+  }
+}
+
 // Size the stage and place the card. The card is centred by its *visual* (post-
 // perspective) bounding box so a 3D tilt never clips against overflow:hidden.
 function layout(){
   if(!state.hasImage){ persp.style.left='50%'; persp.style.top='50%';
+    persp.querySelectorAll(':scope > .dof-layer').forEach(el=>el.remove());
     persp.style.transform='translate(-50%,-50%)';
     stage.style.width='420px'; stage.style.height='300px'; return; }
 
@@ -1475,6 +1587,9 @@ function layout(){
   persp.style.left=cxI+'px'; persp.style.top=cyI+'px';
   persp.style.transform=`translate(-50%,-50%) translate(${(cx-cxI-dx).toFixed(4)}px,${(cy-cyI-dy).toFixed(4)}px)`;
   fit.style.transform=savedFit; void fit.offsetWidth; fit.style.transition=savedTrans;
+  // Every re-layout (an export's, a multi-frame image arriving) can change the
+  // card's box, so the depth-of-field copy is rebuilt from the final one.
+  applyDof();
 }
 
 function applyPattern(){
@@ -2488,35 +2603,80 @@ function loadCorsImage(src){
     im.src=src;
   });
 }
+// Grab a page AS a device. The page is rendered at that device's width,
+// density and viewport rules, so the site's own responsive layout switches on —
+// cropping a desktop render to a phone shape would only give a squeezed
+// desktop page. Kept in step with the table in netlify/functions/screenshot.js.
+// Full-page grabs use a lower density: a long page at 3× is too big to send or
+// to bake into a canvas, and the height is capped to keep it under 14,000px.
+const GRAB_DEVICES={
+  desktop:{ w:1440, h:900,  dsf:2, fullDsf:1,   mobile:false, frame:null },
+  tablet: { w:820,  h:1180, dsf:2, fullDsf:1.5, mobile:true,  frame:'tablet',
+    ua:'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' },
+  phone:  { w:390,  h:844,  dsf:3, fullDsf:2,   mobile:true,  frame:'phone',
+    ua:'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' },
+};
+const GRAB_MAX_OUT_H=14000;
+const GRAB_DEV_KEY='snappy_grab_device';
+function getGrabDevice(){ try{ const v=localStorage.getItem(GRAB_DEV_KEY); return GRAB_DEVICES[v]?v:'desktop'; }catch(e){ return 'desktop'; } }
+function setGrabDevice(v){ try{ localStorage.setItem(GRAB_DEV_KEY,v); }catch(e){} syncGrabDevice(); }
+function syncGrabDevice(){ const v=getGrabDevice();
+  document.querySelectorAll('[data-grabdev] button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); }
+document.querySelectorAll('[data-grabdev] button').forEach(b=>b.addEventListener('click',()=>setGrabDevice(b.dataset.v)));
+syncGrabDevice();
+function shotApiUrl(key,url,devName,full){
+  const d=GRAB_DEVICES[devName]||GRAB_DEVICES.desktop, dsf=full?d.fullDsf:d.dsf;
+  const p=new URLSearchParams({ access_key:key, url, viewport_width:String(d.w), viewport_height:String(d.h),
+    device_scale_factor:String(dsf), format:'jpg', image_quality:'82', full_page:full?'true':'false',
+    block_ads:'true', block_cookie_banners:'true', cache:'true' });
+  if(full) p.set('full_page_max_height', String(Math.floor(GRAB_MAX_OUT_H/dsf)));
+  if(d.mobile){ p.set('viewport_mobile','true'); p.set('viewport_has_touch','true'); if(d.ua) p.set('user_agent',d.ua); }
+  return 'https://api.screenshotone.com/take?'+p.toString();
+}
+// Put the grab in the frame it was taken for: a phone render in the phone
+// bezel, a tablet render in the tablet. A browser title bar inside a phone
+// bezel looks wrong, so the window frame steps aside for those. A desktop grab
+// leaves a laptop you chose alone, but won't sit in a phone left from before.
+function frameForGrab(devName){
+  const d=GRAB_DEVICES[devName]; if(!d) return;
+  if(d.frame){ state.device=d.frame; state.frame='none'; }
+  else if(state.device==='phone' || state.device==='tablet') state.device='none';
+}
 async function grabUrl(inputId,btnId){
   let url=$(inputId).value.trim(); if(!url) return;
   if(!/^https?:\/\//i.test(url)) url='https://'+url;
   const key=getShotKey();
   const full=$('fullPage').checked;
+  const dev=getGrabDevice();
   const btn=$(btnId), label=btn.textContent; btn.disabled=true; btn.textContent='…';
   const done=()=>{ btn.disabled=false; btn.textContent=label; };
-  toast('Grabbing the page — this can take a few seconds…');
+  const land=(dataUrl)=>{ frameForGrab(dev); loadImage(dataUrl, false, GRAB_DEVICES[dev].frame ? null : { url }); closeSettings(); };
+  toast(dev==='desktop' ? 'Grabbing the page — this can take a few seconds…'
+                        : 'Grabbing the page as a '+dev+' — this can take a few seconds…');
   // 1) With the user's own key, try ScreenshotOne directly (only succeeds if it
   //    allows browser/CORS access — otherwise we fall back to the function).
   if(key){
     try{
-      const api='https://api.screenshotone.com/take?access_key='+encodeURIComponent(key)+
-        '&url='+encodeURIComponent(url)+'&viewport_width=1280&format=jpg&image_quality=82'+
-        '&full_page='+full+'&block_ads=true&block_cookie_banners=true&cache=true';
-      const dataUrl=await loadCorsImage(api);
-      loadImage(dataUrl); closeSettings(); done(); return;
+      const dataUrl=await loadCorsImage(shotApiUrl(key,url,dev,full));
+      land(dataUrl); done(); return;
     }catch(e){ /* provider blocks direct browser access — use the function */ }
   }
   // 2) Netlify function (its own key or free mShots); forward the user key too.
   try{
-    const res=await fetch('/.netlify/functions/screenshot?w=1280&full='+(full?1:0)+'&url='+encodeURIComponent(url), key?{headers:{'x-shot-key':key}}:{});
+    const res=await fetch('/.netlify/functions/screenshot?device='+dev+'&full='+(full?1:0)+'&url='+encodeURIComponent(url), key?{headers:{'x-shot-key':key}}:{});
     if(res.status===404) throw new Error('nofunc');
     const j=await res.json().catch(()=>({}));
+    if(j.needKey){ const e=new Error('needkey'); throw e; }
+    if(j.tooBig){ const e=new Error('toobig'); throw e; }
     if(!res.ok || !j.dataUrl) throw new Error(j.error||('http '+res.status));
-    loadImage(j.dataUrl); closeSettings();
+    land(j.dataUrl);
     if(j.generating) toast('Still rendering — hit Grab again in a moment for a sharper shot');
   }catch(e){ console.error(e);
-    if(e.message==='nofunc' || e.message==='Failed to fetch')
+    if(e.message==='needkey')
+      toast('Phone and tablet grabs need a ScreenshotOne key — the free renderer only does desktop. Add one under the gear ⚙.',true);
+    else if(e.message==='toobig')
+      toast('That page is too long to grab in one go — untick “full page” to grab the visible area.',true);
+    else if(e.message==='nofunc' || e.message==='Failed to fetch')
       toast(key ? 'Couldn’t reach the renderer — check your API key or try again'
                 : 'Add a ScreenshotOne key (gear ⚙, top-right) to grab webpages',true);
     else toast('Couldn’t render that page — try again in a moment',true); }
@@ -2572,6 +2732,12 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.16.0', items:[
+    'Grab from URL now has Desktop, Tablet and Phone — the page is rendered at that device\'s width, density and touch rules, so you get the site\'s real mobile layout (not a squeezed desktop page), and it lands in the matching phone or tablet frame',
+    'Phone and tablet grabs need a ScreenshotOne key (add one under the gear ⚙); the free renderer can only do desktop, and it says so instead of faking it',
+    'Very long full-page grabs are sent back at a lower quality rather than failing, and you\'re told plainly if one is still too big',
+    'Depth of field for 3D tilt: the card goes softly out of focus with distance, like a camera lens — pick where the focus sits (near, middle, far) and how strong the effect is. It works in PNG exports, animated exports and multi-screenshot layouts',
+  ]},
   {v:'1.15.3', items:[
     'Exports are now pixel-exact: every screenshot pixel becomes a whole number of output pixels, on the pixel grid — before, a 1920px grab at 2× was resampled at 1.04:1 and every row of text came out slightly soft',
     'Scale now means "nearest whole multiple of the screenshot\'s own resolution" (the Output line says which, e.g. 1:1 or 2:1); integer upscales use nearest-neighbour so 1px UI detail stays sharp',
@@ -3794,6 +3960,13 @@ $('tiltPresets').addEventListener('click',e=>{
   $('rz').value=p[2]; $('rzVal').textContent=p[2]+'°';
   render();
 });
+// Depth of field. The labels say what the numbers mean rather than show them.
+function dofLabels(){
+  $('dofVal').textContent = state.dof>0 ? (state.dof<34 ? 'Subtle' : state.dof<67 ? 'Medium' : 'Strong') : 'Off';
+  $('focusVal').textContent = state.focus<25 ? 'Near' : state.focus>75 ? 'Far' : 'Middle';
+}
+$('dof').addEventListener('input',()=>{ state.dof=+$('dof').value; dofLabels(); render(); });
+$('focus').addEventListener('input',()=>{ state.focus=+$('focus').value; dofLabels(); render(); });
 ;['rx','ry','rz'].forEach(id=>$(id).addEventListener('input',()=>{
   $('tiltPresets').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
 }));
@@ -3966,6 +4139,7 @@ function syncUI(){
   $('rx').value=state.rx; $('rxVal').textContent=state.rx+'°';
   $('ry').value=state.ry; $('ryVal').textContent=state.ry+'°';
   $('rz').value=state.rz; $('rzVal').textContent=state.rz+'°';
+  $('dof').value=state.dof||0; $('focus').value=(state.focus==null?15:state.focus); dofLabels();
   $('bw').value=state.bw; $('bwVal').textContent=state.bw+'px';
   $('frameType').value=state.frame;
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
@@ -4085,7 +4259,7 @@ const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPrese
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','size','pad','rad','noise',
   'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
-  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','bw','bc','device','multi','multiGap'];
+  'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
 function saveUser(a){ try{ localStorage.setItem(PKEY,JSON.stringify(a)); }catch(e){ toast('Could not save (storage full)',true); } }
