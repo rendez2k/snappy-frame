@@ -1343,7 +1343,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.20.0';
+const APP_VERSION='1.20.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1617,15 +1617,15 @@ function focusAtPoint(cx,cy){
 // iPad Air 820×1180).
 const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
 // A screen that is far narrower than the image wastes most of it, so the shape
-// gives a little: a phone widens up to a still-believable 0.6 (a broad
-// Android), a tablet turns to landscape for a landscape image and flexes
+// gives a little: a phone widens up to 0.5 — past that it reads as a small
+// tablet wearing phone corners — a tablet turns to landscape for a landscape image and flexes
 // between real iPad shapes. Height stays put so the device doesn't shrink.
 function devScreenSize(){
   let [w,h]=DEV_SCREENS[state.device];
   if(!state.imgW || !state.imgH) return [w,h];
   const a=state.imgW/state.imgH;
   if(state.device==='tablet' && a>1.1) [w,h]=[h,w];
-  const [lo,hi] = state.device==='phone' ? [w/h,0.60] : (w>h ? [1.33,1.6] : [w/h,0.80]);
+  const [lo,hi] = state.device==='phone' ? [w/h,0.50] : (w>h ? [1.33,1.6] : [w/h,0.80]);
   return [Math.round(h*Math.max(lo,Math.min(hi,a))), h];
 }
 // What fills the bars when a whole image is fitted onto a device screen.
@@ -2992,6 +2992,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.20.1', items:[
+    'The phone mockup widens less for wide images (at most 0.5 wide-to-tall, was 0.6) — any wider stopped looking like a phone',
+  ]},
   {v:'1.20.0', items:[
     'Caption styles: the text (web address, @handle…) can now sit in a rounded pill — Glass is iOS-style frosted glass that blurs and tints whatever is behind it, with a light-catching rim, and Solid is a dark tag. Text & logo → Style',
   ]},
