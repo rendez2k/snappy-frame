@@ -1422,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.4';
+const APP_VERSION='1.25.5';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1833,18 +1833,37 @@ function edgeCut(g,side,iw,ih){
   const vert = side==='t'||side==='b', len = vert?ih:iw, span = vert?iw:ih;
   const maxD=Math.max(2,Math.round(len*0.04)), a=Math.round(span*0.1), w=span-2*a;
   let last=-1, lastN=0, firstN=null; const meds=[];
+  const same=(a,b)=>a&&b&&Math.abs(a[0]-b[0])<20&&Math.abs(a[1]-b[1])<20&&Math.abs(a[2]-b[2])<20;
   for(let d=0; d<=maxD; d++){
     const p = side==='t'? d : side==='b'? ih-1-d : side==='l'? d : iw-1-d;
     const n = vert ? offPct(g,a,p,w,1) : offPct(g,p,a,1,w);
     if(firstN===null) firstN=n; meds[d]=offPct.med;
-    if(n<0.5){ last=d; lastN=n; } else if(last>=0) break;
+    if(n<0.5){ last=d; lastN=n; } else if(last>=0){ if(d+1<=maxD){ const q2=side==='t'?d+1:side==='b'?ih-2-d:side==='l'?d+1:iw-2-d; vert?offPct(g,a,q2,w,1):offPct(g,q2,a,1,w); meds[d+1]=offPct.med; } break; }
   }
   // the plain row nearest the content is the colour block itself, not the
   // soft anti-aliased rim of a rounded box further out
-  if(last<0) return { cut:Math.min(2,maxD), noise:firstN };
+  const rgbOf=m=>m?`rgb(${m[0]},${m[1]},${m[2]})`:null;
+  // No plain row at all, or only a thin margin at the very edge: there's
+  // nothing clean to stretch (e.g. a logo running into a footer's edge).
+  // Fill that side with the solid main colour of the block just inside the
+  // margin instead, and trim the margin.
+  const thin=Math.max(3,Math.round(len*0.01));
+  if(last<0 || (last<=thin && last+1<=maxD)){
+    // Read the block's colour from the inner half of the edge zone (a logo
+    // can spill into the outermost rows), and cut at the first row that is
+    // that colour, so the whole margin goes.
+    const rowMed=d=>{ const p=side==='t'? d : side==='b'? ih-1-d : side==='l'? d : iw-1-d;
+      vert?offPct(g,a,p,w,1):offPct(g,p,a,1,w); return offPct.med; };
+    const inner=[]; for(let d=Math.ceil(maxD/2); d<=maxD; d++) inner.push(rowMed(d));
+    const med=[0,1,2].map(c=>{ const v=inner.map(m=>m[c]).sort((x,y)=>x-y); return v[v.length>>1]; });
+    const edgeCol = last>=0 ? meds[0] : null;
+    if(last<0 || !same(med,edgeCol)){
+      let at=0; while(at<maxD && !same(rowMed(at),med)) at++;
+      return { cut:at, noise:2, fill:rgbOf(med) };
+    }
+  }
   // …but step a few rows back from the content, staying in the same colour,
   // so anti-aliased letter tops don't leak into the stretch as streaks
-  const same=(a,b)=>a&&b&&Math.abs(a[0]-b[0])<20&&Math.abs(a[1]-b[1])<20&&Math.abs(a[2]-b[2])<20;
   let cut=last; for(let b=1;b<=3 && last-b>=0 && same(meds[last-b],meds[last]);b++) cut=last-b;
   return { cut, noise:lastN };
 }
@@ -1860,7 +1879,8 @@ function extendedBackdrop(){
     // Sides are always checked: a thin plain margin down the sides of a poster
     // shows as white strips inside the phone even when nothing is extended there.
     const L=edgeCut(mg,'l',iw,ih), R=edgeCut(mg,'r',iw,ih);
-    if(!gapH){ const lim=Math.round(iw*0.015); if(L.cut>lim) L.cut=0; if(R.cut>lim) R.cut=0; }
+    // with no side gap, only ever shave a genuinely plain margin — never guess
+    if(!gapH){ const lim=Math.round(iw*0.015); for(const S of [L,R]) if(S.fill || S.cut>lim) S.cut=0; }
     // the part of the image that is kept (margins trimmed off extended sides)
     const sx=L.cut, sy=T.cut, sw=iw-L.cut-R.cut, sh=ih-T.cut-B.cut;
     const sc=Math.min(W/sw,H/sh), q=Math.min(4,Math.max(2,1/sc));
@@ -1873,10 +1893,11 @@ function extendedBackdrop(){
     // Each band is copied out on its own first: stretching a 1-pixel strip in
     // place lets the browser blend in the rows beside it, which streaks.
     const strip=(x,y,w,h)=>{ const t=document.createElement('canvas'); t.width=w; t.height=h; t.getContext('2d').drawImage(m,x,y,w,h,0,0,w,h); return t; };
-    if(oy>0) g.drawImage(strip(sx+ax,sy,sw-2*ax,1), 0,0,c.width,oy+1);
-    if(by>0) g.drawImage(strip(sx+ax,sy+sh-1,sw-2*ax,1), 0,oy+dh-1,c.width,by+1);
-    if(ox>0) g.drawImage(strip(sx,sy+ay,1,sh-2*ay), 0,oy,ox+1,dh);
-    if(bx>0) g.drawImage(strip(sx+sw-1,sy+ay,1,sh-2*ay), ox+dw-1,oy,bx+1,dh);
+    const band=(S,x,y,w,h,fx2,fy2,fw,fh)=>{ if(S.fill){ g.fillStyle=S.fill; g.fillRect(fx2,fy2,fw,fh); } else g.drawImage(strip(x,y,w,h),fx2,fy2,fw,fh); };
+    if(oy>0) band(T, sx+ax,sy,sw-2*ax,1, 0,0,c.width,oy+1);
+    if(by>0) band(B, sx+ax,sy+sh-1,sw-2*ax,1, 0,oy+dh-1,c.width,by+1);
+    if(ox>0) band(L, sx,sy+ay,1,sh-2*ay, 0,oy,ox+1,dh);
+    if(bx>0) band(R, sx+sw-1,sy+ay,1,sh-2*ay, ox+dw-1,oy,bx+1,dh);
     g.drawImage(m,sx,sy,sw,sh, ox,oy,dw,dh);
     _extendCache={key,url:c.toDataURL('image/png'),px:fx*100,py:fy*100};
   }catch(err){ _extendCache={key,url:'',px:50,py:50}; }
@@ -3253,6 +3274,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.5', items:['Fit + extend: when a poster has nothing plain to stretch at an edge (a logo running into the footer\'s edge), that side is filled with the block\'s solid colour instead of streaking'] },
   {v:'1.25.4', items:['Fit + extend looks past a thin margin and rounded corners at the edge of a poster and extends the actual colour block (a red header, a black footer), trimming the margin so there\'s no white band'] },
   {v:'1.25.3', items:['Fit + extend trims the hairline seam some posters have on their edges, so there\'s no line where the extension meets the image'] },
   {v:'1.25.2', items:['Smarter Fit + extend: it checks which edges of the image are plain and grows those, moving the image towards its busy edge — so a poster with a solid header and a detailed footer grows its header instead of smearing the footer. It also samples just inside the edge, so thin border lines no longer streak'] },
