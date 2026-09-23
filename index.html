@@ -873,7 +873,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               <div id="falKeyRow" hidden style="margin-top:8px">
                 <div style="display:flex;gap:6px"><input class="txt" id="falKeyInput" type="password" placeholder="Paste your fal.ai API key" autocomplete="off" spellcheck="false" style="flex:1;min-width:0">
                   <button class="btn sm primary" id="falKeySave" type="button">Save</button></div>
-                <p class="hint" style="margin-top:6px">AI extend paints new picture around the edges so the image really is phone-shaped. It uses your own <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">fal.ai key</a>: stored only in this browser, sent only to fal, and each extend costs a few cents on your fal account.</p>
+                <p class="hint" style="margin-top:6px">AI extend paints new picture around the edges so the image really is phone-shaped. It uses your own <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener">fal.ai key</a>: stored only in this browser, sent only to fal, and each extend costs a few cents on your fal account. You can also add or change it under ⚙ Settings.</p>
               </div>
               <div style="display:flex;gap:12px;margin-top:6px">
                 <button class="lnk" id="btnAiUndo" type="button" hidden>↩ Undo AI extend</button>
@@ -1318,6 +1318,9 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
   <div class="sp-h grab-only" style="margin-top:14px">Screenshot API key</div>
   <input class="txt grab-only" id="keyInput" placeholder="ScreenshotOne access key" spellcheck="false">
   <p class="hint grab-only" style="margin-top:7px">Needed to grab webpages (unless the site owner has deployed the server renderer). Stored only in this browser. <a href="https://screenshotone.com" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a free key →</a></p>
+  <div class="sp-h" style="margin-top:14px">fal.ai key <span style="font-weight:400;color:var(--muted)">— for ✨ AI extend</span></div>
+  <input class="txt" id="falKeySetting" type="password" placeholder="fal.ai API key" autocomplete="off" spellcheck="false">
+  <p class="hint" style="margin-top:7px">Lets AI extend paint around an image so it fits a phone or tablet exactly. Stored only in this browser and sent only to fal; each extend costs a few cents on your fal account. <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener" style="color:var(--accent-2)">Get a key →</a></p>
   <div class="sp-links">
     <button class="lnk" id="spInstall" hidden>Install app</button>
     <a class="lnk ext-only" href="https://chromewebstore.google.com/detail/mhijknfpeoolgmealicffoagpiiakphp" target="_blank" rel="noopener">Chrome extension</a>
@@ -1387,7 +1390,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.22.0';
+const APP_VERSION='1.22.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -3033,6 +3036,7 @@ $('urlInput2').addEventListener('keydown',e=>{ if(e.key==='Enter') grabUrl('urlI
 // settings popover (toolbar gear + the empty-state key link both open it)
 function openSettings(anchor){
   $('keyInput').value=getShotKey();
+  $('falKeySetting').value=getFalKey();
   const pop=$('setpop'); pop.classList.add('open');
   const r=anchor.getBoundingClientRect(), pw=308, ph=210;
   let x=r.right-pw, y=r.bottom+8;
@@ -3044,6 +3048,9 @@ function openSettings(anchor){
 function closeSettings(){ $('setpop').classList.remove('open'); }
 $('btnSettings').onclick=()=>{ $('setpop').classList.contains('open') ? closeSettings() : openSettings($('btnSettings')); };
 $('btnKey').onclick=()=>openSettings($('btnKey'));
+$('falKeySetting').addEventListener('input',e=>{ const k=e.target.value.trim();
+  try{ if(k) localStorage.setItem(FAL_KEY,k); else localStorage.removeItem(FAL_KEY); }catch(_){}
+  $('falKeyRow').hidden=true; syncAiUI(); });
 $('keyInput').addEventListener('input',e=>{ const k=e.target.value.trim();
   try{ if(k) localStorage.setItem(SHOT_KEY,k); else localStorage.removeItem(SHOT_KEY); }catch(_){}
   updateKeyUI(); });
@@ -3075,6 +3082,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.22.1', items:['The fal.ai key for AI extend now lives in ⚙ Settings, next to the screenshot key'] },
   {v:'1.22.0', items:[
     '✨ AI extend for phone and tablet mockups: paints new picture around the edges so the image becomes exactly the screen\'s shape — nothing cropped, no bars. Uses your own fal.ai key, kept in this browser and sent only to fal (a few cents per extend). Undo puts the original back',
   ]},
@@ -4437,7 +4445,7 @@ function syncAiUI(){ const k=!!getFalKey();
   $('falKeyForget').hidden=!k; $('btnAiUndo').hidden=!aiUndoSrc; }
 $('falKeySave').onclick=()=>{ const k=$('falKeyInput').value.trim(); if(!k){ toast('Paste a fal key first',true); return; }
   try{ localStorage.setItem(FAL_KEY,k); }catch(e){} $('falKeyInput').value=''; $('falKeyRow').hidden=true; syncAiUI(); aiExtend(); };
-$('falKeyForget').onclick=()=>{ try{ localStorage.removeItem(FAL_KEY); }catch(e){} $('falKeyRow').hidden=false; syncAiUI(); };
+$('falKeyForget').onclick=()=>openSettings($('falKeyForget'));
 $('btnAiUndo').onclick=()=>{ if(!aiUndoSrc) return; const src=aiUndoSrc; aiUndoSrc=null; loadImage(src); syncAiUI(); toast('Back to the original image'); };
 function aiCanvasFor(iw,ih,A){
   // Grow the short side to reach aspect A, then scale to Bria's 5000×5000-area limit.
