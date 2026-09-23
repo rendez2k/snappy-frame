@@ -904,6 +904,14 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
                 <button class="lnk" id="falKeyForget" type="button" hidden>Change fal key</button>
               </div>
             </div>
+            <div class="field" id="devFitPosCtl" hidden>
+              <label>Image position <span class="val" id="devFitYVal">Auto</span></label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="range" id="devFitY" min="0" max="100" value="50" style="flex:1">
+                <button class="btn sm" id="devFitAuto" type="button" title="Let it decide from the image's edges">Auto</button>
+              </div>
+              <p class="hint" style="margin-top:4px">Nudge the image up or down inside the screen.</p>
+            </div>
             <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
               <input type="range" id="devX" min="0" max="100" value="50"></div>
@@ -1378,7 +1386,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
-  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, size:100, pad:64, rad:14, noise:false,
   textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
@@ -1422,7 +1430,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.7';
+const APP_VERSION='1.26.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1901,7 +1909,7 @@ function healEdgeBlock(mg,side,iw,ih,cut){
 function extendedBackdrop(){
   const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
   if(!W||!H||!iw||!ih) return null;
-  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H;
+  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H+':'+state.devFitY;
   if(_extendCache.key===key) return _extendCache;
   try{
     const m=document.createElement('canvas'); m.width=iw; m.height=ih; const mg=m.getContext('2d',{willReadFrequently:true}); mg.drawImage(shot,0,0);
@@ -1918,7 +1926,7 @@ function extendedBackdrop(){
     const sc=Math.min(W/sw,H/sh), q=Math.min(4,Math.max(2,1/sc));
     const c=document.createElement('canvas'); c.width=Math.round(W*q); c.height=Math.round(H*q); const g=c.getContext('2d');
     const dw=sw*sc*q, dh=sh*sc*q;
-    const fy = gapV ? gapShare(T.noise,B.noise) : 0.5, fx = gapH ? gapShare(L.noise,R.noise) : 0.5;
+    const fy = gapV ? (state.devFitY!=null ? state.devFitY/100 : gapShare(T.noise,B.noise)) : 0.5, fx = gapH ? gapShare(L.noise,R.noise) : 0.5;
     const ox=(c.width-dw)*fx, oy=(c.height-dh)*fy, bx=c.width-dw-ox, by=c.height-dh-oy;
     // bands come from the middle 80% so rounded corners don't streak down the sides
     const ax=Math.round(sw*0.1), ay=Math.round(sh*0.1);
@@ -1987,7 +1995,7 @@ function layout(){
     shot.style.width='100%'; shot.style.height='auto';
     const fitIn=state.devFit==='blur'||state.devFit==='colour'||state.devFit==='extend';
     shot.style.objectFit = fitIn ? 'contain' : '';
-    shot.style.objectPosition = fitIn ? '50% 50%' : `${state.devX}% ${state.devY}%`;
+    shot.style.objectPosition = fitIn ? `50% ${state.devFitY==null?50:state.devFitY}%` : `${state.devX}% ${state.devY}%`;
     devBackdrop(fitIn ? state.devFit : null);
   } else {
     // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
@@ -3306,6 +3314,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.26.0', items:['Image position for the Fit modes: nudge the image up or down inside the phone or tablet screen. Auto still decides from the image\'s edges'] },
   {v:'1.25.7', items:['Fit + extend repaints the thin margin and rounded corners around a poster\'s header and footer in the block\'s own colour, so there are no white slivers or notches where the block meets the extension'] },
   {v:'1.25.6', items:['After an AI extend, choosing Crop, Fit + blur, Fit + colour or Fit + extend puts your original image back first — so the fill works from your poster, not from what the AI painted'] },
   {v:'1.25.5', items:['Fit + extend: when a poster has nothing plain to stretch at an edge (a logo running into the footer\'s edge), that side is filled with the block\'s solid colour instead of streaking'] },
@@ -4771,7 +4780,12 @@ $('btnAiExtend').onclick=aiExtend;
 function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
   $('devFitSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.devFit||'crop')));
   $('devPanCtl').hidden = (state.devFit||'crop')!=='crop';
+  $('devFitPosCtl').hidden = (state.devFit||'crop')==='crop';
+  const fy=state.devFitY; $('devFitYVal').textContent = fy==null ? 'Auto' : fy<34 ? 'Higher' : fy>66 ? 'Lower' : 'Middle';
+  if(fy!=null) $('devFitY').value=fy; $('devFitAuto').classList.toggle('on', fy==null);
   if(typeof syncAiUI==='function') syncAiUI(); }         // a fitted image has nothing to pan
+$('devFitY').addEventListener('input',()=>{ state.devFitY=+$('devFitY').value; updateDevCropUI(); render(); });
+$('devFitAuto').onclick=()=>{ state.devFitY=null; updateDevCropUI(); render(); };
 $('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.devFit=b.dataset.v;
   // Picking a fill after an AI extend means "do it this way instead": go back
@@ -4903,7 +4917,7 @@ $('btnReset').onclick=()=>{
   if(state.origSrc){ shot.src=state.origSrc; }   // un-bake any redactions back to the clean image
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,size:100,pad:64,rad:14,noise:false,
     textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
@@ -5084,7 +5098,7 @@ function applyLens(s){
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
+  'position','fill','posX','posY','devX','devY','devFit','devFitY','size','pad','rad','noise',
   'textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
