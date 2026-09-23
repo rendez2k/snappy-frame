@@ -228,8 +228,18 @@ input,select{font-family:inherit}
 .panel::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:9px;
   border:2px solid var(--panel)}
 /* Jump bar: every section one click away, pinned to the top of the panel */
-#jumpBar{position:sticky; top:0; z-index:5; display:flex; gap:5px; padding:8px 10px; overflow-x:auto;
-  background:var(--panel); border-bottom:1px solid var(--line); scrollbar-width:none}
+#jumpWrap{position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line)}
+#jumpBar{display:flex; gap:5px; padding:8px 10px; overflow-x:auto; scrollbar-width:none; scroll-behavior:smooth}
+/* fades + arrows say "there's more this way" — without them the row looked like it ended */
+#jumpWrap::before,#jumpWrap::after{content:''; position:absolute; top:0; bottom:0; width:44px; pointer-events:none; opacity:0; transition:opacity .15s; z-index:1}
+#jumpWrap::before{left:0; background:linear-gradient(90deg,var(--panel) 40%,transparent)}
+#jumpWrap::after{right:0; background:linear-gradient(270deg,var(--panel) 40%,transparent)}
+#jumpWrap.more-l::before,#jumpWrap.more-r::after{opacity:1}
+.jarr{position:absolute; top:50%; transform:translateY(-50%); z-index:2; width:24px; height:24px; border-radius:50%;
+  border:1px solid var(--line-2); background:var(--panel-2); color:var(--text); font-size:15px; line-height:1;
+  display:none; align-items:center; justify-content:center; padding:0 0 2px; cursor:pointer}
+#jumpL{left:6px} #jumpR{right:6px}
+#jumpWrap.more-l #jumpL,#jumpWrap.more-r #jumpR{display:flex}
 #jumpBar::-webkit-scrollbar{display:none}
 #jumpBar button{flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:99px;
   border:1px solid var(--line-2); background:var(--panel-2); color:var(--muted); font-size:11.5px; font-weight:600;
@@ -716,7 +726,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
     <!-- Controls -->
     <aside class="panel" id="panel">
       <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse the panel"></button>
-      <nav id="jumpBar" aria-label="Jump to a section"></nav>
+      <div id="jumpWrap"><button type="button" class="jarr" id="jumpL" aria-label="More sections to the left">‹</button><nav id="jumpBar" aria-label="Jump to a section"></nav><button type="button" class="jarr" id="jumpR" aria-label="More sections to the right">›</button></div>
       <!-- Content mode -->
       <section class="sec collapsed" data-sec="content">
         <button class="head"><span class="ico">🧩</span> Content <span class="chev">▾</span></button>
@@ -923,13 +933,14 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               <div class="field"><label>Left / right <span class="val" id="devFitXVal">Auto</span></label>
                 <input type="range" id="devFitX" min="0" max="100" value="50"></div>
               <div style="display:flex;gap:6px;align-items:center;margin:-2px 0 6px">
-                <span class="hint" style="margin:0">Nudge 1px</span>
+                <span class="hint" style="margin:0">Nudge</span>
                 <button class="btn sm" type="button" data-nudge="y,-1" title="Up 1px (Shift: 10px)">▲</button>
                 <button class="btn sm" type="button" data-nudge="y,1" title="Down 1px (Shift: 10px)">▼</button>
                 <button class="btn sm" type="button" data-nudge="x,-1" title="Left 1px (Shift: 10px)">◀</button>
                 <button class="btn sm" type="button" data-nudge="x,1" title="Right 1px (Shift: 10px)">▶</button>
+                <span class="hint" id="devFitNudgeVal" style="margin:0"></span>
               </div>
-              <p class="hint" style="margin-top:0">Nudge the image inside the screen. It only moves where there's spare room; the arrow keys on a slider move it 1px too.</p>
+              <p class="hint" style="margin-top:0">The sliders share out the spare room; the arrows move the image 1px (Shift: 10px) in any direction, and the gap that opens is filled to match.</p>
             </div>
             <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
@@ -1405,7 +1416,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
-  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, devFitX:null, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, devFitX:null, devNudgeX:0, devNudgeY:0, size:100, pad:64, rad:14, noise:false,
   textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
@@ -1449,7 +1460,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.27.0';
+const APP_VERSION='1.27.1';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1929,7 +1940,7 @@ function healEdgeBlock(mg,side,iw,ih,cut){
 function extendedBackdrop(){
   const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
   if(!W||!H||!iw||!ih) return null;
-  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H+':'+state.devFitY+':'+state.devFitX;
+  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H+':'+state.devFitY+':'+state.devFitX+':'+state.devNudgeX+':'+state.devNudgeY;
   if(_extendCache.key===key) return _extendCache;
   try{
     const m=document.createElement('canvas'); m.width=iw; m.height=ih; const mg=m.getContext('2d',{willReadFrequently:true}); mg.drawImage(shot,0,0);
@@ -1940,14 +1951,15 @@ function extendedBackdrop(){
     // shows as white strips inside the phone even when nothing is extended there.
     const L=edgeCut(mg,'l',iw,ih), R=edgeCut(mg,'r',iw,ih);
     // with no side gap, only ever shave a genuinely plain margin — never guess
-    if(!gapH){ const lim=Math.round(iw*0.015); for(const S of [L,R]) if(S.fill || S.cut>lim) S.cut=0; }
+    // (and a side gap opened only by nudging continues the edge itself — no guessed fill)
+    if(!gapH){ const lim=Math.round(iw*0.015); for(const S of [L,R]){ if(S.fill || S.cut>lim) S.cut=0; S.fill=null; } }
     // the part of the image that is kept (margins trimmed off extended sides)
     const sx=L.cut, sy=T.cut, sw=iw-L.cut-R.cut, sh=ih-T.cut-B.cut;
     const sc=Math.min(W/sw,H/sh), q=Math.min(4,Math.max(2,1/sc));
     const c=document.createElement('canvas'); c.width=Math.round(W*q); c.height=Math.round(H*q); const g=c.getContext('2d');
     const dw=sw*sc*q, dh=sh*sc*q;
     const fy = gapV ? (state.devFitY!=null ? state.devFitY/100 : gapShare(T.noise,B.noise)) : 0.5, fx = gapH ? (state.devFitX!=null ? state.devFitX/100 : gapShare(L.noise,R.noise)) : 0.5;
-    const ox=(c.width-dw)*fx, oy=(c.height-dh)*fy, bx=c.width-dw-ox, by=c.height-dh-oy;
+    const ox=(c.width-dw)*fx+(state.devNudgeX||0)*q, oy=(c.height-dh)*fy+(state.devNudgeY||0)*q, bx=c.width-dw-ox, by=c.height-dh-oy;
     // bands come from the middle 80% so rounded corners don't streak down the sides
     const ax=Math.round(sw*0.1), ay=Math.round(sh*0.1);
     // Each band is copied out on its own first: stretching a 1-pixel strip in
@@ -1956,8 +1968,9 @@ function extendedBackdrop(){
     const band=(S,x,y,w,h,fx2,fy2,fw,fh)=>{ if(S.fill){ g.fillStyle=S.fill; g.fillRect(fx2,fy2,fw,fh); } else g.drawImage(strip(x,y,w,h),fx2,fy2,fw,fh); };
     if(oy>0) band(T, sx+ax,sy,sw-2*ax,1, 0,0,c.width,oy+1);
     if(by>0) band(B, sx+ax,sy+sh-1,sw-2*ax,1, 0,oy+dh-1,c.width,by+1);
-    if(ox>0) band(L, sx,sy+ay,1,sh-2*ay, 0,oy,ox+1,dh);
-    if(bx>0) band(R, sx+sw-1,sy+ay,1,sh-2*ay, ox+dw-1,oy,bx+1,dh);
+    // side columns are taken full height so every row lines up with the image
+    if(ox>0) band(L, sx,sy,1,sh, 0,oy,ox+1,dh);
+    if(bx>0) band(R, sx+sw-1,sy,1,sh, ox+dw-1,oy,bx+1,dh);
     g.drawImage(m,sx,sy,sw,sh, ox,oy,dw,dh);
     _extendCache={key,url:c.toDataURL('image/png'),px:fx*100,py:fy*100};
   }catch(err){ _extendCache={key,url:'',px:50,py:50}; }
@@ -2020,7 +2033,7 @@ function layout(){
       $('devFitY').step = _fitGap.y>1 ? (100/_fitGap.y).toFixed(4) : 'any';
       $('devFitX').step = _fitGap.x>1 ? (100/_fitGap.x).toFixed(4) : 'any'; }
     shot.style.objectFit = fitIn ? 'contain' : '';
-    shot.style.objectPosition = fitIn ? `${state.devFitX==null?50:state.devFitX}% ${state.devFitY==null?50:state.devFitY}%` : `${state.devX}% ${state.devY}%`;
+    shot.style.objectPosition = fitIn ? `calc(${state.devFitX==null?50:state.devFitX}% + ${state.devNudgeX||0}px) calc(${state.devFitY==null?50:state.devFitY}% + ${state.devNudgeY||0}px)` : `${state.devX}% ${state.devY}%`;
     devBackdrop(fitIn ? state.devFit : null);
   } else {
     // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
@@ -3168,6 +3181,14 @@ async function applyMarkup(){
   function mark(k){ bar.querySelectorAll('button[data-sec]').forEach(x=>{ const on=x.dataset.sec===k; x.classList.toggle('on',on);
     if(on){ const l=x.offsetLeft-bar.offsetLeft, r=l+x.offsetWidth;
       if(l<bar.scrollLeft) bar.scrollLeft=l-8; else if(r>bar.scrollLeft+bar.clientWidth) bar.scrollLeft=r-bar.clientWidth+8; } }); }
+  // arrows, fades and the mouse wheel for the chips that don't fit
+  const wrap=$('jumpWrap');
+  const edges=()=>{ wrap.classList.toggle('more-l', bar.scrollLeft>4);
+    wrap.classList.toggle('more-r', bar.scrollLeft+bar.clientWidth < bar.scrollWidth-4); };
+  bar.addEventListener('scroll',edges,{passive:true}); window.addEventListener('resize',edges); setTimeout(edges,0);
+  $('jumpL').onclick=()=>{ bar.scrollLeft-=bar.clientWidth*0.7; };
+  $('jumpR').onclick=()=>{ bar.scrollLeft+=bar.clientWidth*0.7; };
+  bar.addEventListener('wheel',e=>{ if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){ e.preventDefault(); bar.scrollLeft+=e.deltaY; } },{passive:false});
   // highlight the section being looked at
   let t=0; document.addEventListener('scroll',e=>{ if(e.target===bar) return; cancelAnimationFrame(t); t=requestAnimationFrame(()=>{
     const line=bar.getBoundingClientRect().bottom+12; let cur=secs[0];
@@ -3372,6 +3393,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.27.1', items:['The ▲▼◀▶ nudge buttons move the image by real pixels in any direction, even where there\'s no spare room; the gap that opens is filled to match', 'The jump bar shows there\'s more: ‹ › arrows and a fade at whichever end has hidden sections, and the mouse wheel scrolls it sideways'] },
   {v:'1.27.0', items:['Image position now moves left and right as well as up and down, and nudges 1px at a time: ▲▼◀▶ buttons (Shift for 10px), or the arrow keys on a slider', 'Jump bar at the top of the settings panel: one click opens any section and scrolls to it (Frame & phone, 3D & lens, Text & badges…), the section you\'re in stays highlighted, and "Close all" folds everything away'] },
   {v:'1.26.0', items:['Image position for the Fit modes: nudge the image up or down inside the phone or tablet screen. Auto still decides from the image\'s edges'] },
   {v:'1.25.7', items:['Fit + extend repaints the thin margin and rounded corners around a poster\'s header and footer in the block\'s own colour, so there are no white slivers or notches where the block meets the extension'] },
@@ -4844,18 +4866,20 @@ function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
   $('devFitYVal').textContent = fy==null ? 'Auto' : fy<34 ? 'Higher' : fy>66 ? 'Lower' : 'Middle';
   $('devFitXVal').textContent = fx==null ? 'Auto' : fx<34 ? 'Left' : fx>66 ? 'Right' : 'Centre';
   if(fy!=null) $('devFitY').value=fy; if(fx!=null) $('devFitX').value=fx;
-  $('devFitAuto').classList.toggle('on', fy==null && fx==null);
+  const nx=state.devNudgeX||0, ny=state.devNudgeY||0;
+  $('devFitNudgeVal').textContent = (nx||ny) ? `moved ${nx?Math.abs(nx)+'px '+(nx>0?'right':'left'):''}${nx&&ny?', ':''}${ny?Math.abs(ny)+'px '+(ny>0?'down':'up'):''}` : '';
+  $('devFitAuto').classList.toggle('on', fy==null && fx==null && !nx && !ny);
   if(typeof syncAiUI==='function') syncAiUI(); }         // a fitted image has nothing to pan
 $('devFitY').addEventListener('input',()=>{ state.devFitY=+$('devFitY').value; updateDevCropUI(); render(); });
 $('devFitX').addEventListener('input',()=>{ state.devFitX=+$('devFitX').value; updateDevCropUI(); render(); });
+// The buttons move the image by real pixels, even where there's no spare room
+// on that axis: the gap that opens on the other side is filled the same way
+// as the rest (extend, blur or colour). Capped so the image can't leave the screen.
 document.querySelectorAll('[data-nudge]').forEach(b=>b.addEventListener('click',e=>{
-  const [ax,dir]=b.dataset.nudge.split(','), key=ax==='y'?'devFitY':'devFitX', gap=_fitGap[ax]||0;
-  if(gap<1){ toast(ax==='y'?'No spare room above or below to move into':'No spare room at the sides to move into'); return; }
-  // from Auto, start where the image actually sits now
-  const cur = state[key]!=null ? state[key] : state.devFit==='extend' ? (ax==='y'?_extendCache.py:_extendCache.px) : 50;
-  state[key]=Math.max(0,Math.min(100, cur + (+dir)*(e.shiftKey?10:1)*100/gap));
+  const [ax,dir]=b.dataset.nudge.split(','), key=ax==='y'?'devNudgeY':'devNudgeX';
+  state[key]=Math.max(-300,Math.min(300,(state[key]||0)+(+dir)*(e.shiftKey?10:1)));
   updateDevCropUI(); render(); }));
-$('devFitAuto').onclick=()=>{ state.devFitY=null; state.devFitX=null; updateDevCropUI(); render(); };
+$('devFitAuto').onclick=()=>{ state.devFitY=null; state.devFitX=null; state.devNudgeX=0; state.devNudgeY=0; updateDevCropUI(); render(); };
 $('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.devFit=b.dataset.v;
   // Picking a fill after an AI extend means "do it this way instead": go back
@@ -4987,7 +5011,7 @@ $('btnReset').onclick=()=>{
   if(state.origSrc){ shot.src=state.origSrc; }   // un-bake any redactions back to the clean image
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,devFitX:null,size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,devFitX:null,devNudgeX:0,devNudgeY:0,size:100,pad:64,rad:14,noise:false,
     textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
@@ -5168,7 +5192,7 @@ function applyLens(s){
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','devX','devY','devFit','devFitY','devFitX','size','pad','rad','noise',
+  'position','fill','posX','posY','devX','devY','devFit','devFitY','devFitX','devNudgeX','devNudgeY','size','pad','rad','noise',
   'textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
