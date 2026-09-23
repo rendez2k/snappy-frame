@@ -170,6 +170,7 @@ input,select{font-family:inherit}
 /* caption, badges and logo can be picked up and moved on the preview */
 #textLayer,#badgeLayer,#logoLayer{pointer-events:auto; cursor:grab; touch-action:none}
 #textLayer.dragging,#badgeLayer.dragging,#logoLayer.dragging{cursor:grabbing; outline:1px dashed rgba(255,255,255,.75); outline-offset:4px}
+#persp #device,#persp #multi{cursor:grab}
 #snapGuide{position:absolute; left:50%; top:0; bottom:0; width:0; border-left:1px dashed rgba(255,255,255,.8); z-index:9; display:none; pointer-events:none}
 .sbadge{display:inline-flex; align-items:center; gap:.2em; height:1em; padding:0 .3em 0 .22em; border-radius:.17em;
   background:#000; color:#fff; border:max(1px,.022em) solid #a6a6a6; box-sizing:border-box; white-space:nowrap;
@@ -1010,6 +1011,8 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
             <div class="color"><button class="cswatch" id="textColor" style="background:#ffffff"></button><input type="text" id="textColort" value="#FFFFFF"></div>
             <label class="toggle" style="margin-top:0"><input type="checkbox" id="textBold" checked> <span>Bold</span></label>
           </div>
+          <div class="field" id="textBgRow" hidden style="margin-top:10px"><label>Box colour</label>
+            <div class="color"><button class="cswatch" id="textBg" style="background:#0e1017"></button><input type="text" id="textBgt" value="#0E1017"></div></div>
           <div class="field"><label>Text size <span class="val" id="textSizeVal">28px</span></label>
             <input type="range" id="textSize" min="12" max="90" value="28"></div>
           <p class="hint" style="margin:-2px 0 10px">Tip: drag the text, logo or badges on the preview to put them anywhere. Or pick a spot below.</p>
@@ -1376,7 +1379,7 @@ const state = {
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
-  textVal:'', textStyle:'plain', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
+  textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
@@ -1419,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.24.0';
+const APP_VERSION='1.25.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1511,7 +1514,11 @@ function render(){
   if(tv){ tl.style.display='block'; tl.textContent=state.textVal; tl.style.color=state.textColor;
     tl.style.fontSize=state.textSize+'px'; tl.style.fontWeight=state.textBold?'700':'500';
     tl.style.fontFamily=FONTS[state.textFont]||FONTS.sans;
-    const ts=state.textStyle||'plain'; tl.className = ts==='plain' ? '' : 'pill '+ts; }
+    const ts=state.textStyle||'plain'; tl.className = ts==='plain' ? '' : 'pill '+ts;
+    // Box colour: Solid fills with it; Glass is tinted by it, still see-through.
+    const bg=state.textBg, rgb=bg && hexToRgb(bg);
+    tl.style.background = !rgb ? '' : ts==='solid' ? bg
+      : ts==='glass' ? `linear-gradient(180deg,rgba(${rgb},.46),rgba(${rgb},.20) 55%,rgba(${rgb},.30))` : ''; }
   else tl.style.display='none';
   const lg=$('logoLayer');
   if(state.logoSrc){ lg.style.display='block'; lg.src=state.logoSrc;
@@ -1551,6 +1558,7 @@ function placeOverlay(el,pos,margin,xy){
 }
 const APPLE_SVG='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8c-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.7 2.4 2.9 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .8c1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.5-1-2.5-4.1zM14.1 5.8c.6-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.7-1.3z"/></svg>';
 const PLAY_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#00a0ff" d="M3.6 2.2C3.3 2.4 3.1 2.8 3.1 3.3v17.4c0 .5.2.9.5 1.1L13.4 12z"/><path fill="#00f076" d="M3.6 2.2 13.4 12l3.1-3.1L5.2 2.4c-.6-.4-1.2-.4-1.6-.2z"/><path fill="#ff3a44" d="M3.6 21.8 13.4 12l3.1 3.1-11.3 6.5c-.6.4-1.2.4-1.6.2z"/><path fill="#ffc800" d="M16.5 8.9 13.4 12l3.1 3.1 3.5-2c.9-.5.9-1.7 0-2.2z"/></svg>';
+function hexToRgb(h){ const m=/^#?([0-9a-f]{6})$/i.exec(h||''); if(!m) return null; const n=parseInt(m[1],16); return `${n>>16},${(n>>8)&255},${n&255}`; }
 function renderBadges(){
   const L=$('badgeLayer'), b=state.badges||'none';
   if(b==='none' || !state.hasImage){ L.style.display='none'; L.innerHTML=''; return; }
@@ -1902,8 +1910,9 @@ function layout(){
   // Position: place the card's *visual* box against one of 9 anchors (only has an
   // effect when the fixed canvas leaves spare room; in Auto every anchor = centre).
   const P=state.position||'mc', pv=P[0], ph=P[1];
-  const cx = ph==='l'? pad+visW/2 : ph==='r'? stageW-pad-visW/2 : stageW/2;
-  const cy = pv==='t'? pad+visH/2 : pv==='b'? stageH-pad-visH/2 : stageH/2;
+  // …plus any offset from dragging the card itself (% of the canvas).
+  const cx = (ph==='l'? pad+visW/2 : ph==='r'? stageW-pad-visW/2 : stageW/2) + (fixed?(state.cardDX||0):0)/100*stageW;
+  const cy = (pv==='t'? pad+visH/2 : pv==='b'? stageH-pad-visH/2 : stageH/2) + (fixed?(state.cardDY||0):0)/100*stageH;
 
   // scale is applied *outside* the rotation so it scales the tilted result uniformly
   FR.style.transform=(scale!==1?`scale(${scale}) `:'')+rot;
@@ -3169,6 +3178,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.0', items:[
+    'Drag the phone (or card) itself around the canvas: pick it up on the preview and move it, e.g. up to make room for a caption and badges underneath. Snaps back to centre; the Position grid resets it',
+    'Box colour for the caption pill: Solid fills with it, Glass is tinted by it and stays see-through',
+  ]},
   {v:'1.24.0', items:[
     'Drag to place: pick up the caption, app store badges or logo on the preview and drop them anywhere. They snap to the centre line. The position grid still works for quick spots',
     'Five new caption fonts, served with the site so exports look the same everywhere: Poppins, Montserrat, Oswald, Bebas Neue and Pacifico',
@@ -4309,7 +4322,7 @@ let rrPending=false; function throttledRender(){ if(rrPending)return; rrPending=
   requestAnimationFrame(()=>{ rrPending=false; render(); }); }
 function openPicker(anchor,colorId,stateKey,onChange){
   cpId=colorId; cpKey=stateKey; cpCb=onChange;
-  const [h,s,v]=hex2hsv(hexClean(state[stateKey]||'#000000')||'#000000'); cpH=h;cpS=s;cpV=v;
+  const [h,s,v]=hex2hsv(hexClean(state[stateKey]||($(colorId+'t')&&$(colorId+'t').value)||'#000000')||'#000000'); cpH=h;cpS=s;cpV=v;
   cpRefresh();
   const pop=$('cpop'); pop.classList.add('open');
   const r=anchor.getBoundingClientRect(), pw=206, ph=196;
@@ -4396,15 +4409,52 @@ function bindPosGrid(id,key){ $(id).addEventListener('click',e=>{ const b=e.targ
   state[key]=b.dataset.p;
   $(id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); }); }
 bindPosGrid('posGrid','position');
+// Choosing an anchor puts the card back exactly there, dropping any drag offset.
+$('posGrid').addEventListener('click',e=>{ if(e.target.closest('button')){ state.cardDX=0; state.cardDY=0; render(); } });
+// Drag the card (or phone) itself around the canvas. Only a fixed-size canvas
+// has room to move in — on Auto the canvas is shrink-wrapped round the card.
+(function(){
+  let d=null, raf=0;
+  const target=()=> multiOn() ? $('multi') : device;
+  // The browser's own image drag would cancel ours mid-gesture.
+  persp.addEventListener('dragstart',e=>e.preventDefault());
+  persp.addEventListener('pointerdown',e=>{
+    if(e.button!==0 || (typeof pickingFocus!=='undefined' && pickingFocus) || !state.hasImage) return;
+    if(!target().contains(e.target)) return;
+    e.preventDefault();
+    d={ id:e.pointerId, x:e.clientX, y:e.clientY, dx:state.cardDX||0, dy:state.cardDY||0, on:false };
+  });
+  window.addEventListener('pointermove',e=>{
+    if(!d || e.pointerId!==d.id) return;
+    const mx=e.clientX-d.x, my=e.clientY-d.y;
+    if(!d.on){ if(Math.hypot(mx,my)<4) return;
+      if(state.aspect==='auto'){ d=null; toast('Pick an aspect ratio under Layout to move the card around the canvas'); return; }
+      d.on=true; persp.setPointerCapture?.(e.pointerId); stage.style.cursor='grabbing'; }
+    const sr=stage.getBoundingClientRect();
+    let nx=d.dx+mx/sr.width*100, ny=d.dy+my/sr.height*100;
+    const sx=Math.abs(nx)<1.5, sy=Math.abs(ny)<1.5; if(sx) nx=0; if(sy) ny=0;
+    $('snapGuide').style.display=sx?'block':'none';
+    state.cardDX=+nx.toFixed(2); state.cardDY=+ny.toFixed(2);
+    if(!raf) raf=requestAnimationFrame(()=>{ raf=0; layout(); placeOverlays(); });
+  });
+  const end=e=>{ if(!d || e.pointerId!==d.id) return; const was=d.on; d=null;
+    $('snapGuide').style.display='none'; stage.style.cursor='';
+    if(was){ $('posGrid').querySelectorAll('button').forEach(x=>x.classList.remove('on')); render(); } };
+  window.addEventListener('pointerup',end); window.addEventListener('pointercancel',end);
+})();
 
 // text & logo overlays
 $('textVal').oninput=e=>{ state.textVal=e.target.value; render(); };
 $('textStyleSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
-  state.textStyle=b.dataset.v; $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
+  state.textStyle=b.dataset.v; $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); syncTextBgUI(); render(); });
 $('textFont').onchange=e=>{ state.textFont=e.target.value; render(); };
 $('textBold').onchange=e=>{ state.textBold=e.target.checked; render(); };
 bindRange('textSize','textSize',v=>v+'px');
 bindColor('textColor','textColor');
+bindColor('textBg','textBg');
+function syncTextBgUI(){ const ts=state.textStyle||'plain';
+  $('textBgRow').hidden = ts==='plain';
+  setColor('textBg', state.textBg || (ts==='solid' ? '#0e1017' : '#ffffff')); }
 bindPosGrid('textPosGrid','textPos');
 $('btnLogo').onclick=()=>$('logoInput').click();
 $('logoInput').onchange=e=>{ const f=e.target.files[0]; if(f){ const r=new FileReader();
@@ -4713,7 +4763,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
-    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
+    textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
@@ -4741,7 +4791,7 @@ function syncUI(){
   $('aspect').value=state.aspect;
   $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.position));
   $('textVal').value=state.textVal||'';
-  $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.textStyle||'plain'))); setColor('textColor',state.textColor);
+  $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.textStyle||'plain'))); setColor('textColor',state.textColor); syncTextBgUI();
   $('textFont').value=state.textFont||'sans';
   $('textBold').checked=state.textBold; $('textSize').value=state.textSize; $('textSizeVal').textContent=state.textSize+'px';
   $('textPosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.textPos));
@@ -4894,7 +4944,7 @@ function applyLens(s){
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
-  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
+  'textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
