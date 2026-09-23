@@ -1422,7 +1422,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.25.1';
+const APP_VERSION='1.25.3';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1800,31 +1800,66 @@ function edgeColour(){
 // Fit + extend: the bars are the image's own outermost rows and columns,
 // stretched outwards. On a poster with plain coloured borders (most designed
 // graphics) that's indistinguishable from a taller original — no AI needed.
-let _extendCache={key:'',url:''};
+let _extendCache={key:'',url:'',px:50,py:50};
+// How plain an image edge is: the spread of colour along a band a few pixels
+// in (the outermost pixel is often an anti-aliased seam). 0 = one flat colour.
+function edgeNoise(g,x,y,w,h){
+  const d=g.getImageData(x,y,w,h).data; let n=0,s=[0,0,0],q=[0,0,0];
+  for(let i=0;i<d.length;i+=4){ for(let c=0;c<3;c++){ s[c]+=d[i+c]; q[c]+=d[i+c]*d[i+c]; } n++; }
+  let v=0; for(let c=0;c<3;c++){ const m=s[c]/n; v+=q[c]/n-m*m; } return Math.sqrt(Math.max(0,v/3));
+}
+// Share of the gap to put before the image (top or left), from how plain each
+// edge is: stretch the plain edge, keep the busy one against the screen edge.
+function gapShare(a,b){
+  if(a<6 && b<6) return 0.5;
+  if(a<10 && b>18) return 1; if(b<10 && a>18) return 0;
+  const ca=1/(1+a), cb=1/(1+b); return ca/(ca+cb);
+}
 function extendedBackdrop(){
   const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
-  if(!W||!H||!iw||!ih) return '';
+  if(!W||!H||!iw||!ih) return null;
   const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H;
-  if(_extendCache.key===key) return _extendCache.url;
-  const q=2, c=document.createElement('canvas'); c.width=W*q; c.height=H*q; const g=c.getContext('2d');
-  const sc=Math.min(W/iw,H/ih), dw=iw*sc*q, dh=ih*sc*q, ox=(c.width-dw)/2, oy=(c.height-dh)/2;
-  const e=Math.max(1,Math.round(Math.min(iw,ih)*0.004));      // a few source px, so one stray pixel can't streak
+  if(_extendCache.key===key) return _extendCache;
+  // Drawn at the image's own resolution: in this mode the backdrop IS the
+  // picture (the <img> is hidden), so it must be as sharp as the original.
+  const sc=Math.min(W/iw,H/ih), q=Math.min(4,Math.max(2,1/sc));
+  const c=document.createElement('canvas'); c.width=Math.round(W*q); c.height=Math.round(H*q); const g=c.getContext('2d');
+  const dw=iw*sc*q, dh=ih*sc*q;
+  const e=Math.max(1,Math.round(Math.min(iw,ih)*0.004)), k=Math.max(1,Math.round(Math.min(iw,ih)*0.003));
   try{
-    if(oy>0){ g.drawImage(shot,0,0,iw,e, ox,0,dw,oy+1); g.drawImage(shot,0,ih-e,iw,e, ox,oy+dh-1,dw,oy+1); }
-    if(ox>0){ g.drawImage(shot,0,0,e,ih, 0,oy,ox+1,dh); g.drawImage(shot,iw-e,0,e,ih, ox+dw-1,oy,ox+1,dh); }
-    if(ox>0&&oy>0){ [[0,0,0,0],[iw-1,0,ox+dw-1,0],[0,ih-1,0,oy+dh-1],[iw-1,ih-1,ox+dw-1,oy+dh-1]]
-      .forEach(([sx,sy,dx,dy])=>g.drawImage(shot,sx,sy,1,1,dx,dy,ox+1,oy+1)); }
-    g.drawImage(shot,ox,oy,dw,dh);
-    _extendCache={key,url:c.toDataURL('image/png')};
-  }catch(err){ _extendCache={key,url:''}; }
-  return _extendCache.url;
+    // measure the edges on a small copy
+    const m=document.createElement('canvas'); m.width=iw; m.height=ih; const mg=m.getContext('2d',{willReadFrequently:true}); mg.drawImage(shot,0,0);
+    let fy=0.5, fx=0.5;
+    if(c.height-dh>1) fy=gapShare(edgeNoise(mg,0,k,iw,e), edgeNoise(mg,0,ih-k-e,iw,e));
+    if(c.width-dw>1)  fx=gapShare(edgeNoise(mg,k,0,e,ih), edgeNoise(mg,iw-k-e,0,e,ih));
+    const ox=(c.width-dw)*fx, oy=(c.height-dh)*fy, bx=c.width-dw-ox, by=c.height-dh-oy;
+    if(oy>0) g.drawImage(shot,0,k,iw,e, ox,0,dw,oy+1);
+    if(by>0) g.drawImage(shot,0,ih-k-e,iw,e, ox,oy+dh-1,dw,by+1);
+    if(ox>0) g.drawImage(shot,k,0,e,ih, 0,oy,ox+1,dh);
+    if(bx>0) g.drawImage(shot,iw-k-e,0,e,ih, ox+dw-1,oy,bx+1,dh);
+    if(ox>0&&oy>0) g.drawImage(shot,k,k,1,1,0,0,ox+1,oy+1);
+    if(bx>0&&oy>0) g.drawImage(shot,iw-k-1,k,1,1,ox+dw-1,0,bx+1,oy+1);
+    if(ox>0&&by>0) g.drawImage(shot,k,ih-k-1,1,1,0,oy+dh-1,ox+1,by+1);
+    if(bx>0&&by>0) g.drawImage(shot,iw-k-1,ih-k-1,1,1,ox+dw-1,oy+dh-1,bx+1,by+1);
+    // The image itself, minus a hairline on each extended side — posters often
+    // carry a light seam there, which would show as a line across the join.
+    const tT=oy>0?k:0, tB=by>0?k:0, tL=ox>0?k:0, tR=bx>0?k:0;
+    g.drawImage(shot,tL,tT,iw-tL-tR,ih-tT-tB, ox,oy,dw,dh);
+    _extendCache={key,url:c.toDataURL('image/png'),px:fx*100,py:fy*100};
+  }catch(err){ _extendCache={key,url:'',px:50,py:50}; }
+  return _extendCache;
 }
 function devBackdrop(mode){
   const bk=$('devBack');
   bk.style.display = mode==='blur' ? 'block' : 'none';
   if(mode==='blur'){ const u=`url("${shot.src}")`; if(bk.style.backgroundImage!==u) bk.style.backgroundImage=u; }
-  if(mode==='extend'){ const u=extendedBackdrop();
-    card.style.background = u ? `url("${u}") center/100% 100% no-repeat` : edgeColour(); return; }
+  if(mode==='extend'){ const x=extendedBackdrop();
+    card.style.background = x&&x.url ? `url("${x.url}") center/100% 100% no-repeat` : edgeColour();
+    // the image sits where the backdrop left room for it
+    if(x) shot.style.objectPosition=`${x.px.toFixed(1)}% ${x.py.toFixed(1)}%`;
+    shot.style.opacity = x&&x.url ? '0' : '';   // the backdrop already contains the picture
+    return; }
+  shot.style.opacity='';
   card.style.background = mode==='colour' ? edgeColour() : (mode==='blur' ? '#0b0c11' : '');
 }
 function layout(){
@@ -3185,6 +3220,8 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.25.3', items:['Fit + extend trims the hairline seam some posters have on their edges, so there\'s no line where the extension meets the image'] },
+  {v:'1.25.2', items:['Smarter Fit + extend: it checks which edges of the image are plain and grows those, moving the image towards its busy edge — so a poster with a solid header and a detailed footer grows its header instead of smearing the footer. It also samples just inside the edge, so thin border lines no longer streak'] },
   {v:'1.25.1', items:['The phone or card can be dragged on an Auto canvas too: the canvas grows on the other side, so moving the phone up makes room underneath for a caption and badges'] },
   {v:'1.25.0', items:[
     'Drag the phone (or card) itself around the canvas: pick it up on the preview and move it, e.g. up to make room for a caption and badges underneath. Snaps back to centre; the Position grid resets it',
