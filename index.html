@@ -227,7 +227,17 @@ input,select{font-family:inherit}
 .panel::-webkit-scrollbar{width:9px}
 .panel::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:9px;
   border:2px solid var(--panel)}
-.sec{border-bottom:1px solid var(--line)}
+/* Jump bar: every section one click away, pinned to the top of the panel */
+#jumpBar{position:sticky; top:0; z-index:5; display:flex; gap:5px; padding:8px 10px; overflow-x:auto;
+  background:var(--panel); border-bottom:1px solid var(--line); scrollbar-width:none}
+#jumpBar::-webkit-scrollbar{display:none}
+#jumpBar button{flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:5px 9px; border-radius:99px;
+  border:1px solid var(--line-2); background:var(--panel-2); color:var(--muted); font-size:11.5px; font-weight:600;
+  white-space:nowrap; cursor:pointer}
+#jumpBar button:hover{color:var(--text); border-color:var(--muted-2)}
+#jumpBar button.on{color:var(--text); border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+#jumpBar button .i{font-size:12px}
+.sec{border-bottom:1px solid var(--line); scroll-margin-top:48px}
 .sec > .head{display:flex; align-items:center; gap:8px; width:100%; padding:13px 16px;
   background:none; border:0; font-weight:600; font-size:13px; text-align:left}
 .sec > .head .chev{margin-left:auto; color:var(--muted-2); transition:transform .15s}
@@ -706,6 +716,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
     <!-- Controls -->
     <aside class="panel" id="panel">
       <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse the panel"></button>
+      <nav id="jumpBar" aria-label="Jump to a section"></nav>
       <!-- Content mode -->
       <section class="sec collapsed" data-sec="content">
         <button class="head"><span class="ico">🧩</span> Content <span class="chev">▾</span></button>
@@ -905,12 +916,20 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               </div>
             </div>
             <div class="field" id="devFitPosCtl" hidden>
-              <label>Image position <span class="val" id="devFitYVal">Auto</span></label>
-              <div style="display:flex;gap:8px;align-items:center">
-                <input type="range" id="devFitY" min="0" max="100" value="50" style="flex:1">
-                <button class="btn sm" id="devFitAuto" type="button" title="Let it decide from the image's edges">Auto</button>
+              <label style="display:flex;align-items:center">Image position
+                <button class="btn sm" id="devFitAuto" type="button" title="Let it decide from the image's edges" style="margin-left:auto;padding:3px 10px">Auto</button></label>
+              <div class="field"><label>Up / down <span class="val" id="devFitYVal">Auto</span></label>
+                <input type="range" id="devFitY" min="0" max="100" value="50"></div>
+              <div class="field"><label>Left / right <span class="val" id="devFitXVal">Auto</span></label>
+                <input type="range" id="devFitX" min="0" max="100" value="50"></div>
+              <div style="display:flex;gap:6px;align-items:center;margin:-2px 0 6px">
+                <span class="hint" style="margin:0">Nudge 1px</span>
+                <button class="btn sm" type="button" data-nudge="y,-1" title="Up 1px (Shift: 10px)">▲</button>
+                <button class="btn sm" type="button" data-nudge="y,1" title="Down 1px (Shift: 10px)">▼</button>
+                <button class="btn sm" type="button" data-nudge="x,-1" title="Left 1px (Shift: 10px)">◀</button>
+                <button class="btn sm" type="button" data-nudge="x,1" title="Right 1px (Shift: 10px)">▶</button>
               </div>
-              <p class="hint" style="margin-top:4px">Nudge the image up or down inside the screen.</p>
+              <p class="hint" style="margin-top:0">Nudge the image inside the screen. It only moves where there's spare room; the arrow keys on a slider move it 1px too.</p>
             </div>
             <div id="devPanCtl">
             <div class="field"><label>Show across <span class="val" id="devXVal">50%</span></label>
@@ -1386,7 +1405,7 @@ const state = {
   gradPreset:0, meshPreset:0, solid:'#1e2233', bgImage:null, bgBlur:0,
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
-  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, size:100, pad:64, rad:14, noise:false,
+  aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', devFitY:null, devFitX:null, size:100, pad:64, rad:14, noise:false,
   textVal:'', textStyle:'plain', textBg:'', cardDX:0, cardDY:0, textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
@@ -1430,7 +1449,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.26.0';
+const APP_VERSION='1.27.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1780,6 +1799,7 @@ function focusAtPoint(cx,cy){
 // Screen sizes in layout px, at the real devices' proportions (iPhone 390×844,
 // iPad Air 820×1180).
 const DEV_SCREENS={ phone:[400,866], tablet:[700,1007] };
+let _fitGap={x:0,y:0};
 // A screen that is far narrower than the image wastes most of it, so the shape
 // gives a little. A phone never does: any wider than a real iPhone and it
 // stops reading as a phone (Fit + extend / AI extend fill the gap instead); a tablet turns to landscape for a landscape image and flexes
@@ -1909,7 +1929,7 @@ function healEdgeBlock(mg,side,iw,ih,cut){
 function extendedBackdrop(){
   const W=card.offsetWidth, H=card.offsetHeight, iw=shot.naturalWidth, ih=shot.naturalHeight;
   if(!W||!H||!iw||!ih) return null;
-  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H+':'+state.devFitY;
+  const key=shot.src.length+':'+shot.src.slice(-64)+':'+W+'x'+H+':'+state.devFitY+':'+state.devFitX;
   if(_extendCache.key===key) return _extendCache;
   try{
     const m=document.createElement('canvas'); m.width=iw; m.height=ih; const mg=m.getContext('2d',{willReadFrequently:true}); mg.drawImage(shot,0,0);
@@ -1926,7 +1946,7 @@ function extendedBackdrop(){
     const sc=Math.min(W/sw,H/sh), q=Math.min(4,Math.max(2,1/sc));
     const c=document.createElement('canvas'); c.width=Math.round(W*q); c.height=Math.round(H*q); const g=c.getContext('2d');
     const dw=sw*sc*q, dh=sh*sc*q;
-    const fy = gapV ? (state.devFitY!=null ? state.devFitY/100 : gapShare(T.noise,B.noise)) : 0.5, fx = gapH ? gapShare(L.noise,R.noise) : 0.5;
+    const fy = gapV ? (state.devFitY!=null ? state.devFitY/100 : gapShare(T.noise,B.noise)) : 0.5, fx = gapH ? (state.devFitX!=null ? state.devFitX/100 : gapShare(L.noise,R.noise)) : 0.5;
     const ox=(c.width-dw)*fx, oy=(c.height-dh)*fy, bx=c.width-dw-ox, by=c.height-dh-oy;
     // bands come from the middle 80% so rounded corners don't streak down the sides
     const ax=Math.round(sw*0.1), ay=Math.round(sh*0.1);
@@ -1994,8 +2014,13 @@ function layout(){
     card.style.width=sw+'px'; card.style.height=sh+'px';
     shot.style.width='100%'; shot.style.height='auto';
     const fitIn=state.devFit==='blur'||state.devFit==='colour'||state.devFit==='extend';
+    // spare room around the fitted image, in screen px — one slider step = 1px
+    { const iw=state.imgW||shot.naturalWidth, ih=state.imgH||shot.naturalHeight, k=iw&&ih?Math.min(sw/iw,sh/ih):1;
+      _fitGap={ x:Math.max(0,sw-iw*k), y:Math.max(0,sh-ih*k) };
+      $('devFitY').step = _fitGap.y>1 ? (100/_fitGap.y).toFixed(4) : 'any';
+      $('devFitX').step = _fitGap.x>1 ? (100/_fitGap.x).toFixed(4) : 'any'; }
     shot.style.objectFit = fitIn ? 'contain' : '';
-    shot.style.objectPosition = fitIn ? `50% ${state.devFitY==null?50:state.devFitY}%` : `${state.devX}% ${state.devY}%`;
+    shot.style.objectPosition = fitIn ? `${state.devFitX==null?50:state.devFitX}% ${state.devFitY==null?50:state.devFitY}%` : `${state.devX}% ${state.devY}%`;
     devBackdrop(fitIn ? state.devFit : null);
   } else {
     // Fit: card shrink-wraps the whole image; longest side normalised for resolution.
@@ -3115,6 +3140,39 @@ async function applyMarkup(){
 }
 
 // ---------- Wiring ----------
+// Jump bar: a chip per section. Names are short and say where the popular
+// tools live (the phone mockup is under Frame, the lens effects under 3D tilt).
+(function(){
+  const bar=$('jumpBar'), panel=$('panel');
+  const NAMES={ content:'Content', batch:'Multiple', presets:'Presets', bg:'Background', pattern:'Pattern',
+    frame:'Frame & phone', layout:'Layout', overlay:'Text & badges', shadow:'Shadow', tilt:'3D & lens',
+    border:'Border', export:'Export', anim:'Animate', magic:'Resize' };
+  const secs=[...panel.querySelectorAll('section.sec[data-sec]')];
+  secs.forEach(sec=>{ const k=sec.dataset.sec, ico=sec.querySelector('.head .ico');
+    const b=document.createElement('button'); b.type='button'; b.dataset.sec=k;
+    b.title=(sec.querySelector('.head').textContent||'').replace('▾','').trim();
+    b.innerHTML=`<span class="i">${ico?ico.textContent:''}</span>${NAMES[k]||b.title}`;
+    b.onclick=()=>{ sec.classList.remove('collapsed');
+      // scrollIntoView finds whichever box actually scrolls (the panel on a
+      // phone, an outer wrapper on desktop); scroll-margin keeps the head
+      // clear of this bar
+      sec.style.scrollMarginTop=(bar.offsetHeight+4)+'px';
+      sec.scrollIntoView({ block:'start', behavior:'smooth' }); mark(k); };
+    bar.appendChild(b); });
+  const fold=document.createElement('button'); fold.type='button'; fold.title='Collapse every section';
+  fold.innerHTML='<span class="i">⤒</span>Close all';
+  fold.onclick=()=>{ secs.forEach(x=>x.classList.add('collapsed')); secs[0].scrollIntoView({block:'start',behavior:'smooth'}); };
+  bar.appendChild(fold);
+  // Keep the lit chip visible by scrolling the bar itself — scrollIntoView on
+  // the chip would cancel the panel's smooth scroll that's under way.
+  function mark(k){ bar.querySelectorAll('button[data-sec]').forEach(x=>{ const on=x.dataset.sec===k; x.classList.toggle('on',on);
+    if(on){ const l=x.offsetLeft-bar.offsetLeft, r=l+x.offsetWidth;
+      if(l<bar.scrollLeft) bar.scrollLeft=l-8; else if(r>bar.scrollLeft+bar.clientWidth) bar.scrollLeft=r-bar.clientWidth+8; } }); }
+  // highlight the section being looked at
+  let t=0; document.addEventListener('scroll',e=>{ if(e.target===bar) return; cancelAnimationFrame(t); t=requestAnimationFrame(()=>{
+    const line=bar.getBoundingClientRect().bottom+12; let cur=secs[0];
+    for(const x of secs){ if(x.getBoundingClientRect().top<=line) cur=x; else break; } mark(cur.dataset.sec); }); },{passive:true, capture:true});
+})();
 // section collapse
 document.querySelectorAll('.sec > .head').forEach(h=>{
   h.addEventListener('click',()=>h.parentElement.classList.toggle('collapsed'));
@@ -3314,6 +3372,7 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.27.0', items:['Image position now moves left and right as well as up and down, and nudges 1px at a time: ▲▼◀▶ buttons (Shift for 10px), or the arrow keys on a slider', 'Jump bar at the top of the settings panel: one click opens any section and scrolls to it (Frame & phone, 3D & lens, Text & badges…), the section you\'re in stays highlighted, and "Close all" folds everything away'] },
   {v:'1.26.0', items:['Image position for the Fit modes: nudge the image up or down inside the phone or tablet screen. Auto still decides from the image\'s edges'] },
   {v:'1.25.7', items:['Fit + extend repaints the thin margin and rounded corners around a poster\'s header and footer in the block\'s own colour, so there are no white slivers or notches where the block meets the extension'] },
   {v:'1.25.6', items:['After an AI extend, choosing Crop, Fit + blur, Fit + colour or Fit + extend puts your original image back first — so the fill works from your poster, not from what the AI painted'] },
@@ -4781,11 +4840,22 @@ function updateDevCropUI(){ $('devCropCtl').hidden=!DEV_SCREENS[state.device];
   $('devFitSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.devFit||'crop')));
   $('devPanCtl').hidden = (state.devFit||'crop')!=='crop';
   $('devFitPosCtl').hidden = (state.devFit||'crop')==='crop';
-  const fy=state.devFitY; $('devFitYVal').textContent = fy==null ? 'Auto' : fy<34 ? 'Higher' : fy>66 ? 'Lower' : 'Middle';
-  if(fy!=null) $('devFitY').value=fy; $('devFitAuto').classList.toggle('on', fy==null);
+  const fy=state.devFitY, fx=state.devFitX;
+  $('devFitYVal').textContent = fy==null ? 'Auto' : fy<34 ? 'Higher' : fy>66 ? 'Lower' : 'Middle';
+  $('devFitXVal').textContent = fx==null ? 'Auto' : fx<34 ? 'Left' : fx>66 ? 'Right' : 'Centre';
+  if(fy!=null) $('devFitY').value=fy; if(fx!=null) $('devFitX').value=fx;
+  $('devFitAuto').classList.toggle('on', fy==null && fx==null);
   if(typeof syncAiUI==='function') syncAiUI(); }         // a fitted image has nothing to pan
 $('devFitY').addEventListener('input',()=>{ state.devFitY=+$('devFitY').value; updateDevCropUI(); render(); });
-$('devFitAuto').onclick=()=>{ state.devFitY=null; updateDevCropUI(); render(); };
+$('devFitX').addEventListener('input',()=>{ state.devFitX=+$('devFitX').value; updateDevCropUI(); render(); });
+document.querySelectorAll('[data-nudge]').forEach(b=>b.addEventListener('click',e=>{
+  const [ax,dir]=b.dataset.nudge.split(','), key=ax==='y'?'devFitY':'devFitX', gap=_fitGap[ax]||0;
+  if(gap<1){ toast(ax==='y'?'No spare room above or below to move into':'No spare room at the sides to move into'); return; }
+  // from Auto, start where the image actually sits now
+  const cur = state[key]!=null ? state[key] : state.devFit==='extend' ? (ax==='y'?_extendCache.py:_extendCache.px) : 50;
+  state[key]=Math.max(0,Math.min(100, cur + (+dir)*(e.shiftKey?10:1)*100/gap));
+  updateDevCropUI(); render(); }));
+$('devFitAuto').onclick=()=>{ state.devFitY=null; state.devFitX=null; updateDevCropUI(); render(); };
 $('devFitSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
   state.devFit=b.dataset.v;
   // Picking a fill after an AI extend means "do it this way instead": go back
@@ -4917,7 +4987,7 @@ $('btnReset').onclick=()=>{
   if(state.origSrc){ shot.src=state.origSrc; }   // un-bake any redactions back to the clean image
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
-    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,size:100,pad:64,rad:14,noise:false,
+    frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',devFitY:null,devFitX:null,size:100,pad:64,rad:14,noise:false,
     textVal:'',textStyle:'plain',textBg:'',cardDX:0,cardDY:0,textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
@@ -5098,7 +5168,7 @@ function applyLens(s){
 // Saved presets (localStorage). Screenshot + wallpaper image are excluded to stay small.
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
-  'position','fill','posX','posY','devX','devY','devFit','devFitY','size','pad','rad','noise',
+  'position','fill','posX','posY','devX','devY','devFit','devFitY','devFitX','size','pad','rad','noise',
   'textVal','textStyle','textBg','cardDX','cardDY','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
