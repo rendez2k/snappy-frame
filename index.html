@@ -164,9 +164,13 @@ input,select{font-family:inherit}
 .f-card.arc .f-shot,.f-card.eclipse .f-shot,.f-card.emotion .f-shot,.f-card.ruler .f-shot{border-radius:7px}
 .f-shot{display:block; object-fit:contain}
 /* text & logo overlays (sit on the whole export canvas, above everything) */
-#logoLayer{position:absolute; z-index:6; display:none; pointer-events:none; height:auto}
+#logoLayer{position:absolute; z-index:6; display:none; height:auto}
 /* App store badges, drawn in the style of the official ones */
 #badgeLayer{position:absolute; z-index:7; display:none; gap:.28em; pointer-events:none; font-size:44px}
+/* caption, badges and logo can be picked up and moved on the preview */
+#textLayer,#badgeLayer,#logoLayer{pointer-events:auto; cursor:grab; touch-action:none}
+#textLayer.dragging,#badgeLayer.dragging,#logoLayer.dragging{cursor:grabbing; outline:1px dashed rgba(255,255,255,.75); outline-offset:4px}
+#snapGuide{position:absolute; left:50%; top:0; bottom:0; width:0; border-left:1px dashed rgba(255,255,255,.8); z-index:9; display:none; pointer-events:none}
 .sbadge{display:inline-flex; align-items:center; gap:.2em; height:1em; padding:0 .3em 0 .22em; border-radius:.17em;
   background:#000; color:#fff; border:max(1px,.022em) solid #a6a6a6; box-sizing:border-box; white-space:nowrap;
   font-family:-apple-system,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif; line-height:1}
@@ -175,7 +179,7 @@ input,select{font-family:inherit}
 .sbadge small{font-size:.2em; font-weight:500; letter-spacing:.01em; opacity:.95}
 .sbadge b{font-size:.4em; font-weight:600; letter-spacing:-.01em; margin-top:.02em}
 #badgeLayer.light .sbadge{background:#fff; color:#000; border-color:#000}
-#textLayer{position:absolute; z-index:6; display:none; pointer-events:none; white-space:pre;
+#textLayer{position:absolute; z-index:6; display:none; white-space:pre;
   font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:-.01em;
   text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
 /* Caption as a pill. Glass is iOS-style: it blurs and saturates what's behind
@@ -414,6 +418,14 @@ input.txt:focus,select.sel:focus{border-color:var(--accent)}
 
 /* lens flare: light added over the whole scene, like a real lens */
 #flareLayer{position:absolute; inset:0; z-index:6; pointer-events:none; display:none; mix-blend-mode:screen}
+/* Poster fonts for the caption, served from this site (Latin subset, SIL OFL)
+   so an export looks the same on every machine and html-to-image can embed them. */
+@font-face{font-family:'Poppins';font-weight:500;font-display:swap;src:url('fonts/poppins-500.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Poppins';font-weight:700;font-display:swap;src:url('fonts/poppins-700.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Montserrat';font-weight:500 800;font-display:swap;src:url('fonts/montserrat.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Oswald';font-weight:500 700;font-display:swap;src:url('fonts/oswald.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Bebas Neue';font-weight:400;font-display:swap;src:url('fonts/bebas-neue-400.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Pacifico';font-weight:400;font-display:swap;src:url('fonts/pacifico-400.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 /* noise overlay */
 #noiseLayer{position:absolute; inset:0; z-index:5; pointer-events:none; display:none;
   mix-blend-mode:overlay; opacity:.5;
@@ -660,6 +672,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           <div id="textLayer"></div>
           <div id="flareLayer"></div>
           <div id="badgeLayer"></div>
+          <div id="snapGuide"></div>
         </div>
       </div>
       <div class="empty" id="empty">
@@ -986,6 +999,11 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
               <option value="rounded">Rounded · Trebuchet</option>
               <option value="condensed">Condensed</option>
               <option value="display">Display · Impact</option>
+              <option value="poppins">Poppins</option>
+              <option value="montserrat">Montserrat</option>
+              <option value="oswald">Oswald</option>
+              <option value="bebas">Bebas Neue</option>
+              <option value="pacifico">Pacifico · script</option>
             </select>
           </div>
           <div class="row2">
@@ -994,6 +1012,7 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
           </div>
           <div class="field"><label>Text size <span class="val" id="textSizeVal">28px</span></label>
             <input type="range" id="textSize" min="12" max="90" value="28"></div>
+          <p class="hint" style="margin:-2px 0 10px">Tip: drag the text, logo or badges on the preview to put them anywhere. Or pick a spot below.</p>
           <div class="field"><label>Text position</label>
             <div class="posgrid" id="textPosGrid">
               <button data-p="tl"></button><button data-p="tc"></button><button data-p="tr"></button>
@@ -1357,8 +1376,8 @@ const state = {
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
-  textVal:'', textStyle:'plain', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
-  logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br',
+  textVal:'', textStyle:'plain', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc', textXY:[50,90],
+  logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br', logoXY:[85,85], badges:'none', badgeTheme:'dark', badgeSize:44, badgePos:'br', badgeXY:[50,94],
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
   dof:0, focus:15, mist:0, flare:0, flareTone:'warm', flareX:80, flareY:16,                   // depth of field: 0 = off; focus 0 = near edge … 100 = far edge
@@ -1400,7 +1419,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.23.1';
+const APP_VERSION='1.24.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1408,7 +1427,12 @@ const FONTS={
   mono:"ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace",
   rounded:"'Trebuchet MS','Segoe UI',system-ui,sans-serif",
   condensed:"'Arial Narrow','Helvetica Neue',Arial,sans-serif",
-  display:"Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif"
+  display:"Impact,Haettenschweiler,'Arial Narrow Bold',sans-serif",
+  poppins:"'Poppins',system-ui,sans-serif",
+  montserrat:"'Montserrat',system-ui,sans-serif",
+  oswald:"'Oswald','Arial Narrow',sans-serif",
+  bebas:"'Bebas Neue',Impact,sans-serif",
+  pacifico:"'Pacifico',cursive"
 };
 
 // ---------- Helpers ----------
@@ -1507,7 +1531,15 @@ function render(){
 }
 
 // Anchor an overlay to one of 9 canvas positions with a proportional margin.
-function placeOverlay(el,pos,margin){
+function placeOverlay(el,pos,margin,xy){
+  if(pos==='free' && xy){
+    // Dragged by hand: centred on a point given as % of the canvas, so it
+    // stays put when the canvas changes size or the export scales up.
+    el.style.right=el.style.bottom='auto'; el.style.left=xy[0]+'%'; el.style.top=xy[1]+'%';
+    el.style.transform='translate(-50%,-50%)';
+    if(el.id==='textLayer') el.style.textAlign='center';
+    return;
+  }
   const v=pos[0], h=pos[1];
   el.style.left=el.style.right=el.style.top=el.style.bottom='auto';
   let tx='0', ty='0';
@@ -1529,16 +1561,45 @@ function renderBadges(){
   L.style.fontSize=(state.badgeSize||44)+'px';
   L.style.display='flex';
 }
+// Pick up and move the caption, badges or logo. The position is stored as %
+// of the canvas; it snaps to the vertical centre line, which is where a
+// caption usually wants to be.
+function makeDraggable(el,posKey,xyKey){
+  let drag=null;
+  el.addEventListener('pointerdown',e=>{
+    if(typeof pickingFocus!=='undefined' && pickingFocus) return;
+    if(e.button!==0) return;
+    e.preventDefault(); e.stopPropagation();
+    const r=el.getBoundingClientRect();
+    drag={ id:e.pointerId, offX:e.clientX-(r.left+r.width/2), offY:e.clientY-(r.top+r.height/2), w:r.width, h:r.height, moved:false };
+    el.setPointerCapture(e.pointerId); el.classList.add('dragging');
+  });
+  el.addEventListener('pointermove',e=>{
+    if(!drag || e.pointerId!==drag.id) return;
+    const sr=stage.getBoundingClientRect();
+    const hw=drag.w/2/sr.width*100, hh=drag.h/2/sr.height*100;
+    let x=(e.clientX-drag.offX-sr.left)/sr.width*100, y=(e.clientY-drag.offY-sr.top)/sr.height*100;
+    x=Math.max(hw,Math.min(100-hw,x)); y=Math.max(hh,Math.min(100-hh,y));
+    const snap=Math.abs(x-50)<1.8; if(snap) x=50;
+    $('snapGuide').style.display=snap?'block':'none';
+    state[posKey]='free'; state[xyKey]=[+x.toFixed(2),+y.toFixed(2)]; drag.moved=true;
+    placeOverlay(el,'free',0,state[xyKey]);
+  });
+  const end=e=>{ if(!drag || e.pointerId!==drag.id) return;
+    const moved=drag.moved; drag=null; el.classList.remove('dragging'); $('snapGuide').style.display='none';
+    if(moved){ syncUI(); render(); } };
+  el.addEventListener('pointerup',end); el.addEventListener('pointercancel',end);
+}
 function placeOverlays(){
   const m=Math.round(Math.min(stage.offsetWidth,stage.offsetHeight)*0.045)+6;
-  placeOverlay($('textLayer'),state.textPos,m);
-  placeOverlay($('logoLayer'),state.logoPos,m);
-  placeOverlay($('badgeLayer'),state.badgePos||'br',m);
+  placeOverlay($('textLayer'),state.textPos,m,state.textXY);
+  placeOverlay($('logoLayer'),state.logoPos,m,state.logoXY);
+  placeOverlay($('badgeLayer'),state.badgePos||'br',m,state.badgeXY);
   // Caption and badges can collide — same spot, or neighbouring spots on a
   // narrow canvas (bottom-centre caption, bottom-right badges on a 9:16).
   // When their boxes actually overlap, stack them: caption above the badges.
   const tl=$('textLayer'), bl=$('badgeLayer');
-  if(tl.style.display!=='none' && bl.style.display!=='none'){
+  if(tl.style.display!=='none' && bl.style.display!=='none' && state.textPos!=='free' && state.badgePos!=='free'){
     const a=tl.getBoundingClientRect(), b=bl.getBoundingClientRect();
     const hit=!(a.right<=b.left || b.right<=a.left || a.bottom<=b.top || b.bottom<=a.top);
     if(hit){
@@ -3108,6 +3169,10 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.24.0', items:[
+    'Drag to place: pick up the caption, app store badges or logo on the preview and drop them anywhere. They snap to the centre line. The position grid still works for quick spots',
+    'Five new caption fonts, served with the site so exports look the same everywhere: Poppins, Montserrat, Oswald, Bebas Neue and Pacifico',
+  ]},
   {v:'1.23.1', items:['Caption and app store badges now stack whenever they would overlap — including neighbouring positions on a narrow canvas (bottom-centre caption, bottom-right badges), not only the same position'] },
   {v:'1.23.0', items:[
     'The phone mockup looks like a current iPhone: a Dynamic Island instead of the old notch, and side buttons on the frame',
@@ -4349,6 +4414,9 @@ $('btnLogoRemove').onclick=()=>{ state.logoSrc=null; $('btnLogoRemove').style.di
 bindRange('logoSize','logoSize',v=>v+'%');
 bindRange('logoOpacity','logoOpacity',v=>v+'%');
 bindPosGrid('logoPosGrid','logoPos');
+makeDraggable($('textLayer'),'textPos','textXY');
+makeDraggable($('badgeLayer'),'badgePos','badgeXY');
+makeDraggable($('logoLayer'),'logoPos','logoXY');
 bindPosGrid('badgePosGrid','badgePos');
 bindRange('badgeSize','badgeSize',v=>v+'px');
 function syncBadgeUI(){
@@ -4645,7 +4713,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
-    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',
+    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',textXY:[50,90],logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',logoXY:[85,85],badges:'none',badgeTheme:'dark',badgeSize:44,badgePos:'br',badgeXY:[50,94],
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
@@ -4826,7 +4894,7 @@ function applyLens(s){
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
-  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos','badges','badgeTheme','badgeSize','badgePos',
+  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','textXY','logoSrc','logoSize','logoOpacity','logoPos','logoXY','badges','badgeTheme','badgeSize','badgePos','badgeXY',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
