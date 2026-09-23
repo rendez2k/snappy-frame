@@ -168,6 +168,17 @@ input,select{font-family:inherit}
 #textLayer{position:absolute; z-index:6; display:none; pointer-events:none; white-space:pre;
   font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; letter-spacing:-.01em;
   text-shadow:0 1px 4px rgba(0,0,0,.35); max-width:88%}
+/* Caption as a pill. Glass is iOS-style: it blurs and saturates what's behind
+   it, with a bright rim on top and a fainter one underneath where light
+   would catch the edge of real glass. */
+#textLayer.pill{padding:.42em 1.05em; border-radius:999px; line-height:1.2}
+#textLayer.glass{background:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.08) 55%,rgba(255,255,255,.14));
+  -webkit-backdrop-filter:blur(16px) saturate(180%); backdrop-filter:blur(16px) saturate(180%);
+  border:1px solid rgba(255,255,255,.42);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.75), inset 0 -1px 1px rgba(255,255,255,.22), 0 10px 30px rgba(0,0,0,.22);
+  text-shadow:0 1px 2px rgba(0,0,0,.25)}
+#textLayer.solid{background:rgba(14,16,23,.82); border:1px solid rgba(255,255,255,.10);
+  box-shadow:0 10px 30px rgba(0,0,0,.25); text-shadow:none}
 /* fill (crop) mode: image covers the whole card area below any frame bar */
 .f-card.fill{display:flex}
 /* Behind a fitted image on a phone/tablet screen: the same image, enlarged and
@@ -927,6 +938,12 @@ body.is-native .ext-only, body.is-native #spInstall, body.is-native .grab-only, 
         <div class="body">
           <div class="field"><label>Text</label>
             <input class="txt" id="textVal" placeholder="Caption, @handle, URL…" value=""></div>
+          <div class="field"><label>Style</label>
+            <div class="seg" id="textStyleSeg">
+              <button data-v="plain" class="on">Plain</button>
+              <button data-v="glass" title="A frosted glass pill that blurs and tints whatever is behind it">Glass</button>
+              <button data-v="solid">Solid</button>
+            </div></div>
           <div class="field"><label>Font</label>
             <select class="sel" id="textFont">
               <option value="sans">Sans · Inter</option>
@@ -1283,7 +1300,7 @@ const state = {
   pattern:'none', patColor:'light', patOpacity:18, patScale:28, patRotate:0,
   frame:'none', frameTitle:'', hideSecrets:true,   // text cards mask API keys/tokens by default
   aspect:'auto', customW:1600, customH:1000, position:'mc', fill:false, posX:50, posY:50, devX:50, devY:0, devFit:'crop', size:100, pad:64, rad:14, noise:false,
-  textVal:'', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
+  textVal:'', textStyle:'plain', textFont:'sans', textColor:'#ffffff', textSize:28, textBold:true, textPos:'bc',
   logoSrc:null, logoSize:16, logoOpacity:100, logoPos:'br',
   shadowPreset:'md', shBlur:40, shY:24, shOp:35,
   rx:0, ry:0, rz:0,
@@ -1326,7 +1343,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.19.0';
+const APP_VERSION='1.20.0';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -1412,7 +1429,8 @@ function render(){
   const tl=$('textLayer'), tv=(state.textVal||'').trim();
   if(tv){ tl.style.display='block'; tl.textContent=state.textVal; tl.style.color=state.textColor;
     tl.style.fontSize=state.textSize+'px'; tl.style.fontWeight=state.textBold?'700':'500';
-    tl.style.fontFamily=FONTS[state.textFont]||FONTS.sans; }
+    tl.style.fontFamily=FONTS[state.textFont]||FONTS.sans;
+    const ts=state.textStyle||'plain'; tl.className = ts==='plain' ? '' : 'pill '+ts; }
   else tl.style.display='none';
   const lg=$('logoLayer');
   if(state.logoSrc){ lg.style.display='block'; lg.src=state.logoSrc;
@@ -2053,17 +2071,43 @@ function snapShotForExport(pr){
 // fit — so at a fractional pr (2.56 for a 2560px grab) the real scale is a hair
 // off and the screenshot drifts across pixel boundaries down the image. Composite
 // it ourselves at EXACTLY pr; the sub-pixel sliver at the right/bottom is dropped.
-async function stageToBlob(opts){
+async function _stageImage(opts){
   const svg=await htmlToImage.toSvg(stage, opts);
   const im=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.decoding='async'; i.src=svg; });
   try{ if(im.decode) await im.decode(); }catch(e){}
   await new Promise(r=>requestAnimationFrame(r));
+  return im;
+}
+async function stageToBlob(opts){
   const pr=opts.pixelRatio||1, W=opts.width, H=opts.height;
   const c=document.createElement('canvas');
   c.width=Math.max(1,Math.floor(W*pr+1e-6)); c.height=Math.max(1,Math.floor(H*pr+1e-6));
   const g=c.getContext('2d');
   if(opts.type==='image/jpeg'){ g.fillStyle=opts.backgroundColor||'#ffffff'; g.fillRect(0,0,c.width,c.height); }
-  g.drawImage(im,0,0,W*pr,H*pr);
+  const tl=$('textLayer');
+  if(tl.classList.contains('glass') && tl.style.display!=='none'){
+    // The PNG renderer ignores backdrop-filter, so a glass caption would export
+    // as a faint tint over SHARP content. Bake the frost in: render everything
+    // but the caption, blur that inside the pill's shape, then lay the caption
+    // (tint, rims, text) over it from a second, caption-only render.
+    const k=stage.getBoundingClientRect().width/(stage.offsetWidth||1)||1;
+    const sr=stage.getBoundingClientRect(), r=tl.getBoundingClientRect();
+    const x=(r.left-sr.left)/k*pr, y=(r.top-sr.top)/k*pr, w=r.width/k*pr, h=r.height/k*pr;
+    tl.style.visibility='hidden';
+    let base; try{ base=await _stageImage(opts); } finally { tl.style.visibility=''; }
+    g.drawImage(base,0,0,W*pr,H*pr);
+    const snap=document.createElement('canvas'); snap.width=c.width; snap.height=c.height; snap.getContext('2d').drawImage(c,0,0);
+    g.save(); g.beginPath(); g.roundRect(x,y,w,h,h/2); g.clip();
+    g.filter=`blur(${(16*pr).toFixed(1)}px) saturate(180%)`; g.drawImage(snap,0,0); g.filter='none'; g.restore();
+    const hide=[persp,$('patternLayer'),$('logoLayer'),$('noiseLayer'),$('flareLayer')].concat(bgBlurEl?[bgBlurEl]:[]);
+    const saved=hide.map(el=>el.style.visibility), bg=stage.style.background;
+    hide.forEach(el=>el.style.visibility='hidden'); stage.style.background='transparent';
+    let cap; try{ cap=await _stageImage({...opts, backgroundColor:undefined}); }
+    finally{ hide.forEach((el,i)=>el.style.visibility=saved[i]); stage.style.background=bg; }
+    g.drawImage(cap,0,0,W*pr,H*pr);
+  } else {
+    g.drawImage(await _stageImage(opts),0,0,W*pr,H*pr);
+  }
   return new Promise(res=>c.toBlob(res, opts.type||'image/png', opts.quality));
 }
 function outSize(){
@@ -2948,6 +2992,9 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.20.0', items:[
+    'Caption styles: the text (web address, @handle…) can now sit in a rounded pill — Glass is iOS-style frosted glass that blurs and tints whatever is behind it, with a light-catching rim, and Solid is a dark tag. Text & logo → Style',
+  ]},
   {v:'1.19.0', items:[
     'Lens looks: one-click camera styles under Presets (Hero, Tilt-shift, Dreamy, Golden hour, Far focus, Fog, Neon), made from tilt, depth of field, mist and flare. They change only the camera, so they combine with any background preset. "Clear lens" turns the effects off',
     'Lens flare: a light source with an anamorphic streak and ghost reflections along the line through the centre, in warm, cool or white, placed wherever you like (3D tilt section)',
@@ -4151,6 +4198,8 @@ bindPosGrid('posGrid','position');
 
 // text & logo overlays
 $('textVal').oninput=e=>{ state.textVal=e.target.value; render(); };
+$('textStyleSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  state.textStyle=b.dataset.v; $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); render(); });
 $('textFont').onchange=e=>{ state.textFont=e.target.value; render(); };
 $('textBold').onchange=e=>{ state.textBold=e.target.checked; render(); };
 bindRange('textSize','textSize',v=>v+'px');
@@ -4400,7 +4449,7 @@ $('btnReset').onclick=()=>{
   Object.assign(state,{ bgType:'gradient',gradAngle:120,gradC1:'#6d5efc',gradC2:'#c05bff',gradPreset:0,
     meshPreset:0,solid:'#1e2233',bgBlur:0,pattern:'none',patColor:'light',patOpacity:18,patScale:28,patRotate:0,
     frame:'none',frameTitle:'',aspect:'auto',customW:1600,customH:1000,position:'mc',fill:false,posX:50,posY:50,devX:50,devY:0,devFit:'crop',size:100,pad:64,rad:14,noise:false,
-    textVal:'',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
+    textVal:'',textStyle:'plain',textFont:'sans',textColor:'#ffffff',textSize:28,textBold:true,textPos:'bc',logoSrc:null,logoSize:16,logoOpacity:100,logoPos:'br',
     shadowPreset:'md',shBlur:40,shY:24,shOp:35,rx:0,ry:0,rz:0,dof:0,focus:15,mist:0,flare:0,flareTone:'warm',flareX:80,flareY:16,bw:0,bc:'#ffffff',
     device:'none', annotations:[], redactions:[], origSrc:null});
   syncUI(); render(); toast('Styles reset');
@@ -4427,7 +4476,8 @@ function syncUI(){
   $('frameTitleField').hidden=!frameHasTitle(state.frame); $('frameTitle').value=state.frameTitle||'';
   $('aspect').value=state.aspect;
   $('posGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.position));
-  $('textVal').value=state.textVal||''; setColor('textColor',state.textColor);
+  $('textVal').value=state.textVal||'';
+  $('textStyleSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===(state.textStyle||'plain'))); setColor('textColor',state.textColor);
   $('textFont').value=state.textFont||'sans';
   $('textBold').checked=state.textBold; $('textSize').value=state.textSize; $('textSizeVal').textContent=state.textSize+'px';
   $('textPosGrid').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.p===state.textPos));
@@ -4579,7 +4629,7 @@ function applyLens(s){
 const STYLE_KEYS=['bgType','gradAngle','gradC1','gradC2','gradPreset','meshPreset','solid','bgImage','bgBlur',
   'pattern','patColor','patOpacity','patScale','patRotate','frame','frameTitle','aspect','customW','customH',
   'position','fill','posX','posY','devX','devY','devFit','size','pad','rad','noise',
-  'textVal','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
+  'textVal','textStyle','textFont','textColor','textSize','textBold','textPos','logoSrc','logoSize','logoOpacity','logoPos',
   'shadowPreset','shBlur','shY','shOp','rx','ry','rz','dof','focus','mist','flare','flareTone','flareX','flareY','bw','bc','device','multi','multiGap'];
 const PKEY='snappy_presets_v1';
 function loadUser(){ try{ return JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ return []; } }
