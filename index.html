@@ -1296,7 +1296,7 @@ const MESHES = [
   'radial-gradient(at 24% 18%,#a18cd1 0,transparent 50%),radial-gradient(at 80% 24%,#fbc2eb 0,transparent 50%),radial-gradient(at 55% 88%,#8ec5fc 0,transparent 55%),linear-gradient(120deg,#20233a,#111324)',
   'radial-gradient(at 18% 20%,#ff9966 0,transparent 50%),radial-gradient(at 82% 20%,#ff5e62 0,transparent 50%),radial-gradient(at 50% 88%,#c471ed 0,transparent 55%),linear-gradient(120deg,#2c1526,#160b16)',
 ];
-const APP_VERSION='1.17.1';
+const APP_VERSION='1.17.2';
 const BLANK_PX='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const FONTS={
   sans:"'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
@@ -2019,7 +2019,11 @@ function handleFile(file){
   const textFile = !file.type.startsWith('image/') && (file.type.startsWith('text/') || file.type==='application/json' ||
     /\.(md|markdown|txt|json|js|jsx|ts|tsx|py|rb|go|rs|java|c|h|cpp|cs|sh|bash|yml|yaml|toml|ini|css|html|xml|sql|swift|kt|log)$/i.test(file.name||''));
   if(textFile){ const r=new FileReader(); r.onload=e=>renderTextCard(String(e.target.result), file.name||'notes.md'); r.readAsText(file); return; }
-  if(!file.type.startsWith('image/')){ toast('Please choose an image file',true); return; }
+  const IMG_EXT=/\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i;
+  if(/\.(heic|heif)$/i.test(file.name||'') || /hei[cf]/.test(file.type)){
+    toast('HEIC photos can\'t be opened in a browser. Export it as JPEG or PNG first (on an iPhone: Settings → Camera → Formats → Most Compatible).',true); return; }
+  // Windows sometimes hands over a copied or dropped file with no type at all.
+  if(!file.type.startsWith('image/') && !IMG_EXT.test(file.name||'')){ toast('That isn\'t an image file ('+(file.type||file.name||'unknown type')+')',true); return; }
   const r=new FileReader(); r.onload=e=>loadImage(e.target.result); r.readAsDataURL(file);
 }
 
@@ -2668,6 +2672,10 @@ async function pasteFromClipboard(){
       if(t){ const b=await item.getType(t); handleFile(new File([b],'pasted.'+(t.split('/')[1]||'png'),{type:t})); return; }
     }
     for(const item of await navigator.clipboard.read()){
+      if(item.types.includes('text/html')){ const src=imgSrcFromHtml(await (await item.getType('text/html')).text());
+        if(src && await loadImageFromUrl(src)) return; }
+    }
+    for(const item of await navigator.clipboard.read()){
       if(item.types.includes('text/plain')){ const txt=(await (await item.getType('text/plain')).text()).trim();
         if(/^https?:\/\/\S+$/.test(txt)){ const box=$('urlInput').offsetParent?'urlInput':'urlInput2'; $(box).value=txt; toast('That\'s a link. Press Grab to screenshot the page.'); return; }
         if(txt.length>=3){ openTextModal(txt); return; } }
@@ -2688,6 +2696,20 @@ function updateKeyUI(){ $('btnKey').textContent = getShotKey()
   : '⚙ Add a ScreenshotOne key to grab webpages'; }
 // Load a cross-origin image and bake it to a data URL (export-safe). Only works
 // if the provider sends CORS headers on the image; otherwise it rejects.
+// An image copied from a web page, Slack, Discord or a chat app often arrives
+// as HTML (<img src="https://…">) with no pixels. Load it directly if the
+// host allows it, else through the site's image function.
+async function loadImageFromUrl(src){
+  if(/^data:image\//.test(src)){ loadImage(src); return true; }
+  if(!/^https?:\/\//.test(src)) return false;
+  toast('Fetching the copied image…');
+  try{ loadImage(await loadCorsImage(src)); return true; }catch(e){}
+  try{ const r=await fetch('/.netlify/functions/image?url='+encodeURIComponent(src)); const j=await r.json();
+    if(j.dataUrl){ loadImage(j.dataUrl); return true; } }catch(e){}
+  toast('Couldn\'t fetch that image — its site blocks it. Save it, then drag the file in.',true); return true;
+}
+function imgSrcFromHtml(html){ const m=html && html.match(/<img[^>]+src\s*=\s*["']([^"']+)["']/i);
+  return m ? m[1].replace(/&amp;/g,'&') : null; }
 function loadCorsImage(src){
   return new Promise((res,rej)=>{
     const im=new Image(); im.crossOrigin='anonymous';
@@ -2826,6 +2848,11 @@ $('sheetHandle').onclick=()=>{ document.body.classList.toggle('sheet-collapsed')
 
 // version pill + What's new modal
 const CHANGELOG=[
+  {v:'1.17.2', items:[
+    'Fixed: pasting an image copied from a web page, Slack, Discord or a chat app did nothing, because those put a link to the image on the clipboard rather than the image itself. It is now fetched and loaded',
+    'Fixed: an image file copied or dropped from Windows Explorer with no file type was refused as "not an image"',
+    'HEIC photos, which browsers can\'t open, now get a message saying how to convert them, and any other refused file says what it was',
+  ]},
   {v:'1.17.1', items:[
     'A Paste button, in the top bar and on the start screen, for phones and tablets (no Ctrl+V) and for anyone who didn\'t know the shortcut. It pastes an image, opens pasted text as a text card, or puts a pasted link in the Grab box',
   ]},
@@ -3230,6 +3257,10 @@ window.addEventListener('paste',e=>{
   for(const it of items){ if(it.type.startsWith('image/')){ handleFile(it.getAsFile()); e.preventDefault(); return; } }
   const f=[...(e.clipboardData.files||[])].find(x=>x.type.startsWith('image/'));
   if(f){ handleFile(f); e.preventDefault(); return; }
+  const fAny=[...(e.clipboardData.files||[])][0];
+  if(fAny){ handleFile(fAny); e.preventDefault(); return; }            // says why it isn't usable
+  const imgSrc=imgSrcFromHtml(e.clipboardData.getData('text/html'));
+  if(imgSrc){ e.preventDefault(); loadImageFromUrl(imgSrc); return; }
   // No image on the clipboard: pasted TEXT opens the text-card editor prefilled.
   // Skip when typing in a field, when a modal is up, or for bare URLs (those
   // belong to the "grab a webpage" box).
