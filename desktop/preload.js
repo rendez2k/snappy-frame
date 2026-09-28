@@ -74,4 +74,16 @@ contextBridge.exposeInMainWorld('snap', {
   combineAdd: () => ipcRenderer.invoke('combine:add'),
   combineSave: (payload) => ipcRenderer.invoke('combine:save', payload),
   combineCopy: (bytes) => ipcRenderer.send('combine:copy', bytes),
+  // screen recording (hidden recorder window + the floating control pill)
+  recOnStart: (cb) => ipcRenderer.on('rec:start', (e, j) => cb(j)),
+  recOnStop: (cb) => ipcRenderer.on('rec:stop', () => cb()),
+  recOnCancel: (cb) => ipcRenderer.on('rec:cancel', () => cb()),
+  recStarted: (info) => ipcRenderer.send('rec:started', info),
+  recTick: (ms) => ipcRenderer.send('rec:tick', ms),
+  recDone: (res) => ipcRenderer.send('rec:done', res),
+  recError: (msg) => ipcRenderer.send('rec:error', msg),
+  recbarReady: () => ipcRenderer.send('recbar:ready'),
+  recbarOnState: (cb) => ipcRenderer.on('recbar:state', (e, st) => cb(st)),
+  recbarStop: () => ipcRenderer.send('recbar:stop'),
+  recbarCancel: () => ipcRenderer.send('recbar:cancel'),
 });

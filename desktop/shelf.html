@@ -54,6 +54,9 @@
   .snap .pn{position:absolute;right:3px;bottom:3px;border:0;border-radius:5px;padding:2px 5px;font-size:9.5px;
     font-weight:600;background:rgba(10,12,18,.82);color:#fff;cursor:pointer;display:none;}
   .snap:hover .c,.snap:hover .pn{display:block;}
+  .snap .clip{position:absolute;left:5px;top:5px;border-radius:5px;padding:2px 6px;font:700 9.5px/1.3 inherit;
+    background:rgba(255,77,77,.92);color:#fff;pointer-events:none;letter-spacing:.02em}
+  .snap.noimg{min-height:64px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:10px;line-height:1.3}
   #empty{color:var(--mut);font-size:10.5px;text-align:center;padding:14px 6px;line-height:1.5;margin:auto;}
   .all{width:100%;border:1px dashed var(--line);background:#20242f;color:var(--ink);border-radius:9px;
     padding:7px 4px;font:600 10.5px/1.2 inherit;cursor:grab;text-align:center;}
@@ -118,12 +121,15 @@
       d.className = 'snap' + (it.i === 0 ? ' new' : '');   // newest first — mark it
       d.draggable = true; d.title = it.name + ' — drag into Claude, or double-click to open the folder';
       d.innerHTML = '<img alt="">';
-      d.querySelector('img').src = it.thumb;
+      if(it.thumb) d.querySelector('img').src = it.thumb;
+      else { d.classList.add('noimg'); d.innerHTML = it.name; }
+      if(it.clip){ const b = document.createElement('span'); b.className = 'clip'; b.textContent = '▶ clip'; d.appendChild(b);
+        d.title = it.name + ' — drag into a chat, right-click to play or copy'; }
       const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = 'Remove from shelf';
       x.onclick = e => { e.stopPropagation(); window.snap.shelfRemove(it.i); };
-      const c = document.createElement('button'); c.className = 'c'; c.textContent = 'copy'; c.title = 'Copy to clipboard';
+      const c = document.createElement('button'); c.className = 'c'; c.textContent = 'copy'; c.title = it.clip ? 'Copy the file — paste it into a chat' : 'Copy to clipboard';
       c.onclick = e => { e.stopPropagation(); window.snap.shelfCopy(it.i); };
-      const pn = document.createElement('button'); pn.className = 'pn'; pn.textContent = 'pin'; pn.title = 'Float this on top as a reference';
+      const pn = document.createElement('button'); pn.className = 'pn'; pn.textContent = it.clip ? 'play' : 'pin'; pn.title = it.clip ? 'Play this clip' : 'Float this on top as a reference';
       pn.onclick = e => { e.stopPropagation(); window.snap.shelfPin(it.i); };
       // The native drag-out: preventDefault and let the main process take over
       // with the real file, so the drop target receives a FILE, not a bitmap.

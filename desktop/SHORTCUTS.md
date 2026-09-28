@@ -1,6 +1,6 @@
 # Snappy Snap — every shortcut
 
-Version 0.28.0. Everything in the first table is editable in **Settings…**
+Version 0.29.0. Everything in the first table is editable in **Settings…**
 (tray icon → Settings). The rest are fixed.
 
 On a Mac build, `Ctrl` means `Cmd`.
@@ -19,6 +19,7 @@ These work from anywhere, whatever app you are in.
 | `Ctrl+Shift+4` | **Terminal text** — the focused terminal's whole scrollback, as text, keys masked |
 | `Ctrl+Shift+5` | **Batch** — collect several grabs, then hand them over together |
 | `Ctrl+Shift+6` | **Whole screen** — the screen your cursor is on, no rectangle |
+| `Ctrl+Shift+7` | **Record a clip** — drag a rectangle and it records video; press again to stop |
 | `Ctrl+Shift+O` | **Copy text** — OCR a region straight to the clipboard |
 | `Ctrl+Shift+P` | **Pin** — float a region on top as a reference |
 | `Ctrl+Shift+S` | **Session shelf** — show or hide the strip of recent snaps |
@@ -69,15 +70,35 @@ The rectangle stays live when you let go, instead of capturing immediately.
 | Shortcut | What it does |
 |---|---|
 | `1` … `9`, then `0` | Pick a mode, left to right; `0` is the tenth |
+| `R` | Pick Record |
 | `Enter` | Capture in the current mode |
 | *double-click a mode* | Pick it and capture at once |
 | `Esc` | Close the bar, or close the Options menu if it is open |
 
 The modes in order: region, window, whole screen, mark up, terminal, copy text,
-pin, batch, then idea board and Google Photos.
+pin, batch, record, then idea board and Google Photos.
 
 The last two only appear once you have set them up, so the numbers for
 everything else never move.
+
+---
+
+## While recording a clip
+
+A small bar sits under the area being recorded (it is not in the video), and a
+red dashed outline marks the area.
+
+| Shortcut | What it does |
+|---|---|
+| `Ctrl+Shift+7` again | Stop and save |
+| **Stop** | Stop and save |
+| **✕** or `Esc` on the bar | Cancel — nothing is saved |
+| *drag the bar* | Move it out of the way |
+
+Clips stop on their own at the limit in Settings (20 seconds unless you change
+it). They save as MP4 next to your snaps, land on the shelf with a ▶ badge,
+and the file is copied, so `Ctrl+V` in Slack, Teams or a chat attaches it.
+On the shelf: right-click to play or copy, drag it straight into a chat.
 
 ---
 
@@ -197,6 +218,9 @@ the one in your tray, which performs the capture.
 "Snappy Snap.exe" --photos                      # region, uploaded to Google Photos
 "Snappy Snap.exe" --bar                         # show or hide the capture bar
 "Snappy Snap.exe" --shelf                       # show or hide the shelf
+"Snappy Snap.exe" --record                      # drag a region, record it as a clip
+"Snappy Snap.exe" --record-screen               # record the whole screen under the cursor
+"Snappy Snap.exe" --stop                        # stop the clip being recorded
 ```
 
 Add any of these to a capture:

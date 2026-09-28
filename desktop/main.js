@@ -24,6 +24,9 @@ const DEFAULTS = {
   pinHotkey: 'CommandOrControl+Shift+P',           // grab a region and pin it on top of everything
   screenHotkey: 'CommandOrControl+Shift+6',        // the whole screen, no marquee
   allHotkey: '',                                   // every monitor stitched into one image (off by default)
+  recordHotkey: 'CommandOrControl+Shift+7',        // record a region as a short video; press again to stop
+  recordSeconds: 20,                               // clips stop on their own after this long
+  recordFps: 30,
   magnifier: true,                                 // pixel loupe while dragging the marquee
   adjustRegion: false,                             // hold the marquee after the drag so it can be nudged/resized
   namePattern: '',                                 // '' = the built-in naming; else a {token} template
@@ -134,7 +137,7 @@ async function startCapture(mode){
   if(overlayBusy) return;                           // one marquee at a time
   overlayBusy = true;
   const seq = ++grabSeq;
-  captureMode = ['markup','batch','ocr','pin','board','photos'].includes(mode) ? mode : 'normal';
+  captureMode = ['markup','batch','ocr','pin','board','photos','record'].includes(mode) ? mode : 'normal';
   try{
     const pt = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(pt);
@@ -161,7 +164,7 @@ async function startCapture(mode){
     if(overlayWin.webContents.isLoading()){          // only the very first grab waits for the page
       await new Promise(r => overlayWin.webContents.once('did-finish-load', r));
     }
-    pending.set(overlayWin.webContents.id, { img, w:size.width, h:size.height });
+    pending.set(overlayWin.webContents.id, { img, w:size.width, h:size.height, sourceId: src.id, display });
     overlayWin.setBounds({ x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: display.bounds.height });
     // JPEG preview (~10× smaller than a PNG dataURL) keeps encode + IPC + decode
     // quick. Wait until the renderer confirms the frozen frame is PAINTED before
@@ -189,6 +192,10 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   let cw = Math.round(rect.w * iw), ch = Math.round(rect.h * ih);
   cx = Math.max(0, Math.min(cx, iw - 1)); cy = Math.max(0, Math.min(cy, ih - 1));
   cw = Math.max(1, Math.min(cw, iw - cx)); ch = Math.max(1, Math.min(ch, ih - cy));
+  if(captureMode === 'record'){                      // the marquee picked WHERE; now record it live
+    startRecording({ sourceId: data.sourceId, display: data.display, rect, srcW: iw, srcH: ih });
+    return;
+  }
   const crop = full.crop({ x:cx, y:cy, width:cw, height:ch });
   if(captureMode === 'ocr'){ await deliverOcr(crop); returnBar(); return; }
   if(captureMode === 'pin'){ openPin(crop); returnBar(); return; }
@@ -200,6 +207,148 @@ ipcMain.on('overlay:commit', async (e, rect) => {
   returnBar();
   if(settings.warnSecrets !== false) warnIfSecretsOnScreen();   // async, never blocks the grab
 });
+
+// ---- screen recording ------------------------------------------------------
+// Short clips: the marquee picks the area, a hidden window records the live
+// screen cropped to it, and a small pill (excluded from the capture) shows the
+// clock with Stop and Cancel. Clips stop on their own after recordSeconds.
+let recWin = null, recBar = null, recFrame = null, recJob = null;
+function isRecording(){ return !!recJob; }
+function ensureRecorder(){
+  if(recWin && !recWin.isDestroyed()) return;
+  recWin = new BrowserWindow({ width: 320, height: 200, show:false, skipTaskbar:true,
+    webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true, backgroundThrottling:false } });
+  recWin.loadFile('recorder.html');
+  recWin.on('closed', () => { recWin = null; });
+}
+function recState(st){ if(recBar && !recBar.isDestroyed()) recBar.webContents.send('recbar:state', st); }
+async function startRecording({ sourceId, display, rect, srcW, srcH }){
+  if(recJob) return;
+  const maxMs = Math.max(3, Math.min(300, +settings.recordSeconds || 20)) * 1000;
+  recJob = { maxMs, display, rect, started:false };
+  // Where the region sits, in screen coordinates, for the outline and the pill.
+  const b = display.bounds;
+  const rx = Math.round(b.x + rect.x * b.width), ry = Math.round(b.y + rect.y * b.height);
+  const rw = Math.round(rect.w * b.width), rh = Math.round(rect.h * b.height);
+  // A red outline just OUTSIDE the region, click-through, and excluded from
+  // capture as well, so it never appears in the clip even on a full-screen grab.
+  const pad = 3;
+  recFrame = new BrowserWindow({ x: rx - pad, y: ry - pad, width: rw + pad * 2, height: rh + pad * 2,
+    frame:false, transparent:true, alwaysOnTop:true, skipTaskbar:true, focusable:false, resizable:false,
+    hasShadow:false, show:false, enableLargerThanScreen:true, backgroundColor:'#00000000' });
+  recFrame.setIgnoreMouseEvents(true);
+  try{ recFrame.setContentProtection(true); }catch(e){}
+  recFrame.setAlwaysOnTop(true, 'screen-saver');
+  recFrame.loadURL('data:text/html,' + encodeURIComponent('<html><body style="margin:0;height:100vh;box-sizing:border-box;border:3px dashed #ff4d4d;border-radius:4px;background:transparent"></body></html>'));
+  recFrame.once('ready-to-show', () => { try{ recFrame.showInactive(); }catch(e){} });
+  // The pill sits under the region, or above it if there's no room below.
+  const wa = display.workArea, PW = 300, PH = 44;
+  let px = Math.max(wa.x + 8, Math.min(rx + rw / 2 - PW / 2, wa.x + wa.width - PW - 8));
+  let py = ry + rh + pad + 10;
+  if(py + PH > wa.y + wa.height) py = ry - pad - 10 - PH;
+  if(py < wa.y) py = wa.y + 10;                                   // region fills the screen: top edge
+  recBar = new BrowserWindow({ x: Math.round(px), y: Math.round(py), width: PW, height: PH, frame:false, transparent:true,
+    alwaysOnTop:true, skipTaskbar:true, resizable:false, maximizable:false, fullscreenable:false, hasShadow:false,
+    backgroundColor:'#00000000', show:false,
+    webPreferences:{ preload: path.join(__dirname, 'preload.js'), contextIsolation:true } });
+  try{ recBar.setContentProtection(true); }catch(e){}
+  recBar.setAlwaysOnTop(true, 'screen-saver');
+  recBar.loadFile('recbar.html');
+  recBar.once('ready-to-show', () => { try{ recBar.showInactive(); }catch(e){} });
+  await hideOwnWindows();                                          // shelf, pins, HUD stay out of the clip
+  ensureRecorder();
+  if(recWin.webContents.isLoading()) await new Promise(r => recWin.webContents.once('did-finish-load', r));
+  recWin.webContents.send('rec:start', { sourceId, rect, srcW, srcH, maxMs, fps: +settings.recordFps || 30,
+    bitrate: Math.min(16e6, Math.max(4e6, Math.round(srcW * srcH * rect.w * rect.h * (+settings.recordFps || 30) * 0.12))) });
+  refreshTrayMenu();
+}
+function stopRecording(){ if(recJob && recWin && !recWin.isDestroyed()) recWin.webContents.send('rec:stop'); }
+function cancelRecording(){ if(recJob && recWin && !recWin.isDestroyed()) recWin.webContents.send('rec:cancel'); }
+function endRecordingUi(){
+  for(const w of [recBar, recFrame]){ try{ if(w && !w.isDestroyed()) w.close(); }catch(e){} }
+  recBar = recFrame = null; recJob = null;
+  restoreOwnWindows();
+  refreshTrayMenu();
+}
+ipcMain.on('recbar:ready', () => recState({ max: recJob ? recJob.maxMs : 20000, ms: 0 }));
+ipcMain.on('recbar:stop', () => stopRecording());
+ipcMain.on('recbar:cancel', () => cancelRecording());
+ipcMain.on('rec:started', () => { if(recJob) recJob.started = true; recState({ started:true, ms:0 }); });
+ipcMain.on('rec:tick', (e, ms) => recState({ started:true, ms }));
+ipcMain.on('rec:error', (e, msg) => {
+  console.error('recording failed', msg);
+  endRecordingUi(); returnBar();
+  if(Notification.isSupported()) new Notification({ title:'Snappy Snap', body:"Couldn't start the recording — " + msg }).show();
+});
+ipcMain.on('rec:done', async (e, res) => {
+  endRecordingUi();
+  if(res && res.bytes){ try{ await handleVideo(Buffer.from(res.bytes), res); }catch(err){ console.error('saving the clip failed', err); } }
+  returnBar();
+});
+// Thumbnails for clips live in app data, keyed by the clip's path, so the
+// shelf can show them after a restart without littering the save folder.
+function clipThumbPath(file){ return path.join(app.getPath('userData'), 'clip-thumbs', crypto.createHash('sha1').update(file).digest('hex') + '.jpg'); }
+// Put the FILE on the clipboard (a video can't go on as pixels). Windows'
+// own Set-Clipboard writes the file-drop format that Explorer, Slack, Teams and
+// chat apps read on paste; the legacy FileNameW buffer goes on first so there is
+// something to paste even while PowerShell spins up.
+function copyFileToClipboard(file){
+  if(process.platform !== 'win32') return;
+  try{ clipboard.writeBuffer('FileNameW', Buffer.from(file + '\0', 'utf16le')); }catch(e){}
+  try{ execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "Set-Clipboard -LiteralPath '" + String(file).replace(/'/g, "''") + "'"], { windowsHide:true, timeout:8000 }, () => {}); }catch(e){}
+}
+function isClip(file){ return /\.(mp4|webm)$/i.test(file || ''); }
+async function handleVideo(bytes, info){
+  const cli = cliOverride; cliOverride = null;
+  const wantSave = cli && cli.save !== null && cli.save !== undefined ? cli.save : settings.saveToFolder;
+  const n = nameParts(), secs = Math.max(1, Math.round((info.ms || 0) / 1000));
+  let file = null;
+  if(wantSave){
+    ensureFolder();
+    let dir = (cli && cli.dir) || settings.saveFolder;
+    if(settings.dailyFolders) dir = path.join(dir, n.day);
+    const base = settings.namePattern ? applyNamePattern(settings.namePattern, { width: info.width, height: info.height }) + ' clip'
+               : settings.dailyFolders ? `Clip ${n.time}` : `Clip ${n.readable} ${n.time}`;
+    try{ fs.mkdirSync(dir, { recursive:true }); }catch(e){}
+    let p = path.join(dir, base + '.' + info.ext), i = 2;
+    while(fs.existsSync(p)){ p = path.join(dir, `${base} (${i}).${info.ext}`); i++; }
+    try{ fs.writeFileSync(p, bytes); file = p; }catch(e){ console.error('clip save failed', e); }
+  }
+  if(!file){                                        // not saving: still needs a real file to drag or paste
+    try{ const t = path.join(app.getPath('temp'), 'snappy-shelf'); fs.mkdirSync(t, { recursive:true });
+      file = path.join(t, 'Clip ' + Date.now() + '.' + info.ext); fs.writeFileSync(file, bytes); }catch(e){ file = null; }
+  }
+  if(!file) return;
+  // The clipboard can't hold a video, but it can hold the FILE: paste it into
+  // Slack, Teams, Explorer or a chat and it arrives as an attachment.
+  if(settings.copyToClipboard && process.platform === 'win32'){
+    copyFileToClipboard(file);
+  }
+  let thumb = nativeImage.createEmpty();
+  try{ if(info.thumb) thumb = nativeImage.createFromDataURL(info.thumb); }catch(e){}
+  try{ const tp = clipThumbPath(file); fs.mkdirSync(path.dirname(tp), { recursive:true }); if(!thumb.isEmpty()) fs.writeFileSync(tp, thumb.toJPEG(85)); }catch(e){}
+  if(settings.shelf !== false) addToShelf(file, thumb, { clip:true, secs });
+  if(settings.notify && Notification.isSupported()){
+    const nt = new Notification({ title:'Clip saved — ' + secs + 's', body: (settings.copyToClipboard ? 'Copied as a file — paste it into a chat. ' : '') + path.basename(file) });
+    nt.on('click', () => shell.showItemInFolder(file)); nt.show();
+  }
+  if(settings.revealAfter) shell.showItemInFolder(file);
+}
+// Record the whole screen under the cursor: no marquee.
+async function recordWholeScreen(){
+  if(recJob) return;
+  const pt = screen.getCursorScreenPoint(), display = screen.getDisplayNearestPoint(pt);
+  const sources = await desktopCapturer.getSources({ types:['screen'], thumbnailSize:{ width:1, height:1 } });
+  const displays = screen.getAllDisplays(), idx = displays.findIndex(d => d.id === display.id);
+  const src = sources.find(s2 => String(s2.display_id) === String(display.id)) || sources[idx] || sources[0];
+  if(!src) return;
+  const sf = display.scaleFactor || 1;
+  startRecording({ sourceId: src.id, display, rect:{ x:0, y:0, w:1, h:1 },
+    srcW: Math.round(display.size.width * sf), srcH: Math.round(display.size.height * sf) });
+}
+// One hotkey both starts and stops.
+function toggleRecord(){ if(recJob) stopRecording(); else startCapture('record'); }
 
 function sanitizeName(s){ return String(s || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60); }
 
@@ -1020,21 +1169,22 @@ function loadHistory(){
     if(!r || !r.file) continue;
     try{ if(!fs.existsSync(r.file)) continue; }catch(e){ continue; }
     let thumb = '';
+    const clip = isClip(r.file);
     try{
-      const im = nativeImage.createFromPath(r.file);
-      if(im.isEmpty()) continue;
-      thumb = im.resize({ height: 168, quality: 'good' }).toDataURL();
+      const im = nativeImage.createFromPath(clip ? clipThumbPath(r.file) : r.file);
+      if(im.isEmpty() && !clip) continue;
+      thumb = im.isEmpty() ? '' : im.resize({ height: 168, quality: 'good' }).toDataURL();
     }catch(e){ continue; }
-    shelf.push({ file: r.file, thumb, name: r.name || path.basename(r.file) });
+    shelf.push({ file: r.file, thumb, name: r.name || path.basename(r.file), clip });
     if(shelf.length >= 40) break;
   }
 }
-function addToShelf(file, image){
+function addToShelf(file, image, extra){
   let thumb = '';
   // Stored big enough for the largest shelf size — resizing UP a 96px thumb
   // just gave a blurry one, which defeats the point of making them larger.
   try{ thumb = image.resize({ height: 168, quality: 'good' }).toDataURL(); }catch(e){}
-  shelf.unshift({ file, thumb, name: path.basename(file) });
+  shelf.unshift({ file, thumb, name: path.basename(file), clip: !!(extra && extra.clip), secs: extra && extra.secs });
   if(shelf.length > 40) shelf.length = 40;
   if(settings.shelfAutoShow !== false) openShelf(true);
   sendShelf();
@@ -1042,7 +1192,7 @@ function addToShelf(file, image){
 }
 function sendShelf(){
   if(shelfWin && !shelfWin.isDestroyed()){
-    shelfWin.webContents.send('shelf:update', shelf.map((s2, i) => ({ i, thumb: s2.thumb, name: s2.name })));
+    shelfWin.webContents.send('shelf:update', shelf.map((s2, i) => ({ i, thumb: s2.thumb, name: s2.name, clip: !!s2.clip })));
   }
 }
 const SHELF_W = { sm: 140, md: 200, lg: 272 };
@@ -1179,6 +1329,7 @@ ipcMain.on('bar:run', async (e, mode) => {
     // window/terminal finish when they resolve; the marquee modes finish later,
     // at commit/cancel, so those call returnBar() from their own end points.
     if(mode === 'screen'){ await captureWholeScreen(); }          // returns the bar itself
+    else if(mode === 'record'){ startCapture('record'); }         // returns at the end of the clip
     else if(mode === 'window'){ await captureActiveWindow(); returnBar(); }
     else if(mode === 'board'){ startCapture('board'); }
     else if(mode === 'photos'){ startCapture('photos'); }
@@ -1234,8 +1385,10 @@ const SHELF_MODES = [
   ['ocr', 'Copy text from a region', 'ocrHotkey'],
   ['pin', 'Pin a region on top', 'pinHotkey'],
   ['batch', 'Add to batch', 'batchHotkey'],
+  ['record', 'Record a clip', 'recordHotkey'],
 ];
 function runShelfMode(mode){
+  if(mode === 'record'){ toggleRecord(); return; }
   if(mode === 'window'){ captureActiveWindow().catch((e) => console.error(e)); return; }
   if(mode === 'screen'){ captureWholeScreen().catch((e) => console.error(e)); return; }
   startCapture(['markup', 'ocr', 'pin', 'batch', 'board', 'photos'].includes(mode) ? mode : 'normal');
@@ -1256,6 +1409,7 @@ ipcMain.on('shelf:clear', () => { shelf.length = 0; sendShelf(); saveHistory(); 
 ipcMain.on('shelf:remove', (e, i) => { if(shelf[i]) shelf.splice(i, 1); sendShelf(); saveHistory(); });
 ipcMain.on('shelf:copy', (e, i) => {
   const it = shelf[i]; if(!it) return;
+  if(it.clip){ copyFileToClipboard(it.file); return; }
   try{ clipboard.writeImage(nativeImage.createFromPath(it.file)); }catch(e2){}
 });
 ipcMain.on('shelf:reveal', (e, i) => { const it = shelf[i]; if(it) shell.showItemInFolder(it.file); });
@@ -1272,6 +1426,19 @@ function openWith(file){
 // Right-click a tile: the actions the hover buttons don't have room for.
 ipcMain.on('shelf:menu', (e, i) => {
   const it = shelf[i]; if(!it) return;
+  if(it.clip || isClip(it.file)){                    // a video: the picture actions don't apply
+    const menu = Menu.buildFromTemplate([
+      { label: 'Play', click: () => shell.openPath(it.file) },
+      { label: 'Copy file  (paste into a chat)', click: () => { copyFileToClipboard(it.file); } },
+      { type: 'separator' },
+      { label: 'Open with…', click: () => openWith(it.file) },
+      { label: 'Show in folder', click: () => shell.showItemInFolder(it.file) },
+      { label: 'Remove from shelf', click: () => { const k = shelf.indexOf(it); if(k >= 0) shelf.splice(k, 1); sendShelf(); saveHistory(); } },
+    ]);
+    const w = BrowserWindow.fromWebContents(e.sender);
+    menu.popup(w ? { window: w } : {});
+    return;
+  }
   const load = () => { try{ const im = nativeImage.createFromPath(it.file); return im.isEmpty() ? null : im; }catch(e2){ return null; } };
   const menu = Menu.buildFromTemplate([
     { label: 'Share link  (7 days)', click: () => { const im = load(); if(im) shareAndCopy(im); } },
@@ -1296,6 +1463,7 @@ ipcMain.on('shelf:share', (e, i) => {
 // Put a shot from history back on screen as a floating reference.
 ipcMain.on('shelf:pin', (e, i) => {
   const it = shelf[i]; if(!it) return;
+  if(it.clip){ shell.openPath(it.file); return; }    // "pin" on a clip plays it
   try{
     const im = nativeImage.createFromPath(it.file);
     if(!im.isEmpty()) openPin(im);
@@ -1306,7 +1474,7 @@ ipcMain.on('shelf:drag', (e, i) => {
   const items = (i === 'all') ? shelf : (shelf[i] ? [shelf[i]] : []);
   const files = items.map(x => x.file).filter(f => { try{ return fs.existsSync(f); }catch(e2){ return false; } });
   if(!files.length) return;
-  let icon = nativeImage.createFromPath(files[0]);
+  let icon = nativeImage.createFromPath(isClip(files[0]) ? clipThumbPath(files[0]) : files[0]);
   try{ icon = icon.resize({ height: 64 }); }catch(e2){}
   if(icon.isEmpty()) icon = trayImage();
   try{ e.sender.startDrag(files.length > 1 ? { files, icon } : { file: files[0], icon }); }
@@ -1335,6 +1503,9 @@ function refreshTrayMenu(){
     // marker, swallows it and underlines the next letter, so this item read
     // "Capture  mark up" with a stray double space.
     { label: 'Capture and mark up   (' + (settings.markupHotkey || '—') + ')', click: () => startCapture('markup') },
+    recJob ? { label: '■ Stop recording   (' + (settings.recordHotkey || '—') + ')', click: () => stopRecording() }
+           : { label: 'Record a clip   (' + (settings.recordHotkey || '—') + ')', click: () => startCapture('record') },
+    ...(recJob ? [] : [{ label: 'Record the whole screen', click: () => recordWholeScreen().catch((e) => console.error(e)) }]),
     { label: 'Add to batch   (' + (settings.batchHotkey || '—') + ')', click: () => startCapture('batch') },
     { label: 'Copy text from a region   (' + (settings.ocrHotkey || '—') + ')', click: () => startCapture('ocr') },
     { label: 'Pin a region on top   (' + (settings.pinHotkey || '—') + ')', click: () => startCapture('pin') },
@@ -1380,7 +1551,7 @@ ipcMain.handle('settings:set', (e, patch) => {
   if(patch && 'gphotosRefresh' in patch) delete patch.gphotosRefresh;
   settings = { ...settings, ...patch };
   saveSettings();
-  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch || 'boardHotkey' in patch || 'photosHotkey' in patch) registerHotkey();
+  if('hotkey' in patch || 'windowHotkey' in patch || 'markupHotkey' in patch || 'batchHotkey' in patch || 'termHotkey' in patch || 'shelfHotkey' in patch || 'barHotkey' in patch || 'ocrHotkey' in patch || 'pinHotkey' in patch || 'screenHotkey' in patch || 'allHotkey' in patch || 'boardHotkey' in patch || 'photosHotkey' in patch || 'recordHotkey' in patch) registerHotkey();
   if('shelfLock' in patch) applyShelfLock();      // reach the live window, not just the file
   if('launchpadUrl' in patch || 'launchpadPass' in patch) forgetBoardToken();
   // A different Google client means a different consent; a different album name
@@ -1993,6 +2164,10 @@ function registerHotkey(){
     try{ globalShortcut.register(settings.boardHotkey, () => startCapture('board')); }
     catch(e){ console.error('board hotkey failed', e); }
   }
+  if(settings.recordHotkey){
+    try{ globalShortcut.register(settings.recordHotkey, () => toggleRecord()); }
+    catch(e){ console.error('record hotkey failed', e); }
+  }
   if(settings.photosHotkey){
     try{ globalShortcut.register(settings.photosHotkey, () => startCapture('photos')); }
     catch(e){ console.error('photos hotkey failed', e); }
@@ -2004,7 +2179,7 @@ function registerHotkey(){
 // second copy: Electron hands its argv to the running instance, which performs
 // the capture. That makes every mode scriptable and bindable to whatever
 // shortcut manager you already use. Pure parser, exported for the tests.
-const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','board','photos','bar','shelf'];
+const CLI_MODES = ['region','window','screen','all','markup','ocr','pin','batch','board','photos','bar','shelf','record','record-screen','stop'];
 function parseCli(argv){
   // argv arrives as the full process argv; drop the exe and any Electron/Chromium
   // switches so `snappy-snap.exe --region` and `electron . --region` parse alike.
@@ -2036,12 +2211,15 @@ async function runCli(cmd){
   if(!cmd) return;
   if(cmd.mode === 'bar'){ toggleBar(); return; }
   if(cmd.mode === 'shelf'){ toggleShelf(); return; }
+  if(cmd.mode === 'stop'){ stopRecording(); return; }
   if(cmd.delay) await new Promise(r => setTimeout(r, cmd.delay));
   cliOverride = { dir: cmd.dir, clipboard: cmd.clipboard, save: cmd.save };
   try{
     if(cmd.mode === 'window') await captureActiveWindow();
     else if(cmd.mode === 'screen') await captureWholeScreen();
     else if(cmd.mode === 'all') await captureAllScreens();
+    else if(cmd.mode === 'record') startCapture('record');
+    else if(cmd.mode === 'record-screen') await recordWholeScreen();
     else startCapture(['markup','ocr','pin','batch','board','photos'].includes(cmd.mode) ? cmd.mode : 'normal');
   }catch(e){ console.error('cli capture failed', e); cliOverride = null; }
 }

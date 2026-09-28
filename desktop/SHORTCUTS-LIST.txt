@@ -16,6 +16,9 @@ Ctrl + Shift + 5
 SCREENGRAB WHOLE SCREEN
 Ctrl + Shift + 6
 
+SCREENGRAB RECORD CLIP
+Ctrl + Shift + 7
+
 SCREENGRAB COPY TEXT
 Ctrl + Shift + O
 

@@ -13,6 +13,7 @@
   .row h3{margin:0 0 3px;font-size:13.5px;} .row p{margin:0;color:var(--mut);font-size:12px;}
   .flex{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:inherit;}
+  select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;}
   .folder{display:flex;gap:8px;align-items:center;margin-top:8px;}
   .folder code{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--mut);}
   button{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 13px;cursor:pointer;}
@@ -42,6 +43,10 @@
     <input type="text" id="photosHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+G" style="margin-top:6px">
     <p style="margin-top:12px"><b>Idea board</b> — drag a rectangle and it goes straight to your AI Launchpad board. Empty for none.</p>
     <input type="text" id="boardHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+I" style="margin-top:6px">
+    <p style="margin-top:12px"><b>Record a clip</b> — drag a rectangle and it records a short video of it. Press the hotkey again, or click <b>Stop</b> on the little bar, to finish. It stops on its own at the time limit below.</p>
+    <input type="text" id="recordHotkey" spellcheck="false" placeholder="e.g. CommandOrControl+Shift+7" style="margin-top:6px">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px">Stop after
+      <select id="recordSeconds"><option value="10">10 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option></select></label>
     <p style="margin-top:12px"><b>Mark up</b> — drag a rectangle, then draw on it: pencil, line, arrow, box, filled box, ellipse, highlighter, text, numbered steps, pixelate and blur. Great for flagging a fix to paste into a chat.</p>
     <input type="text" id="markupHotkey" spellcheck="false" style="margin-top:6px">
     <p style="margin-top:12px"><b>Add to batch</b> — collect several grabs, then save them all to a folder (drag them into a chat together) or stitch them into one image.</p>
@@ -198,6 +203,8 @@
     $('allHotkey').value = s.allHotkey || '';
     $('boardHotkey').value = s.boardHotkey || '';
     $('photosHotkey').value = s.photosHotkey || '';
+    $('recordHotkey').value = s.recordHotkey || '';
+    $('recordSeconds').value = String(s.recordSeconds || 20);
     $('gphotosClientId').value = s.gphotosClientId || '';
     $('gphotosClientSecret').value = s.gphotosClientSecret || '';
     $('gphotosAlbum').value = s.gphotosAlbum === undefined ? 'Snappy Snap' : s.gphotosAlbum;
@@ -231,6 +238,8 @@
   $('allHotkey').addEventListener('change', e => set({ allHotkey: e.target.value.trim() }));
   $('boardHotkey').addEventListener('change', e => set({ boardHotkey: e.target.value.trim() }));
   $('photosHotkey').addEventListener('change', e => set({ photosHotkey: e.target.value.trim() }));
+  $('recordHotkey').addEventListener('change', e => set({ recordHotkey: e.target.value.trim() }));
+  $('recordSeconds').addEventListener('change', e => set({ recordSeconds: +e.target.value || 20 }));
   $('gphotosClientId').addEventListener('change', e => set({ gphotosClientId: e.target.value.trim() }).then(photosState));
   $('gphotosClientSecret').addEventListener('change', e => set({ gphotosClientSecret: e.target.value.trim() }).then(photosState));
   $('gphotosAlbum').addEventListener('change', e => set({ gphotosAlbum: e.target.value.trim() }));

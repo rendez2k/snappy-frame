@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Snappy Snap recorder</title></head>
+<body>
+<!-- Hidden worker window: pulls the live screen, crops it to the region on a
+     canvas and records the canvas. Nothing here is ever shown. -->
+<video id="v" muted playsinline></video>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const v = document.getElementById('v'), c = document.getElementById('c'), g = c.getContext('2d', { alpha:false });
+  let stream = null, rec = null, chunks = [], timer = 0, tick = 0, startAt = 0, thumb = '', cancelled = false, job = null;
+
+  // MP4 (H.264) pastes and plays everywhere, including places WebM does not,
+  // so it is preferred whenever this Chromium can encode it.
+  function pickType(){
+    const want = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1.42E01E', 'video/mp4',
+                  'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    return want.find(t => { try{ return MediaRecorder.isTypeSupported(t); }catch(e){ return false; } }) || '';
+  }
+
+  async function getScreen(sourceId, maxW, maxH){
+    // The desktop constraint form still works in Electron and needs no user
+    // gesture, which a hidden window never has.
+    return navigator.mediaDevices.getUserMedia({ audio:false, video:{ mandatory:{
+      chromeMediaSource:'desktop', chromeMediaSourceId: sourceId,
+      minWidth: 320, maxWidth: maxW, minHeight: 240, maxHeight: maxH, maxFrameRate: job.fps } } });
+  }
+
+  window.snap.recOnStart(async (j) => {
+    job = j; chunks = []; cancelled = false; thumb = '';
+    try{
+      stream = await getScreen(j.sourceId, j.srcW, j.srcH);
+      v.srcObject = stream; await v.play();
+      if(!v.videoWidth) await new Promise(r => v.onloadedmetadata = r);
+      const vw = v.videoWidth, vh = v.videoHeight;
+      // the region arrives as fractions of the display, so any capture size works
+      let sx = Math.round(j.rect.x * vw), sy = Math.round(j.rect.y * vh);
+      let sw = Math.round(j.rect.w * vw), sh = Math.round(j.rect.h * vh);
+      sw = Math.max(16, Math.min(sw, vw - sx)); sh = Math.max(16, Math.min(sh, vh - sy));
+      sw -= sw % 2; sh -= sh % 2;                                  // H.264 needs even sides
+      c.width = sw; c.height = sh;
+      const draw = () => { g.drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh); };
+      draw();
+      const type = pickType();
+      const out = c.captureStream(j.fps);
+      rec = new MediaRecorder(out, type ? { mimeType:type, videoBitsPerSecond: j.bitrate } : { videoBitsPerSecond: j.bitrate });
+      rec.ondataavailable = (e) => { if(e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = async () => {
+        clearInterval(timer); clearInterval(tick);
+        try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+        if(cancelled){ window.snap.recDone(null); return; }
+        const mime = (rec.mimeType || type || 'video/webm').split(';')[0];
+        const blob = new Blob(chunks, { type: mime });
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        window.snap.recDone({ bytes: buf, ext: mime.includes('mp4') ? 'mp4' : 'webm',
+          ms: Date.now() - startAt, width: sw, height: sh, thumb });
+      };
+      // drawing on a timer, not requestAnimationFrame: rAF stalls in a hidden window
+      timer = setInterval(draw, Math.round(1000 / j.fps));
+      rec.start(1000);
+      startAt = Date.now();
+      // a frame from just after the start doubles as the shelf thumbnail (the
+      // very first can still be blank while the capture spins up)
+      setTimeout(() => { try{ const t = document.createElement('canvas'), k = Math.min(1, 336 / sh); t.width = Math.round(sw * k); t.height = Math.round(sh * k);
+        t.getContext('2d').drawImage(c, 0, 0, t.width, t.height); thumb = t.toDataURL('image/jpeg', 0.85); }catch(e){} }, 400);
+      window.snap.recStarted({ width: sw, height: sh });
+      tick = setInterval(() => {
+        const ms = Date.now() - startAt;
+        window.snap.recTick(ms);
+        if(ms >= j.maxMs) stop();
+      }, 200);
+    }catch(err){
+      try{ if(stream) stream.getTracks().forEach(t => t.stop()); }catch(e){}
+      window.snap.recError(String(err && err.message || err));
+    }
+  });
+  function stop(){ if(rec && rec.state !== 'inactive') rec.stop(); }
+  window.snap.recOnStop(() => stop());
+  window.snap.recOnCancel(() => { cancelled = true; stop(); });
+})();
+</script>
+</body>
+</html>
