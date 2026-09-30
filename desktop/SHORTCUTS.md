@@ -1,6 +1,6 @@
 # Snappy Snap — every shortcut
 
-Version 0.29.0. Everything in the first table is editable in **Settings…**
+Version 0.29.1. Everything in the first table is editable in **Settings…**
 (tray icon → Settings). The rest are fixed.
 
 On a Mac build, `Ctrl` means `Cmd`.

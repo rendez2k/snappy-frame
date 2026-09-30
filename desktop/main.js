@@ -267,6 +267,11 @@ function cancelRecording(){ if(recJob && recWin && !recWin.isDestroyed()) recWin
 function endRecordingUi(){
   for(const w of [recBar, recFrame]){ try{ if(w && !w.isDestroyed()) w.close(); }catch(e){} }
   recBar = recFrame = null; recJob = null;
+  // The recorder's renderer keeps its video pipeline and buffers alive — about
+  // 400 MB after a clip — for as long as the window exists. It is only needed
+  // while recording, and it loads in a blink, so it is thrown away every time.
+  try{ if(recWin && !recWin.isDestroyed()) recWin.destroy(); }catch(e){}
+  recWin = null;
   restoreOwnWindows();
   refreshTrayMenu();
 }
